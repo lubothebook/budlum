@@ -23,7 +23,7 @@ Commit: `f6d94a3`.
 - Useful projects were mapped to Budlum modules.
 - Import boundaries were classified: permissive, boundary-only, design-only,
   review-first.
-- `tools/fsf_project_fit.py --self-test --check` pins the curation file.
+- `budlum-tools fsf-project-fit --self-test --check` pins the curation file.
 
 ### Phase 1: design briefs, no product code
 

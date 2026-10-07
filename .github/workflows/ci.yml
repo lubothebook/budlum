@@ -193,7 +193,7 @@ jobs:
           # This prints the per-lint tally and every first-party file:line.
           # It writes nothing and runs before the gate, so it cannot change the
           # verdict.
-          python3 ./ops/scripts/clippy-extra-report.py /tmp/clippy-extra.json
+          cargo run -q --release --manifest-path xtask/tools/Cargo.toml -- clippy-extra-report /tmp/clippy-extra.json
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- clippy-extra /tmp/clippy-extra.json
       - name: Format
         if: always() && steps.rust.outcome == 'success'
@@ -248,11 +248,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Audit Guard aggregation (the gate itself must be alive)
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/audit_guard.py --self-test
-          python3 .github/scripts/audit_guard.py
       - name: Install Rust
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-12
         with:
@@ -260,6 +255,11 @@ jobs:
           components: clippy, rustfmt
       - name: Install protoc
         run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
+      - name: Audit Guard aggregation (the gate itself must be alive)
+        run: |
+          set -euo pipefail
+          cargo run -q --release --manifest-path xtask/tools/Cargo.toml -- audit-guard --self-test
+          cargo run -q --release --manifest-path xtask/tools/Cargo.toml -- audit-guard
       # The fail-closed actionlint gate runs inside this suite as well; without
       # the binary installed here the suite fails on the tool, not on a finding
       # (measured on the run for eafdbb4, 2026-09-13).
@@ -517,18 +517,18 @@ jobs:
       # (its SCAN_ROOTS are src/budzero/wallet-core) and `gates-are-wired` only
       # walks scripts that already belong to a list. A protection that is not
       # compiled is not a protection.
-      # Workflow hygiene needs no cargo, so it is not guarded on the build: a red
-      # gate binary must not hide the fact that a guard expression points at a step
+      # Workflow hygiene runs from the tools crate, not the gates crate, so it is
+      # not guarded on the gate build: a red gate binary must not hide the fact that a guard expression points at a step
       # that does not exist - that failure mode skips gates silently, build or not.
       - name: Step reachability canary
         if: always()
         run: |
-          python3 ops/scripts/check-step-reachability.py --self-test 2>&1 | tee -a /tmp/gate-out.log
+          cargo run -q --release --manifest-path xtask/tools/Cargo.toml -- step-reachability --self-test 2>&1 | tee -a /tmp/gate-out.log
           exit "${PIPESTATUS[0]}"
       - name: No guard can hide a step
         if: always()
         run: |
-          python3 ops/scripts/check-step-reachability.py 2>&1 | tee -a /tmp/gate-out.log
+          cargo run -q --release --manifest-path xtask/tools/Cargo.toml -- step-reachability 2>&1 | tee -a /tmp/gate-out.log
           exit "${PIPESTATUS[0]}"
       - name: Researched-product naming canary
         if: always() && steps.build.outcome == 'success'
@@ -1177,9 +1177,9 @@ jobs:
         with:
           shared-key: budlum-core
       - name: cargo audit (CVE = fail)
-        run: bash ./ops/scripts/audit-deps.sh
+        run: cargo run --release --manifest-path xtask/tools/Cargo.toml -- audit-deps
       - name: Generate SBOM (CycloneDX)
-        run: bash ./ops/scripts/generate-sbom.sh
+        run: cargo run --release --manifest-path xtask/tools/Cargo.toml -- generate-sbom
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
