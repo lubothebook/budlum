@@ -191,6 +191,14 @@ impl From<&Transaction> for pb::ProtoTransaction {
                     },
                 )),
             ),
+            TransactionType::Storage(storage_tx) => (
+                pb::ProtoTransactionType::Storage as i32,
+                Some(pb::proto_transaction::TypePayload::Storage(
+                    pb::ProtoStorageTx {
+                        data: bincode::serialize(storage_tx).unwrap_or_default(),
+                    },
+                )),
+            ),
             TransactionType::AiModelRegister(spec) => (
                 pb::ProtoTransactionType::AiModelRegister as i32,
                 Some(pb::proto_transaction::TypePayload::AiModelRegister(
@@ -1011,6 +1019,16 @@ impl TryFrom<pb::ProtoTransaction> for Transaction {
                 TransactionType::Vault(
                     bincode::deserialize(&payload.data)
                         .map_err(|e| format!("Invalid VaultTx payload: {e}"))?,
+                )
+            }
+            pb::ProtoTransactionType::Storage => {
+                let payload = match proto.type_payload {
+                    Some(pb::proto_transaction::TypePayload::Storage(p)) => p,
+                    _ => return Err("Missing or mismatched Storage payload".into()),
+                };
+                TransactionType::Storage(
+                    bincode::deserialize(&payload.data)
+                        .map_err(|e| format!("Invalid StorageTx payload: {e}"))?,
                 )
             }
             pb::ProtoTransactionType::AiModelRegister => {
@@ -2265,6 +2283,19 @@ mod tests {
                 to: 4,
                 member: 5,
             }),
+            TransactionType::Storage(crate::domain::StorageTx::RegisterManifest {
+                manifest: {
+                    let mut m = crate::storage::encode_object(
+                        &[5u8; 2048],
+                        crate::storage::ErasureScheme { k: 4, n: 6 },
+                    )
+                    .expect("encode")
+                    .to_manifest()
+                    .expect("manifest");
+                    m.owner = from;
+                    m
+                },
+            }),
             TransactionType::Identity(crate::registry::IdentityTx::Register {
                 record: crate::registry::IdentityRecord::new(
                     from,
@@ -2330,6 +2361,9 @@ mod tests {
         assert!(Transaction::try_from(proto.clone()).is_err());
 
         proto.tx_type = pb::ProtoTransactionType::Vault as i32;
+        assert!(Transaction::try_from(proto.clone()).is_err());
+
+        proto.tx_type = pb::ProtoTransactionType::Storage as i32;
         assert!(Transaction::try_from(proto.clone()).is_err());
 
         proto.tx_type = 999; // Unknown transaction type tag

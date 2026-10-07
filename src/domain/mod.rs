@@ -9,6 +9,7 @@ pub mod registry;
 pub mod sovereign;
 pub mod storage_deal;
 pub mod storage_params;
+pub mod storage_tx;
 pub mod types;
 
 pub use commitment_registry::DomainCommitmentRegistry;
@@ -41,6 +42,7 @@ pub use storage_deal::{
 pub use storage_params::{
     storage_params_bytes, StorageDomainParams, DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE,
 };
+pub use storage_tx::{execute_storage_tx, StorageTx, StorageTxError};
 pub use types::{
     normalize_hash32, validator_set_commitment, ConsensusDomain, ConsensusKind, DomainCommitment,
     DomainId, DomainStatus, Hash32, PoWDomainParameters, RootScheme, VerifiedDomainCommitment,

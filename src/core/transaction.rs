@@ -400,6 +400,13 @@ pub enum TransactionType {
     /// named in a doc comment here was resolved as if a transaction
     /// carried the whole registry.)
     Vault(crate::socialfi::VaultTx),
+    /// B.U.D. storage write, applied in block. The sender is `tx.from`; the
+    /// payload carries no actor field. Registering content commits its
+    /// content id, and the executor re-derives that id from the contents
+    /// before it writes, so the contents are bound to the signature through
+    /// it. (Written without naming types: the signing gate reads the enum
+    /// body's identifiers to resolve carried payload types.)
+    Storage(crate::domain::storage_tx::StorageTx),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1193,6 +1200,9 @@ impl Transaction {
             // `NftRegistry` beside their own map, which is exactly what the
             // registry arms already price.
             TransactionType::Vault(_) => schedule.contract_call_gas * 2,
+            // A registry write that re-derives the manifest id over every
+            // shard: priced like the registry arms beside it.
+            TransactionType::Storage(_) => schedule.contract_call_gas * 2,
         };
         let signature_gas = if self.signature.is_some() {
             schedule.gas_per_signature
@@ -1421,6 +1431,7 @@ fn transaction_type_tag(tx_type: &TransactionType) -> u8 {
         TransactionType::StateUpdate { .. } => 44,
         TransactionType::Identity(_) => 45,
         TransactionType::Vault(_) => 46,
+        TransactionType::Storage(_) => 47,
     }
 }
 fn encode_chain(chain: ExternalChain, out: &mut Vec<u8>) {
@@ -1495,6 +1506,26 @@ fn encode_vault_tx(tx: &crate::socialfi::VaultTx, out: &mut Vec<u8>) {
             put_u64(out, *from);
             put_u64(out, *to);
             put_u64(out, *member);
+        }
+    }
+}
+
+/// Canonical preimage of a storage transaction.
+///
+/// A manifest is committed through its id plus the fields the id leaves out
+/// (`owner`, `content_size`). The id covers the shards, the scheme, the
+/// source, the edition, the dictionary and the encryption claim, and the
+/// executor refuses a manifest whose id does not re-derive from them, so a
+/// relay that rewrites any of those breaks either the id or the signature.
+fn encode_storage_tx(tx: &crate::domain::storage_tx::StorageTx, out: &mut Vec<u8>) {
+    match tx {
+        crate::domain::storage_tx::StorageTx::RegisterManifest { manifest } => {
+            put_u8(out, 0);
+            out.extend_from_slice(manifest.manifest_id.as_bytes());
+            out.extend_from_slice(manifest.owner.as_bytes());
+            put_u64(out, manifest.content_size);
+            put_u64(out, manifest.total_size);
+            put_u32(out, manifest.shard_count);
         }
     }
 }
@@ -1928,6 +1959,7 @@ fn encode_transaction_type_payload(tx_type: &TransactionType, out: &mut Vec<u8>)
         }
         TransactionType::Identity(identity_tx) => encode_identity_tx(identity_tx, out),
         TransactionType::Vault(vault_tx) => encode_vault_tx(vault_tx, out),
+        TransactionType::Storage(storage_tx) => encode_storage_tx(storage_tx, out),
     }
 }
 

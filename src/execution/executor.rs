@@ -2458,6 +2458,32 @@ impl Executor {
                 })?;
                 sender.nonce = sender.nonce.saturating_add(1);
             }
+            TransactionType::Storage(storage_tx) => {
+                // One arm delegating to the tested body
+                // (`domain::execute_storage_tx`), which runs every check
+                // before it writes. A storage write records commitments; it
+                // moves no value, so a carried amount is refused rather than
+                // silently burned.
+                if tx.amount != 0 {
+                    return Err(BudlumError::validation(
+                        "storage_amount_must_be_zero",
+                        "a storage transaction records commitments; it cannot carry value",
+                    ));
+                }
+                if state.get_balance(&tx.from) < tx.fee {
+                    return Err(BudlumError::validation(
+                        "insufficient_balance_for_fee",
+                        "insufficient balance for the storage transaction fee",
+                    ));
+                }
+                crate::domain::execute_storage_tx(state, &tx.from, storage_tx)
+                    .map_err(|e| BudlumError::validation("storage_tx_failed", e.to_string()))?;
+                let sender = state.get_or_create(&tx.from);
+                sender.balance = sender.balance.checked_sub(tx.fee).ok_or_else(|| {
+                    BudlumError::validation("balance_underflow", "balance underflow")
+                })?;
+                sender.nonce = sender.nonce.saturating_add(1);
+            }
         }
 
         Ok(())
