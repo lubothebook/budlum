@@ -19,6 +19,10 @@ Complete B.U.D. and BudZKVM for mainnet. Branch `claude/zkvm-bud-completion-84r6
 - D5 (decided by Claude): any payer may fund a deal, as today.
 - D6 A: the executor refuses OpenDeal on mainnet until maintenance, payouts and challenges also run in block.
 - F3 C: the in-block registration path refuses a Generated source for now. Stored and sealed recipes are allowed.
+- Language rule (owner): the repo is Rust and BudL only.
+  - 1B: the Solidity verifier stays (Ethereum runs it); it is bound to Rust-generated ABI and test vectors.
+  - 2A: the budscan Firefox patch layer is replaced by a Rust-engine browser shell over the existing Rust core.
+  - 3: inline shell in CI YAML moves into Rust xtask commands. Nix, Dockerfile, systemd and YAML stay as configuration formats.
 - Standing rule: ask the owner only for hard architecture changes. Decide the rest, record it here.
 
 ## Steps
@@ -31,7 +35,12 @@ Complete B.U.D. and BudZKVM for mainnet. Branch `claude/zkvm-bud-completion-84r6
 | 4 | Stored coding audit with deadline, cooldown on failure | open |
 | 5 | `DeclareOperatorClass` | open |
 | 6 | Remove RPC mutation paths, mainnet gate (ask owner) | open |
-| 7 | VerifyMerkle external review package | discovery |
+| 7 | VerifyMerkle external review package | draft in scratchpad (not committed: open soundness leads, SECURITY.md process); finder running |
+| 8 | Port Python and shell tooling to Rust (owner rule: Rust and BudL only) | coding |
+| 9 | Move inline CI shell into Rust xtask | open, after ADIM 8 |
+| 10 | Solidity verifier bound to Rust-generated ABI and vectors | open |
+| 11 | budscan Rust-engine shell replacing the Firefox layer | planning |
+| 12 | BudZKVM soundness fixes (details held privately per docs/SECURITY.md) | planning, local only |
 
 ## Open findings
 
