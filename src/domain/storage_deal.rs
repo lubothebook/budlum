@@ -702,12 +702,18 @@ pub struct StorageRegistry {
     /// deal path read it, so a phone could take the only copy of something its
     /// owner had already declared too important for a phone.
     ///
-    /// Keyed by content, because the declaration is about the content rather
-    /// than about the device: the same phone may self-host a holiday photo and
-    /// be refused a legal document.
+    /// Keyed by manifest and shard, because the declaration is about the
+    /// content rather than about the device: the same phone may self-host a
+    /// holiday photo and be refused a legal document. The manifest is part of
+    /// the key because write authority is checked against one manifest, and a
+    /// second manifest can carry the same shard.
+    ///
+    /// The map was keyed by shard alone and is empty on every live chain, so
+    /// the key change needs no migration.
     #[serde(default)]
     #[serde(with = "crate::core::map_keys")]
-    pub self_host_policies: BTreeMap<ContentId, crate::storage::MobileSelfContentPolicy>,
+    pub self_host_policies:
+        BTreeMap<(ContentId, ContentId), crate::storage::MobileSelfContentPolicy>,
     /// When each operator that missed a challenge may take storage work
     /// again, as a unix timestamp.
     ///
@@ -1155,7 +1161,8 @@ impl StorageRegistry {
         if self.view_grants.issued() > 0 {
             hasher.update(self.view_grants.root());
         }
-        for (content_id, policy) in &self.self_host_policies {
+        for ((manifest_id, content_id), policy) in &self.self_host_policies {
+            hasher.update(manifest_id.0);
             hasher.update(content_id.0);
             hasher.update(bincode::serialize(policy).unwrap_or_else(|_| SERIALIZE_FAILED.to_vec()));
         }
@@ -1180,6 +1187,7 @@ impl StorageRegistry {
     /// profile disagree, carrying the reason so the caller can show it.
     pub fn declare_self_host_policy(
         &mut self,
+        manifest_id: ContentId,
         policy: crate::storage::MobileSelfContentPolicy,
         profile: &crate::storage::MobileSelfProfile,
     ) -> Result<(), StorageError> {
@@ -1189,7 +1197,8 @@ impl StorageRegistry {
                 reason,
             }
         })?;
-        self.self_host_policies.insert(policy.content_id, policy);
+        self.self_host_policies
+            .insert((manifest_id, policy.content_id), policy);
         Ok(())
     }
 
@@ -1211,7 +1220,7 @@ impl StorageRegistry {
         manifest_id: &ContentId,
         content_id: &ContentId,
     ) -> Result<(), StorageError> {
-        let Some(policy) = self.self_host_policies.get(content_id) else {
+        let Some(policy) = self.self_host_policies.get(&(*manifest_id, *content_id)) else {
             return Ok(());
         };
         if !policy.self_host_allowed {
@@ -1280,9 +1289,9 @@ impl StorageRegistry {
     /// Claiming `AlwaysOn` to reach a primary replica means accepting a
     /// primary's obligations, and the bond answers for them.
     ///
-    /// F-17: `ChainHandle::set_storage_operator_class` is the production
-    /// declaration path. The class is still self-reported; `open_deal`
-    /// holds the operator to whatever it claimed.
+    /// The in-block path is `StorageTx::DeclareOperatorClass`. The class is
+    /// still self-reported; `open_deal` holds the operator to whatever it
+    /// claimed.
     pub fn set_operator_class(&mut self, operator: Address, class: OperatorClass) {
         self.operator_classes.insert(operator, class);
     }
@@ -1833,13 +1842,8 @@ impl StorageRegistry {
         // is about. An always-on operator taking a replica is the case the
         // owner was trying to get more of.
         //
-        // Honest about the half that is still missing: `check` is wired here,
-        // but `declare_self_host_policy` has no transaction behind it yet, so
-        // `self_host_policies` is empty on a live chain and this call returns
-        // `Ok(())` every time. What it buys today is that the check runs on
-        // the placement path, so the day a declaration can reach the chain it
-        // is already being read. Wiring the declaration needs a transaction
-        // type, which is a consensus-surface decision.
+        // The policy reaches the chain through `StorageTx::DeclareSelfHostPolicy`,
+        // so this check reads what owners declared in block.
         if self.operator_class(&operator) == OperatorClass::Mobile {
             self.check_self_host_allowed(&manifest.manifest_id, &shard_id)?;
         }
@@ -3391,6 +3395,11 @@ impl StorageRegistry {
             .values()
             .filter(|d| &d.manifest_id == manifest_id)
             .collect()
+    }
+
+    /// Every deal in id order, without collecting.
+    pub fn deals_iter(&self) -> impl Iterator<Item = &StorageDeal> {
+        self.deals.values()
     }
 
     pub fn all_deals(&self) -> Vec<&StorageDeal> {

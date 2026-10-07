@@ -39,7 +39,7 @@ Complete B.U.D. and BudZKVM for mainnet. Branch `claude/zkvm-bud-completion-84r6
 | 8 | Port Python and shell tooling to Rust (owner rule: Rust and BudL only) | coding |
 | 9 | Move inline CI shell into Rust xtask | open, after ADIM 8 |
 | 10 | Solidity verifier bound to Rust-generated ABI and vectors | open |
-| 11 | budscan Rust-engine shell replacing the Firefox layer | planning |
+| 11 | budscan Rust-engine shell replacing the Firefox layer | paused by owner (budscan stays unchanged for now); plan kept: Blitz engine recommended, K1/K2 open |
 | 12 | BudZKVM soundness fixes (details held privately per docs/SECURITY.md) | planning, local only |
 
 ## Open findings

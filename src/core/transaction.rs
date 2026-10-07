@@ -401,10 +401,10 @@ pub enum TransactionType {
     /// carried the whole registry.)
     Vault(crate::socialfi::VaultTx),
     /// B.U.D. storage write, applied in block. The sender is `tx.from`; the
-    /// payload carries no actor field. Registering content commits its
-    /// content id, and the executor re-derives that id from the contents
-    /// before it writes, so the contents are bound to the signature through
-    /// it. (Written without naming types: the signing gate reads the enum
+    /// payload carries no actor field. The signing preimage commits every
+    /// field of the payload, a registered manifest included, so a relay
+    /// cannot change any of it without changing the hash. (Written without
+    /// naming types: the signing gate reads the enum
     /// body's identifiers to resolve carried payload types.)
     Storage(crate::domain::storage_tx::StorageTx),
 }
@@ -1512,11 +1512,11 @@ fn encode_vault_tx(tx: &crate::socialfi::VaultTx, out: &mut Vec<u8>) {
 
 /// Canonical preimage of a storage transaction.
 ///
-/// A manifest is committed through its id plus the fields the id leaves out
-/// (`owner`, `content_size`). The id covers the shards, the scheme, the
-/// source, the edition, the dictionary and the encryption claim, and the
-/// executor refuses a manifest whose id does not re-derive from them, so a
-/// relay that rewrites any of those breaks either the id or the signature.
+/// A manifest is committed whole: its id, the fields the id leaves out, and
+/// then the shards, the scheme, the dictionary, the source, the edition and
+/// the encryption claim written out. A relay that rewrites any field changes
+/// the signing hash, so a bad copy cannot take the place of the honest one in
+/// a mempool that dedups on the hash.
 fn encode_storage_tx(tx: &crate::domain::storage_tx::StorageTx, out: &mut Vec<u8>) {
     match tx {
         crate::domain::storage_tx::StorageTx::RegisterManifest { manifest } => {
@@ -1526,8 +1526,89 @@ fn encode_storage_tx(tx: &crate::domain::storage_tx::StorageTx, out: &mut Vec<u8
             put_u64(out, manifest.content_size);
             put_u64(out, manifest.total_size);
             put_u32(out, manifest.shard_count);
+            encode_manifest_body(manifest, out);
+        }
+        crate::domain::storage_tx::StorageTx::DeclareOperatorClass { class } => {
+            put_u8(out, 1);
+            put_u8(
+                out,
+                match class {
+                    crate::domain::storage_deal::OperatorClass::AlwaysOn => 0,
+                    crate::domain::storage_deal::OperatorClass::Mobile => 1,
+                },
+            );
+        }
+        crate::domain::storage_tx::StorageTx::DeclareSelfHostPolicy {
+            manifest_id,
+            policy,
+            profile,
+        } => {
+            put_u8(out, 2);
+            put_fixed(out, manifest_id.as_bytes());
+            put_fixed(out, policy.content_id.as_bytes());
+            put_fixed(out, policy.owner.as_bytes());
+            put_u8(out, u8::from(policy.critical));
+            out.extend_from_slice(&policy.required_paid_replicas.to_le_bytes());
+            put_u8(out, u8::from(policy.self_host_allowed));
+            put_fixed(out, profile.owner.as_bytes());
+            put_fixed(out, &profile.device_commitment);
+            put_u8(
+                out,
+                match profile.availability {
+                    crate::storage::MobileAvailabilityClass::Opportunistic => 0,
+                    crate::storage::MobileAvailabilityClass::Scheduled => 1,
+                    crate::storage::MobileAvailabilityClass::AlwaysOnReplica => 2,
+                },
+            );
+            put_u64(out, profile.max_storage_bytes);
+            put_u8(out, u8::from(profile.metered_network_ok));
+            put_u8(out, u8::from(profile.battery_saver_aware));
+            put_u64(out, profile.last_seen_block);
         }
     }
+}
+
+/// Every field of a manifest that the id and the fields above leave out or
+/// fold ambiguously, written explicitly. The id preimage appends the source
+/// bytes and the dictionary bytes without tags, so two different splits of
+/// source and dictionary can share an id; writing both here keeps them apart.
+fn encode_manifest_body(manifest: &crate::storage::ContentManifest, out: &mut Vec<u8>) {
+    put_u64(out, manifest.shards.len() as u64);
+    for shard in &manifest.shards {
+        put_u32(out, shard.index);
+        put_fixed(out, shard.shard_id.as_bytes());
+        put_u32(out, shard.size);
+        put_u8(
+            out,
+            match shard.kind {
+                crate::storage::ShardKind::Data => 0,
+                crate::storage::ShardKind::Parity => 1,
+            },
+        );
+    }
+    put_u32(out, manifest.erasure.k);
+    put_u32(out, manifest.erasure.n);
+    match &manifest.dictionary_id {
+        None => put_u8(out, 0),
+        Some(dictionary) => {
+            put_u8(out, 1);
+            put_fixed(out, dictionary.as_bytes());
+        }
+    }
+    // The source commitment is injective: a variant tag plus the digest of
+    // the recipe, so a spec is committed without spelling it out.
+    put_bytes(
+        out,
+        &crate::storage::generated::source_commitment_bytes(&manifest.source),
+    );
+    put_u8(
+        out,
+        match manifest.edition {
+            crate::storage::BudStorageEdition::Classic => 1,
+            crate::storage::BudStorageEdition::Three => 3,
+        },
+    );
+    put_u8(out, manifest.encryption.commitment_tag());
 }
 
 /// Canonical preimage of an identity transaction. Every pub field of every

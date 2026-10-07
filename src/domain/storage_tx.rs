@@ -9,13 +9,15 @@
 //!
 //! This family moves those writes into the block. Each variant is applied by
 //! the executor's `Storage` arm, inside block execution, from a transaction
-//! the sender signed. The first variant is manifest registration; deals,
-//! challenges, coding audits and the operator class follow in their own
-//! steps, so each one lands with its own tests.
+//! the sender signed. It has three variants: manifest registration, the
+//! operator class declaration and the self-host policy declaration. Deals,
+//! challenges and coding audits follow in their own steps, so each one lands
+//! with its own tests.
 
 use crate::core::account::AccountState;
 use crate::core::address::Address;
-use crate::storage::ContentManifest;
+use crate::domain::storage_deal::{DealStatus, OperatorClass};
+use crate::storage::{ContentId, ContentManifest, MobileSelfContentPolicy, MobileSelfProfile};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -27,6 +29,18 @@ pub enum StorageTx {
     /// it. The sender must be the manifest's declared owner, which turns the
     /// owner field from a first-writer label into a signed claim.
     RegisterManifest { manifest: ContentManifest },
+    /// Declare what kind of machine the sender runs. The class is
+    /// self-reported and the chain holds the sender to it when it takes
+    /// replicas.
+    DeclareOperatorClass { class: OperatorClass },
+    /// Declare how the sender wants one shard of its own content to be
+    /// self-hosted. The profile is the device profile the policy is checked
+    /// against.
+    DeclareSelfHostPolicy {
+        manifest_id: ContentId,
+        policy: MobileSelfContentPolicy,
+        profile: MobileSelfProfile,
+    },
 }
 
 /// Why a storage transaction was refused. Every refusal leaves the registry
@@ -50,6 +64,22 @@ pub enum StorageTxError {
     PaidContentAsPlaintext(String),
     /// The registry refused the manifest's source regime or dictionary.
     Refused(String),
+    /// The sender already holds this class, so the write would change
+    /// nothing and a fee would be paid for nothing.
+    ClassUnchanged,
+    /// The sender operates an active deal, and a deal opened under the
+    /// always-on class was priced and placed on that claim. Switching to
+    /// mobile would walk around the placement and self-host checks.
+    MobileHoldsActiveDeal { deal_id: u64 },
+    /// The manifest declares a generated source. Registering one runs the
+    /// recipe, which costs far more than the flat fee a transaction pays.
+    GeneratedRegistrationNotPriced,
+    /// The manifest a self-host policy names is not registered.
+    ManifestNotRegistered,
+    /// The policy's `owner` is not the signer.
+    PolicyOwnerIsNotSender { owner: Address, sender: Address },
+    /// The policy's `content_id` is not a shard of the named manifest.
+    PolicyContentNotInManifest,
 }
 
 impl fmt::Display for StorageTxError {
@@ -66,6 +96,24 @@ impl fmt::Display for StorageTxError {
                 write!(f, "refusing to register paid content as plaintext: {e}")
             }
             Self::Refused(e) => write!(f, "storage registry refused the manifest: {e}"),
+            Self::ClassUnchanged => write!(f, "the operator already holds this class"),
+            Self::MobileHoldsActiveDeal { deal_id } => write!(
+                f,
+                "cannot declare Mobile while operating the active deal {deal_id}"
+            ),
+            Self::GeneratedRegistrationNotPriced => write!(
+                f,
+                "registering a generated source in block is not priced yet"
+            ),
+            Self::ManifestNotRegistered => write!(f, "manifest is not registered"),
+            Self::PolicyOwnerIsNotSender { owner, sender } => write!(
+                f,
+                "policy owner {owner} is not the sender {sender}; a signer declares policy only \
+                 for its own content"
+            ),
+            Self::PolicyContentNotInManifest => {
+                write!(f, "policy content id is not a shard of the manifest")
+            }
         }
     }
 }
@@ -88,7 +136,68 @@ pub fn execute_storage_tx(
 ) -> Result<(), StorageTxError> {
     match tx {
         StorageTx::RegisterManifest { manifest } => register_manifest(state, sender, manifest),
+        StorageTx::DeclareOperatorClass { class } => declare_operator_class(state, sender, *class),
+        StorageTx::DeclareSelfHostPolicy {
+            manifest_id,
+            policy,
+            profile,
+        } => declare_self_host_policy(state, sender, manifest_id, policy, profile),
     }
+}
+
+fn declare_operator_class(
+    state: &mut AccountState,
+    sender: &Address,
+    class: OperatorClass,
+) -> Result<(), StorageTxError> {
+    if state.storage_registry.operator_class(sender) == class {
+        return Err(StorageTxError::ClassUnchanged);
+    }
+    if class == OperatorClass::Mobile {
+        if let Some(deal) = state
+            .storage_registry
+            .deals_iter()
+            .find(|d| d.operator == *sender && d.status == DealStatus::Active)
+        {
+            return Err(StorageTxError::MobileHoldsActiveDeal {
+                deal_id: deal.deal_id,
+            });
+        }
+    }
+    state.storage_registry.set_operator_class(*sender, class);
+    Ok(())
+}
+
+fn declare_self_host_policy(
+    state: &mut AccountState,
+    sender: &Address,
+    manifest_id: &ContentId,
+    policy: &MobileSelfContentPolicy,
+    profile: &MobileSelfProfile,
+) -> Result<(), StorageTxError> {
+    let manifest = state
+        .storage_registry
+        .get_manifest(manifest_id)
+        .ok_or(StorageTxError::ManifestNotRegistered)?;
+    if manifest.owner != *sender {
+        return Err(StorageTxError::OwnerIsNotSender {
+            owner: manifest.owner,
+            sender: *sender,
+        });
+    }
+    if policy.owner != *sender {
+        return Err(StorageTxError::PolicyOwnerIsNotSender {
+            owner: policy.owner,
+            sender: *sender,
+        });
+    }
+    if manifest.shard(&policy.content_id).is_none() {
+        return Err(StorageTxError::PolicyContentNotInManifest);
+    }
+    state
+        .storage_registry
+        .declare_self_host_policy(*manifest_id, policy.clone(), profile)
+        .map_err(|e| StorageTxError::Refused(e.to_string()))
 }
 
 fn register_manifest(
@@ -96,10 +205,9 @@ fn register_manifest(
     sender: &Address,
     manifest: &ContentManifest,
 ) -> Result<(), StorageTxError> {
-    // The id is re-derived from the contents. The signing preimage commits
-    // the id rather than every shard, so this check is what binds the
-    // shards, the scheme, the source, the edition, the dictionary and the
-    // encryption claim to the signature.
+    // The id is re-derived from the contents, so a manifest whose id does not
+    // match what it carries never reaches the registry. The signing preimage
+    // commits the whole manifest as well.
     manifest
         .validate_untrusted()
         .map_err(StorageTxError::InvalidManifest)?;
@@ -115,6 +223,9 @@ fn register_manifest(
         .is_some()
     {
         return Err(StorageTxError::AlreadyRegistered);
+    }
+    if matches!(manifest.source, crate::storage::ContentSource::Generated(_)) {
+        return Err(StorageTxError::GeneratedRegistrationNotPriced);
     }
     if matches!(
         manifest.encryption,
@@ -219,5 +330,334 @@ mod tests {
             StorageTxError::AlreadyRegistered
         );
         assert_eq!(state.storage_registry.root(), root);
+    }
+
+    fn registered(state: &mut AccountState) -> ContentManifest {
+        let m = manifest_owned_by(owner());
+        execute_storage_tx(
+            state,
+            &owner(),
+            &StorageTx::RegisterManifest {
+                manifest: m.clone(),
+            },
+        )
+        .expect("register");
+        m
+    }
+
+    fn profile_for(who: Address) -> MobileSelfProfile {
+        MobileSelfProfile {
+            owner: who,
+            device_commitment: [3u8; 32],
+            availability: crate::storage::MobileAvailabilityClass::Scheduled,
+            max_storage_bytes: 1 << 20,
+            metered_network_ok: false,
+            battery_saver_aware: true,
+            last_seen_block: 5,
+        }
+    }
+
+    fn policy_for(who: Address, content_id: ContentId) -> MobileSelfContentPolicy {
+        MobileSelfContentPolicy {
+            content_id,
+            owner: who,
+            critical: false,
+            required_paid_replicas: 1,
+            self_host_allowed: true,
+        }
+    }
+
+    fn policy_tx(m: &ContentManifest, policy: MobileSelfContentPolicy) -> StorageTx {
+        StorageTx::DeclareSelfHostPolicy {
+            manifest_id: m.manifest_id,
+            policy,
+            profile: profile_for(owner()),
+        }
+    }
+
+    fn proof() -> Vec<u8> {
+        let envelope = bud_proof::ProofEnvelope {
+            proof_format_version: 1,
+            backend: "test-backend".to_string(),
+            p3_version: "0.6".to_string(),
+            fri_params_id: "test-fri".to_string(),
+            public_inputs_hash: [0x42u8; 32],
+            proof_bytes: vec![0xABu8; 96],
+            degree_bits: 8,
+        };
+        bincode::serialize(&envelope).expect("envelope")
+    }
+
+    fn open_deal_for(
+        state: &mut AccountState,
+        m: &ContentManifest,
+        op: Address,
+        replica_index: u8,
+    ) {
+        state
+            .storage_registry
+            .open_deal(
+                42,
+                m,
+                m.shards[0].shard_id,
+                op,
+                replica_index,
+                100,
+                200,
+                crate::domain::storage_deal::StorageEconomicsParams {
+                    operator_bond: 5_000_000,
+                    fee_per_byte_epoch: 100,
+                },
+                &crate::domain::storage_params::StorageDomainParams {
+                    chunk_size: 256,
+                    max_committed_chunks: 1000,
+                    challenge_interval: 10,
+                    min_operator_bond: 1_000_000,
+                },
+                Some(proof()),
+                Some([0x42u8; 32]),
+            )
+            .expect("deal opens");
+    }
+
+    #[test]
+    fn an_operator_declares_mobile() {
+        let mut state = AccountState::new();
+        execute_storage_tx(
+            &mut state,
+            &owner(),
+            &StorageTx::DeclareOperatorClass {
+                class: OperatorClass::Mobile,
+            },
+        )
+        .expect("declares");
+        assert_eq!(
+            state.storage_registry.operator_class(&owner()),
+            OperatorClass::Mobile
+        );
+    }
+
+    #[test]
+    fn declaring_the_class_already_held_is_refused() {
+        let mut state = AccountState::new();
+        let root = state.storage_registry.root();
+        let err = execute_storage_tx(
+            &mut state,
+            &owner(),
+            &StorageTx::DeclareOperatorClass {
+                class: OperatorClass::AlwaysOn,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, StorageTxError::ClassUnchanged);
+        assert_eq!(state.storage_registry.root(), root);
+    }
+
+    #[test]
+    fn mobile_is_refused_while_operating_an_active_primary() {
+        let mut state = AccountState::new();
+        let m = registered(&mut state);
+        open_deal_for(&mut state, &m, owner(), 0);
+        let root = state.storage_registry.root();
+        let err = execute_storage_tx(
+            &mut state,
+            &owner(),
+            &StorageTx::DeclareOperatorClass {
+                class: OperatorClass::Mobile,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, StorageTxError::MobileHoldsActiveDeal { .. }));
+        assert_eq!(state.storage_registry.root(), root);
+    }
+
+    #[test]
+    fn mobile_is_allowed_when_the_primary_belongs_to_someone_else() {
+        let mut state = AccountState::new();
+        let m = registered(&mut state);
+        open_deal_for(&mut state, &m, Address::from([8u8; 32]), 0);
+        execute_storage_tx(
+            &mut state,
+            &owner(),
+            &StorageTx::DeclareOperatorClass {
+                class: OperatorClass::Mobile,
+            },
+        )
+        .expect("declares");
+    }
+
+    #[test]
+    fn the_owner_declares_a_self_host_policy() {
+        let mut state = AccountState::new();
+        let m = registered(&mut state);
+        let shard = m.shards[0].shard_id;
+        let policy = policy_for(owner(), shard);
+        execute_storage_tx(&mut state, &owner(), &policy_tx(&m, policy.clone())).expect("declares");
+        assert_eq!(
+            state
+                .storage_registry
+                .self_host_policies
+                .get(&(m.manifest_id, shard)),
+            Some(&policy)
+        );
+    }
+
+    #[test]
+    fn a_policy_for_an_unregistered_manifest_is_refused() {
+        let mut state = AccountState::new();
+        let m = manifest_owned_by(owner());
+        let tx = policy_tx(&m, policy_for(owner(), m.shards[0].shard_id));
+        assert_eq!(
+            execute_storage_tx(&mut state, &owner(), &tx).unwrap_err(),
+            StorageTxError::ManifestNotRegistered
+        );
+        assert!(state.storage_registry.self_host_policies.is_empty());
+    }
+
+    #[test]
+    fn a_stranger_cannot_declare_a_policy_for_someone_elses_manifest() {
+        let mut state = AccountState::new();
+        let m = registered(&mut state);
+        let stranger = Address::from([9u8; 32]);
+        let tx = StorageTx::DeclareSelfHostPolicy {
+            manifest_id: m.manifest_id,
+            policy: policy_for(stranger, m.shards[0].shard_id),
+            profile: profile_for(stranger),
+        };
+        let err = execute_storage_tx(&mut state, &stranger, &tx).unwrap_err();
+        assert!(matches!(err, StorageTxError::OwnerIsNotSender { .. }));
+        assert!(state.storage_registry.self_host_policies.is_empty());
+    }
+
+    #[test]
+    fn a_policy_naming_another_owner_is_refused() {
+        let mut state = AccountState::new();
+        let m = registered(&mut state);
+        let other = Address::from([9u8; 32]);
+        let tx = policy_tx(&m, policy_for(other, m.shards[0].shard_id));
+        let err = execute_storage_tx(&mut state, &owner(), &tx).unwrap_err();
+        assert!(matches!(err, StorageTxError::PolicyOwnerIsNotSender { .. }));
+        assert!(state.storage_registry.self_host_policies.is_empty());
+    }
+
+    #[test]
+    fn a_policy_for_content_outside_the_manifest_is_refused() {
+        let mut state = AccountState::new();
+        let m = registered(&mut state);
+        let tx = policy_tx(&m, policy_for(owner(), ContentId::of(b"not a shard")));
+        assert_eq!(
+            execute_storage_tx(&mut state, &owner(), &tx).unwrap_err(),
+            StorageTxError::PolicyContentNotInManifest
+        );
+        assert!(state.storage_registry.self_host_policies.is_empty());
+    }
+
+    #[test]
+    fn a_policy_the_profile_rejects_is_refused_and_writes_nothing() {
+        let mut state = AccountState::new();
+        let m = registered(&mut state);
+        let mut policy = policy_for(owner(), m.shards[0].shard_id);
+        policy.critical = true;
+        policy.required_paid_replicas = 0;
+        let err = execute_storage_tx(&mut state, &owner(), &policy_tx(&m, policy)).unwrap_err();
+        assert!(matches!(err, StorageTxError::Refused(_)));
+        assert!(state.storage_registry.self_host_policies.is_empty());
+    }
+
+    #[test]
+    fn mobile_is_refused_while_operating_any_active_replica() {
+        let mut state = AccountState::new();
+        let m = registered(&mut state);
+        open_deal_for(&mut state, &m, owner(), 1);
+        let root = state.storage_registry.root();
+        let err = execute_storage_tx(
+            &mut state,
+            &owner(),
+            &StorageTx::DeclareOperatorClass {
+                class: OperatorClass::Mobile,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, StorageTxError::MobileHoldsActiveDeal { .. }));
+        assert_eq!(state.storage_registry.root(), root);
+    }
+
+    #[test]
+    fn a_second_manifest_cannot_overwrite_the_first_owners_policy() {
+        let mut state = AccountState::new();
+        let first = registered(&mut state);
+        let shard = first.shards[0].shard_id;
+        let mut policy = policy_for(owner(), shard);
+        policy.required_paid_replicas = 0;
+        execute_storage_tx(&mut state, &owner(), &policy_tx(&first, policy.clone()))
+            .expect("first owner declares");
+
+        // Same shards, one id-relevant field changed, a different owner.
+        let attacker = Address::from([9u8; 32]);
+        let mut second = first
+            .clone()
+            .with_content_size(first.content_size() - 1)
+            .expect("resize");
+        second.owner = attacker;
+        execute_storage_tx(
+            &mut state,
+            &attacker,
+            &StorageTx::RegisterManifest {
+                manifest: second.clone(),
+            },
+        )
+        .expect("the attacker registers its own manifest");
+        assert_ne!(second.manifest_id, first.manifest_id);
+
+        let mut hostile = policy_for(attacker, shard);
+        hostile.self_host_allowed = false;
+        execute_storage_tx(
+            &mut state,
+            &attacker,
+            &StorageTx::DeclareSelfHostPolicy {
+                manifest_id: second.manifest_id,
+                policy: hostile,
+                profile: profile_for(attacker),
+            },
+        )
+        .expect("the attacker declares for its own manifest");
+
+        assert_eq!(
+            state
+                .storage_registry
+                .self_host_policies
+                .get(&(first.manifest_id, shard)),
+            Some(&policy),
+            "the first owner's policy is untouched"
+        );
+        assert!(state
+            .storage_registry
+            .check_self_host_allowed(&first.manifest_id, &shard)
+            .is_ok());
+        assert!(state
+            .storage_registry
+            .check_self_host_allowed(&second.manifest_id, &shard)
+            .is_err());
+    }
+
+    #[test]
+    fn a_generated_source_is_refused_before_anything_is_written() {
+        let mut state = AccountState::new();
+        let spec = crate::storage::generated::GeneratedSpec {
+            generator: crate::storage::generated::GeneratorId::Avatar,
+            seed: [1u8; 32],
+            output_len: 64,
+            step_budget: 10,
+        };
+        let m =
+            manifest_owned_by(owner()).with_source(crate::storage::ContentSource::Generated(spec));
+        let err = execute_storage_tx(
+            &mut state,
+            &owner(),
+            &StorageTx::RegisterManifest { manifest: m },
+        )
+        .unwrap_err();
+        assert_eq!(err, StorageTxError::GeneratedRegistrationNotPriced);
+        assert!(state.storage_registry.is_empty());
     }
 }

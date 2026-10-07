@@ -2296,6 +2296,28 @@ mod tests {
                     m
                 },
             }),
+            TransactionType::Storage(crate::domain::StorageTx::DeclareOperatorClass {
+                class: crate::domain::storage_deal::OperatorClass::Mobile,
+            }),
+            TransactionType::Storage(crate::domain::StorageTx::DeclareSelfHostPolicy {
+                manifest_id: crate::storage::ContentId([1u8; 32]),
+                policy: crate::storage::MobileSelfContentPolicy {
+                    content_id: crate::storage::ContentId([2u8; 32]),
+                    owner: from,
+                    critical: true,
+                    required_paid_replicas: 2,
+                    self_host_allowed: false,
+                },
+                profile: crate::storage::MobileSelfProfile {
+                    owner: from,
+                    device_commitment: [3u8; 32],
+                    availability: crate::storage::MobileAvailabilityClass::Scheduled,
+                    max_storage_bytes: 1 << 20,
+                    metered_network_ok: true,
+                    battery_saver_aware: false,
+                    last_seen_block: 9,
+                },
+            }),
             TransactionType::Identity(crate::registry::IdentityTx::Register {
                 record: crate::registry::IdentityRecord::new(
                     from,

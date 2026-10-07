@@ -1527,14 +1527,12 @@ src/domain/storage_deal.rs	fn	all_results
 src/domain/storage_deal.rs	fn	answer_challenge
 src/domain/storage_deal.rs	fn	check_self_host_allowed
 src/domain/storage_deal.rs	fn	deals_in_renewal_window
-src/domain/storage_deal.rs	fn	declare_self_host_policy
 src/domain/storage_deal.rs	fn	derive_challenge_range
 src/domain/storage_deal.rs	fn	derive_coding_audit
 src/domain/storage_deal.rs	fn	get_challenge
 src/domain/storage_deal.rs	fn	lifecycle_state
 src/domain/storage_deal.rs	fn	live_shard_count
 src/domain/storage_deal.rs	fn	may_hold_primary
-src/domain/storage_deal.rs	fn	operator_class
 src/domain/storage_deal.rs	fn	permanence_floor
 src/domain/storage_deal.rs	fn	renew_deal
 src/domain/storage_deal.rs	fn	required_opener_bond
@@ -1955,7 +1953,6 @@ src/storage/manifest.rs	fn	overhead_per_mille
 src/storage/manifest.rs	fn	replication
 src/storage/merkle_trie.rs	fn	bulk_insert
 src/storage/merkle_trie.rs	fn	root_ref
-src/storage/mobile_self.rs	enum	MobileAvailabilityClass
 src/storage/mobile_self.rs	enum	ReplicaRecommendation
 src/storage/mobile_self.rs	fn	availability_label
 src/storage/mobile_self.rs	fn	recommendation_for_content
