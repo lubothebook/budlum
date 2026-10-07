@@ -235,13 +235,6 @@ pub enum ChainCommand {
         u64,
         oneshot::Sender<Result<(), String>>,
     ),
-    /// F-17: operator self-declares `AlwaysOn` vs `Mobile`. The actor
-    /// writes only the local signer address; a caller cannot name a
-    /// third party.
-    SetStorageOperatorClass {
-        class: crate::domain::storage_deal::OperatorClass,
-        response: oneshot::Sender<Result<(), String>>,
-    },
     /// Begin unbonding an independently-debited role bond (`RELAYER`,
     /// `PROVER`, `STORAGE_OPERATOR`). Returns the release epoch.
     BeginRoleBondUnbonding(
@@ -1972,33 +1965,6 @@ impl ChainHandle {
         let _ = self
             .tx
             .send(ChainCommand::BondStorageOperator(address, amount, tx))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Actor dropped".to_string()))
-    }
-
-    /// F-17: the local signer declares `AlwaysOn` vs `Mobile`.
-    ///
-    /// The actor ignores any third-party address. Class is
-    /// self-reported; `open_deal` holds the signer to whatever it
-    /// claimed. No consensus `TransactionType` is added here (that
-    /// is a wire-surface change).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the actor channel is closed or the node
-    /// cannot persist the class change.
-    pub async fn set_storage_operator_class(
-        &self,
-        class: crate::domain::storage_deal::OperatorClass,
-    ) -> Result<(), String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(ChainCommand::SetStorageOperatorClass {
-                class,
-                response: tx,
-            })
             .await;
         rx.await
             .unwrap_or_else(|_| Err("Actor dropped".to_string()))
@@ -3861,25 +3827,6 @@ impl ChainActor {
                             .map(|_| ())
                             .map_err(|e| e.to_string()),
                     );
-                }
-                ChainCommand::SetStorageOperatorClass { class, response } => {
-                    let Some(operator) = self
-                        .blockchain
-                        .consensus()
-                        .signer()
-                        .map(crate::crypto::signer::ConsensusSigner::address)
-                    else {
-                        let _ = response.send(Err(
-                            "storage operator class is self-declared by the local signer; no validator key is loaded".into(),
-                        ));
-                        continue;
-                    };
-                    self.blockchain
-                        .state
-                        .storage_registry
-                        .set_operator_class(operator, class);
-                    let persist = self.blockchain.persist_storage_registry();
-                    let _ = response.send(persist);
                 }
                 ChainCommand::BeginRoleBondUnbonding(address, role, res_tx) => {
                     let _ = res_tx.send(

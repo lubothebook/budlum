@@ -157,7 +157,11 @@ fn the_signature_commits_the_fields_the_manifest_id_leaves_out() {
 
     let mut other_len = m.clone();
     other_len.content_size = m.content_size.saturating_sub(1);
-    assert_ne!(hash_of(other_len), base, "content_size is outside the id");
+    assert_ne!(
+        hash_of(other_len),
+        base,
+        "content_size is committed by the signature"
+    );
 }
 
 fn declare_policy_tx(from: Address, m: &ContentManifest, nonce: u64) -> Transaction {

@@ -1512,9 +1512,10 @@ fn encode_vault_tx(tx: &crate::socialfi::VaultTx, out: &mut Vec<u8>) {
 
 /// Canonical preimage of a storage transaction.
 ///
-/// A manifest is committed whole: its id, the fields the id leaves out, and
-/// then the shards, the scheme, the dictionary, the source, the edition and
-/// the encryption claim written out. A relay that rewrites any field changes
+/// A manifest is committed whole: its id, the owner and sizes (written out
+/// again so the signature does not rely on the id alone), and then the
+/// shards, the scheme, the dictionary, the source, the edition and the
+/// encryption claim written out. A relay that rewrites any field changes
 /// the signing hash, so a bad copy cannot take the place of the honest one in
 /// a mempool that dedups on the hash.
 fn encode_storage_tx(tx: &crate::domain::storage_tx::StorageTx, out: &mut Vec<u8>) {
