@@ -9,15 +9,21 @@
 //!
 //! This family moves those writes into the block. Each variant is applied by
 //! the executor's `Storage` arm, inside block execution, from a transaction
-//! the sender signed. It has three variants: manifest registration, the
-//! operator class declaration and the self-host policy declaration. Deals,
-//! challenges and coding audits follow in their own steps, so each one lands
-//! with its own tests.
+//! the sender signed. It has four variants: manifest registration, the
+//! operator class declaration, the self-host policy declaration and opening a
+//! deal. Challenges and coding audits follow in their own steps, so each one
+//! lands with its own tests.
 
 use crate::core::account::AccountState;
 use crate::core::address::Address;
-use crate::domain::storage_deal::{DealStatus, OperatorClass};
-use crate::storage::{ContentId, ContentManifest, MobileSelfContentPolicy, MobileSelfProfile};
+use crate::core::hash::hash_fields_bytes;
+use crate::domain::deal_open::{open_deal_escrowed, DealOpenTerms};
+use crate::domain::storage_deal::{DealStatus, OperatorClass, StorageEconomicsParams};
+use crate::domain::storage_params::STORAGE_MIN_OPERATOR_BOND;
+use crate::domain::Hash32;
+use crate::storage::{
+    ContentId, ContentManifest, GrantAuthorization, MobileSelfContentPolicy, MobileSelfProfile,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -41,6 +47,51 @@ pub enum StorageTx {
         policy: MobileSelfContentPolicy,
         profile: MobileSelfProfile,
     },
+    /// Open a paid storage deal. The sender is the payer: the fee is escrowed
+    /// from the sender. The operator's bond is locked only when the body
+    /// carries the operator's own signed consent.
+    OpenDeal(StorageDealOpen),
+}
+
+/// The body of [`StorageTx::OpenDeal`].
+///
+/// There is no payer field: the payer is the transaction sender. There is no
+/// manifest either: it is read from the registry, so the deal prices and
+/// places the content the owner registered and not a copy the sender
+/// supplies.
+///
+/// The merkle envelope is optional in the registry and optional here by
+/// encoding: an empty `merkle_proof` means none and an all-zero
+/// `storage_root` means none. The registry refuses a deal without both, so in
+/// block today an open that leaves either empty is refused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StorageDealOpen {
+    pub domain_id: u32,
+    pub manifest_id: ContentId,
+    pub shard_id: ContentId,
+    pub operator: Address,
+    pub replica_index: u8,
+    pub start_epoch: u64,
+    pub end_epoch: u64,
+    pub economics: StorageEconomicsParams,
+    /// Serialized proof envelope. Empty means none.
+    pub merkle_proof: Vec<u8>,
+    /// Storage root the proof is checked against. All zero means none.
+    pub storage_root: Hash32,
+    /// The operator's ML-DSA consent to hold this shard, signed over
+    /// [`open_deal_consent_digest`].
+    pub operator_consent: GrantAuthorization,
+}
+
+/// What the executor knows about the transaction and the sender, handed to
+/// the storage handlers. `nonce` is the sender's account nonce before the
+/// executor advances it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StorageTxContext {
+    pub sender: Address,
+    pub nonce: u64,
+    pub chain_id: u64,
+    pub fee: u64,
 }
 
 /// Why a storage transaction was refused. Every refusal leaves the registry
@@ -80,6 +131,14 @@ pub enum StorageTxError {
     PolicyOwnerIsNotSender { owner: Address, sender: Address },
     /// The policy's `content_id` is not a shard of the named manifest.
     PolicyContentNotInManifest,
+    /// Deals are not opened in block on mainnet yet.
+    OpenDealOnMainnet,
+    /// The operator's consent does not verify for this deal, this payer and
+    /// this nonce.
+    OperatorConsentRefused(String),
+    /// The deal-open rules refused the open: cooldown, balances, bond,
+    /// placement, merkle envelope or epoch range.
+    DealRefused(String),
 }
 
 impl fmt::Display for StorageTxError {
@@ -114,13 +173,23 @@ impl fmt::Display for StorageTxError {
             Self::PolicyContentNotInManifest => {
                 write!(f, "policy content id is not a shard of the manifest")
             }
+            Self::OpenDealOnMainnet => {
+                write!(
+                    f,
+                    "opening a storage deal in block is not enabled on mainnet"
+                )
+            }
+            Self::OperatorConsentRefused(e) => {
+                write!(f, "the operator's consent was refused: {e}")
+            }
+            Self::DealRefused(e) => write!(f, "storage deal refused: {e}"),
         }
     }
 }
 
 impl std::error::Error for StorageTxError {}
 
-/// Apply one storage transaction to `state` on behalf of `sender`.
+/// Apply one storage transaction to `state` on behalf of `ctx.sender`.
 ///
 /// Every check runs before the registry is written, so a refusal changes
 /// nothing. The executor charges the fee and advances the nonce only when
@@ -131,9 +200,10 @@ impl std::error::Error for StorageTxError {}
 /// Returns the [`StorageTxError`] variant that names the failed check.
 pub fn execute_storage_tx(
     state: &mut AccountState,
-    sender: &Address,
+    ctx: &StorageTxContext,
     tx: &StorageTx,
 ) -> Result<(), StorageTxError> {
+    let sender = &ctx.sender;
     match tx {
         StorageTx::RegisterManifest { manifest } => register_manifest(state, sender, manifest),
         StorageTx::DeclareOperatorClass { class } => declare_operator_class(state, sender, *class),
@@ -142,7 +212,104 @@ pub fn execute_storage_tx(
             policy,
             profile,
         } => declare_self_host_policy(state, sender, manifest_id, policy, profile),
+        StorageTx::OpenDeal(open) => open_deal(state, ctx, open),
     }
+}
+
+/// Digest the operator signs to consent to one deal-open.
+///
+/// It binds the chain, the payer, the payer's account nonce and every body
+/// field except the consent itself, so the consent cannot move to another
+/// chain, payer, placement or price, and it is spent when the payer's nonce
+/// advances.
+#[must_use]
+pub fn open_deal_consent_digest(
+    chain_id: u64,
+    payer: &Address,
+    nonce: u64,
+    open: &StorageDealOpen,
+) -> [u8; 32] {
+    hash_fields_bytes(&[
+        b"BDLM_STORAGE_OPEN_DEAL_TX_V1",
+        &chain_id.to_le_bytes(),
+        payer.as_bytes(),
+        &nonce.to_le_bytes(),
+        &open.domain_id.to_le_bytes(),
+        open.manifest_id.as_bytes(),
+        open.shard_id.as_bytes(),
+        open.operator.as_bytes(),
+        &[open.replica_index],
+        &open.start_epoch.to_le_bytes(),
+        &open.end_epoch.to_le_bytes(),
+        &open.economics.operator_bond.to_le_bytes(),
+        &open.economics.fee_per_byte_epoch.to_le_bytes(),
+        &open.merkle_proof,
+        &open.storage_root,
+    ])
+}
+
+fn open_deal(
+    state: &mut AccountState,
+    ctx: &StorageTxContext,
+    open: &StorageDealOpen,
+) -> Result<(), StorageTxError> {
+    if ctx.chain_id
+        == crate::core::chain_config::Network::Mainnet
+            .chain_id()
+            .value()
+    {
+        return Err(StorageTxError::OpenDealOnMainnet);
+    }
+    // Cloned so the registry can be written while the terms borrow it.
+    let manifest = state
+        .storage_registry
+        .get_manifest(&open.manifest_id)
+        .ok_or(StorageTxError::ManifestNotRegistered)?
+        .clone();
+    let digest = open_deal_consent_digest(ctx.chain_id, &ctx.sender, ctx.nonce, open);
+    open.operator_consent
+        .verify(&digest, &open.operator)
+        .map_err(|e| StorageTxError::OperatorConsentRefused(e.to_string()))?;
+
+    let terms = DealOpenTerms {
+        domain_id: open.domain_id,
+        manifest: &manifest,
+        shard_id: open.shard_id,
+        operator: open.operator,
+        replica_index: open.replica_index,
+        start_epoch: open.start_epoch,
+        end_epoch: open.end_epoch,
+        economics: open.economics.clone(),
+        merkle_proof: if open.merkle_proof.is_empty() {
+            None
+        } else {
+            Some(open.merkle_proof.clone())
+        },
+        storage_root: if open.storage_root == [0u8; 32] {
+            None
+        } else {
+            Some(open.storage_root)
+        },
+    };
+    // The executor charges the fee after this returns, so the payer must
+    // still hold it. When the payer is also the operator the bond comes out
+    // of the same balance and is part of what must remain.
+    let payer_reserve = if ctx.sender == open.operator {
+        ctx.fee.saturating_add(open.economics.operator_bond)
+    } else {
+        ctx.fee
+    };
+    let now_unix_secs = state.current_block_unix_secs;
+    open_deal_escrowed(
+        state,
+        &terms,
+        ctx.sender,
+        now_unix_secs,
+        STORAGE_MIN_OPERATOR_BOND,
+        payer_reserve,
+    )
+    .map(|_| ())
+    .map_err(StorageTxError::DealRefused)
 }
 
 fn declare_operator_class(
@@ -251,6 +418,15 @@ mod tests {
         Address::from([7u8; 32])
     }
 
+    fn ctx(sender: Address) -> StorageTxContext {
+        StorageTxContext {
+            sender,
+            nonce: 0,
+            chain_id: 45262,
+            fee: 0,
+        }
+    }
+
     fn manifest_owned_by(who: Address) -> ContentManifest {
         // Distinct bytes per stripe: identical data shards share a content
         // id, and a code word that repeats one is refused.
@@ -267,7 +443,7 @@ mod tests {
         let m = manifest_owned_by(owner());
         execute_storage_tx(
             &mut state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::RegisterManifest {
                 manifest: m.clone(),
             },
@@ -286,7 +462,7 @@ mod tests {
         let stranger = Address::from([9u8; 32]);
         let err = execute_storage_tx(
             &mut state,
-            &stranger,
+            &ctx(stranger),
             &StorageTx::RegisterManifest {
                 manifest: m.clone(),
             },
@@ -306,7 +482,7 @@ mod tests {
         m.manifest_id = crate::storage::ContentId::of(b"chosen by the caller");
         let err = execute_storage_tx(
             &mut state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::RegisterManifest {
                 manifest: m.clone(),
             },
@@ -323,10 +499,10 @@ mod tests {
         let tx = StorageTx::RegisterManifest {
             manifest: m.clone(),
         };
-        execute_storage_tx(&mut state, &owner(), &tx).expect("first");
+        execute_storage_tx(&mut state, &ctx(owner()), &tx).expect("first");
         let root = state.storage_registry.root();
         assert_eq!(
-            execute_storage_tx(&mut state, &owner(), &tx).unwrap_err(),
+            execute_storage_tx(&mut state, &ctx(owner()), &tx).unwrap_err(),
             StorageTxError::AlreadyRegistered
         );
         assert_eq!(state.storage_registry.root(), root);
@@ -336,7 +512,7 @@ mod tests {
         let m = manifest_owned_by(owner());
         execute_storage_tx(
             state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::RegisterManifest {
                 manifest: m.clone(),
             },
@@ -425,7 +601,7 @@ mod tests {
         let mut state = AccountState::new();
         execute_storage_tx(
             &mut state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::DeclareOperatorClass {
                 class: OperatorClass::Mobile,
             },
@@ -443,7 +619,7 @@ mod tests {
         let root = state.storage_registry.root();
         let err = execute_storage_tx(
             &mut state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::DeclareOperatorClass {
                 class: OperatorClass::AlwaysOn,
             },
@@ -461,7 +637,7 @@ mod tests {
         let root = state.storage_registry.root();
         let err = execute_storage_tx(
             &mut state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::DeclareOperatorClass {
                 class: OperatorClass::Mobile,
             },
@@ -478,7 +654,7 @@ mod tests {
         open_deal_for(&mut state, &m, Address::from([8u8; 32]), 0);
         execute_storage_tx(
             &mut state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::DeclareOperatorClass {
                 class: OperatorClass::Mobile,
             },
@@ -492,7 +668,8 @@ mod tests {
         let m = registered(&mut state);
         let shard = m.shards[0].shard_id;
         let policy = policy_for(owner(), shard);
-        execute_storage_tx(&mut state, &owner(), &policy_tx(&m, policy.clone())).expect("declares");
+        execute_storage_tx(&mut state, &ctx(owner()), &policy_tx(&m, policy.clone()))
+            .expect("declares");
         assert_eq!(
             state
                 .storage_registry
@@ -508,7 +685,7 @@ mod tests {
         let m = manifest_owned_by(owner());
         let tx = policy_tx(&m, policy_for(owner(), m.shards[0].shard_id));
         assert_eq!(
-            execute_storage_tx(&mut state, &owner(), &tx).unwrap_err(),
+            execute_storage_tx(&mut state, &ctx(owner()), &tx).unwrap_err(),
             StorageTxError::ManifestNotRegistered
         );
         assert!(state.storage_registry.self_host_policies.is_empty());
@@ -524,7 +701,7 @@ mod tests {
             policy: policy_for(stranger, m.shards[0].shard_id),
             profile: profile_for(stranger),
         };
-        let err = execute_storage_tx(&mut state, &stranger, &tx).unwrap_err();
+        let err = execute_storage_tx(&mut state, &ctx(stranger), &tx).unwrap_err();
         assert!(matches!(err, StorageTxError::OwnerIsNotSender { .. }));
         assert!(state.storage_registry.self_host_policies.is_empty());
     }
@@ -535,7 +712,7 @@ mod tests {
         let m = registered(&mut state);
         let other = Address::from([9u8; 32]);
         let tx = policy_tx(&m, policy_for(other, m.shards[0].shard_id));
-        let err = execute_storage_tx(&mut state, &owner(), &tx).unwrap_err();
+        let err = execute_storage_tx(&mut state, &ctx(owner()), &tx).unwrap_err();
         assert!(matches!(err, StorageTxError::PolicyOwnerIsNotSender { .. }));
         assert!(state.storage_registry.self_host_policies.is_empty());
     }
@@ -546,7 +723,7 @@ mod tests {
         let m = registered(&mut state);
         let tx = policy_tx(&m, policy_for(owner(), ContentId::of(b"not a shard")));
         assert_eq!(
-            execute_storage_tx(&mut state, &owner(), &tx).unwrap_err(),
+            execute_storage_tx(&mut state, &ctx(owner()), &tx).unwrap_err(),
             StorageTxError::PolicyContentNotInManifest
         );
         assert!(state.storage_registry.self_host_policies.is_empty());
@@ -559,7 +736,8 @@ mod tests {
         let mut policy = policy_for(owner(), m.shards[0].shard_id);
         policy.critical = true;
         policy.required_paid_replicas = 0;
-        let err = execute_storage_tx(&mut state, &owner(), &policy_tx(&m, policy)).unwrap_err();
+        let err =
+            execute_storage_tx(&mut state, &ctx(owner()), &policy_tx(&m, policy)).unwrap_err();
         assert!(matches!(err, StorageTxError::Refused(_)));
         assert!(state.storage_registry.self_host_policies.is_empty());
     }
@@ -572,7 +750,7 @@ mod tests {
         let root = state.storage_registry.root();
         let err = execute_storage_tx(
             &mut state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::DeclareOperatorClass {
                 class: OperatorClass::Mobile,
             },
@@ -589,8 +767,12 @@ mod tests {
         let shard = first.shards[0].shard_id;
         let mut policy = policy_for(owner(), shard);
         policy.required_paid_replicas = 0;
-        execute_storage_tx(&mut state, &owner(), &policy_tx(&first, policy.clone()))
-            .expect("first owner declares");
+        execute_storage_tx(
+            &mut state,
+            &ctx(owner()),
+            &policy_tx(&first, policy.clone()),
+        )
+        .expect("first owner declares");
 
         // Same shards, one id-relevant field changed, a different owner.
         let attacker = Address::from([9u8; 32]);
@@ -601,7 +783,7 @@ mod tests {
         second.owner = attacker;
         execute_storage_tx(
             &mut state,
-            &attacker,
+            &ctx(attacker),
             &StorageTx::RegisterManifest {
                 manifest: second.clone(),
             },
@@ -613,7 +795,7 @@ mod tests {
         hostile.self_host_allowed = false;
         execute_storage_tx(
             &mut state,
-            &attacker,
+            &ctx(attacker),
             &StorageTx::DeclareSelfHostPolicy {
                 manifest_id: second.manifest_id,
                 policy: hostile,
@@ -653,7 +835,7 @@ mod tests {
             manifest_owned_by(owner()).with_source(crate::storage::ContentSource::Generated(spec));
         let err = execute_storage_tx(
             &mut state,
-            &owner(),
+            &ctx(owner()),
             &StorageTx::RegisterManifest { manifest: m },
         )
         .unwrap_err();

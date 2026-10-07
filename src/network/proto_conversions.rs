@@ -2318,6 +2318,27 @@ mod tests {
                     last_seen_block: 9,
                 },
             }),
+            TransactionType::Storage(crate::domain::StorageTx::OpenDeal(
+                crate::domain::StorageDealOpen {
+                    domain_id: 7,
+                    manifest_id: crate::storage::ContentId([1u8; 32]),
+                    shard_id: crate::storage::ContentId([2u8; 32]),
+                    operator: to,
+                    replica_index: 1,
+                    start_epoch: 3,
+                    end_epoch: 13,
+                    economics: crate::domain::StorageEconomicsParams {
+                        operator_bond: 1_000_000,
+                        fee_per_byte_epoch: 17,
+                    },
+                    merkle_proof: vec![9u8; 40],
+                    storage_root: [4u8; 32],
+                    operator_consent: crate::storage::GrantAuthorization {
+                        owner_key: [5u8; crate::crypto::primitives::ML_DSA_87_PUBLIC_KEY_LEN],
+                        signature: vec![6u8; 64],
+                    },
+                },
+            )),
             TransactionType::Identity(crate::registry::IdentityTx::Register {
                 record: crate::registry::IdentityRecord::new(
                     from,

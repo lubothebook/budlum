@@ -1201,7 +1201,12 @@ impl Transaction {
             // registry arms already price.
             TransactionType::Vault(_) => schedule.contract_call_gas * 2,
             // A registry write that re-derives the manifest id over every
-            // shard: priced like the registry arms beside it.
+            // shard: priced like the registry arms beside it. Opening a deal
+            // also verifies the operator's consent signature, so it adds
+            // one signature check on top.
+            TransactionType::Storage(crate::domain::storage_tx::StorageTx::OpenDeal(_)) => {
+                schedule.contract_call_gas * 2 + schedule.gas_per_signature
+            }
             TransactionType::Storage(_) => schedule.contract_call_gas * 2,
         };
         let signature_gas = if self.signature.is_some() {
@@ -1565,6 +1570,24 @@ fn encode_storage_tx(tx: &crate::domain::storage_tx::StorageTx, out: &mut Vec<u8
             put_u8(out, u8::from(profile.metered_network_ok));
             put_u8(out, u8::from(profile.battery_saver_aware));
             put_u64(out, profile.last_seen_block);
+        }
+        crate::domain::storage_tx::StorageTx::OpenDeal(open) => {
+            put_u8(out, 3);
+            put_u32(out, open.domain_id);
+            put_fixed(out, open.manifest_id.as_bytes());
+            put_fixed(out, open.shard_id.as_bytes());
+            put_fixed(out, open.operator.as_bytes());
+            put_u8(out, open.replica_index);
+            put_u64(out, open.start_epoch);
+            put_u64(out, open.end_epoch);
+            put_u64(out, open.economics.operator_bond);
+            put_u64(out, open.economics.fee_per_byte_epoch);
+            put_bytes(out, &open.merkle_proof);
+            put_fixed(out, &open.storage_root);
+            // The consent is committed whole, signature included, so a relay
+            // cannot strip it or swap in another valid one.
+            put_fixed(out, &open.operator_consent.owner_key);
+            put_bytes(out, &open.operator_consent.signature);
         }
     }
 }

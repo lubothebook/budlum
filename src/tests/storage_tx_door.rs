@@ -475,3 +475,391 @@ fn a_generated_registration_is_refused_and_charges_nothing() {
     assert_eq!(state.get_balance(&alice), 1_000);
     assert_eq!(state.get_nonce(&alice), 0);
 }
+
+/// Opening a deal in block: the payer is the sender and the operator's bond
+/// is locked only with the operator's own signed consent.
+#[cfg(feature = "wallet-ml-dsa")]
+mod open_deal {
+    use super::*;
+    use crate::crypto::primitives::WalletKeyPair;
+    use crate::domain::storage_deal::{StorageEconomicsParams, FEE_RATE_SCALE};
+    use crate::domain::storage_params::STORAGE_MIN_OPERATOR_BOND;
+    use crate::domain::{
+        open_deal_consent_digest, StorageDealOpen, MISSED_CHALLENGE_COOLDOWN_SECS,
+    };
+    use crate::storage::GrantAuthorization;
+
+    const MAINNET: u64 = 45260;
+    const PAYER_FUNDS: u64 = 5_000;
+    /// Ten epochs at ten base units an epoch.
+    const DEAL_FEE: u64 = 100;
+    /// The fee `storage_tx` puts on every transaction.
+    const TX_FEE: u64 = 1;
+
+    fn proof() -> Vec<u8> {
+        let envelope = bud_proof::ProofEnvelope {
+            proof_format_version: 1,
+            backend: "test-backend".to_string(),
+            p3_version: "0.6".to_string(),
+            fri_params_id: "test-fri".to_string(),
+            public_inputs_hash: [0x42u8; 32],
+            proof_bytes: vec![0xABu8; 96],
+            degree_bits: 8,
+        };
+        bincode::serialize(&envelope).unwrap()
+    }
+
+    fn payer() -> Address {
+        addr(21)
+    }
+
+    fn deal_manifest() -> ContentManifest {
+        let mut m = ContentManifest::from_bytes_sliced(b"open a deal in block payload", 8).unwrap();
+        m.owner = payer();
+        m
+    }
+
+    /// A chain with the manifest registered, the payer funded and an operator
+    /// that holds enough for the bond.
+    fn world() -> (AccountState, ContentManifest, WalletKeyPair) {
+        let mut state = AccountState::new();
+        let m = deal_manifest();
+        state.storage_registry.register_manifest(&m);
+        state.add_balance(&payer(), PAYER_FUNDS);
+        let op = WalletKeyPair::generate();
+        state.add_balance(&op.address(), STORAGE_MIN_OPERATOR_BOND * 2);
+        (state, m, op)
+    }
+
+    fn unsigned_body(m: &ContentManifest, op: &WalletKeyPair) -> StorageDealOpen {
+        let shard_bytes = u64::from(m.shards[0].size);
+        StorageDealOpen {
+            domain_id: 42,
+            manifest_id: m.manifest_id,
+            shard_id: m.shards[0].shard_id,
+            operator: op.address(),
+            replica_index: 0,
+            start_epoch: 0,
+            end_epoch: 10,
+            economics: StorageEconomicsParams {
+                operator_bond: STORAGE_MIN_OPERATOR_BOND,
+                fee_per_byte_epoch: 10 * (FEE_RATE_SCALE as u64) / shard_bytes,
+            },
+            merkle_proof: proof(),
+            storage_root: [0x42u8; 32],
+            operator_consent: GrantAuthorization {
+                owner_key: op.public_key_bytes(),
+                signature: Vec::new(),
+            },
+        }
+    }
+
+    fn consent(
+        op: &WalletKeyPair,
+        chain_id: u64,
+        payer_address: &Address,
+        nonce: u64,
+        body: &StorageDealOpen,
+    ) -> GrantAuthorization {
+        let digest = open_deal_consent_digest(chain_id, payer_address, nonce, body);
+        GrantAuthorization {
+            owner_key: op.public_key_bytes(),
+            signature: op.sign(&digest).to_vec(),
+        }
+    }
+
+    /// A body signed for the payer's current nonce on the default chain.
+    fn signed_body(m: &ContentManifest, op: &WalletKeyPair) -> StorageDealOpen {
+        let mut body = unsigned_body(m, op);
+        body.operator_consent = consent(op, DEFAULT_CHAIN_ID, &payer(), 0, &body);
+        body
+    }
+
+    fn open_tx(body: StorageDealOpen, chain_id: u64) -> Transaction {
+        Transaction::new_with_chain_id(
+            payer(),
+            Address::zero(),
+            0,
+            TX_FEE,
+            0,
+            vec![],
+            chain_id,
+            TransactionType::Storage(StorageTx::OpenDeal(body)),
+        )
+    }
+
+    /// What a refused open must leave exactly as it was.
+    fn snapshot(state: &mut AccountState, op: &Address) -> (u64, u64, u64, String) {
+        (
+            state.get_balance(&payer()),
+            state.get_balance(op),
+            state.get_nonce(&payer()),
+            state.calculate_state_root(),
+        )
+    }
+
+    fn assert_refused_untouched(
+        state: &mut AccountState,
+        op: &Address,
+        tx: Transaction,
+        expected: &str,
+    ) {
+        let before = snapshot(state, op);
+        let err = apply(state, tx).unwrap_err();
+        assert!(err.contains(expected), "got {err}, wanted {expected}");
+        assert_eq!(snapshot(state, op), before, "a refusal must not write");
+    }
+
+    #[test]
+    fn a_consented_open_escrows_the_fee_locks_the_bond_and_moves_the_root() {
+        let (mut state, m, op) = world();
+        let before = state.calculate_state_root();
+
+        apply(&mut state, open_tx(signed_body(&m, &op), DEFAULT_CHAIN_ID)).expect("opens");
+
+        assert_eq!(
+            state.get_balance(&payer()),
+            PAYER_FUNDS - DEAL_FEE - TX_FEE,
+            "escrow and the transaction fee are charged to the payer"
+        );
+        assert_eq!(
+            state.get_balance(&op.address()),
+            STORAGE_MIN_OPERATOR_BOND,
+            "the operator's bond is locked"
+        );
+        assert_eq!(state.get_nonce(&payer()), 1);
+        assert_eq!(state.storage_registry.deals_iter().count(), 1);
+        assert_ne!(state.calculate_state_root(), before);
+    }
+
+    #[test]
+    fn a_consent_signed_for_another_digest_is_refused() {
+        let (mut state, m, op) = world();
+        let mut body = unsigned_body(&m, &op);
+        // Signed over a different price than the one the body carries.
+        let mut other = body.clone();
+        other.economics.fee_per_byte_epoch += 1;
+        body.operator_consent = consent(&op, DEFAULT_CHAIN_ID, &payer(), 0, &other);
+
+        assert_refused_untouched(
+            &mut state,
+            &op.address(),
+            open_tx(body, DEFAULT_CHAIN_ID),
+            "consent",
+        );
+        assert_eq!(state.storage_registry.deals_iter().count(), 0);
+    }
+
+    #[test]
+    fn a_consent_signed_for_another_nonce_is_refused() {
+        let (mut state, m, op) = world();
+        let mut body = unsigned_body(&m, &op);
+        body.operator_consent = consent(&op, DEFAULT_CHAIN_ID, &payer(), 1, &body);
+
+        assert_refused_untouched(
+            &mut state,
+            &op.address(),
+            open_tx(body, DEFAULT_CHAIN_ID),
+            "consent",
+        );
+    }
+
+    #[test]
+    fn a_consent_is_spent_by_the_nonce_it_was_signed_for() {
+        let (mut state, m, op) = world();
+        let body = signed_body(&m, &op);
+        apply(&mut state, open_tx(body.clone(), DEFAULT_CHAIN_ID)).expect("opens");
+        // The same signed body again: the payer's nonce moved on.
+        assert_refused_untouched(
+            &mut state,
+            &op.address(),
+            open_tx(body, DEFAULT_CHAIN_ID),
+            "consent",
+        );
+    }
+
+    #[test]
+    fn a_consent_from_another_operator_is_refused() {
+        let (mut state, m, op) = world();
+        let stranger = WalletKeyPair::generate();
+        let mut body = unsigned_body(&m, &op);
+        // Valid signature, over the right digest, by a key that is not the
+        // operator named in the body.
+        body.operator_consent = consent(&stranger, DEFAULT_CHAIN_ID, &payer(), 0, &body);
+
+        assert_refused_untouched(
+            &mut state,
+            &op.address(),
+            open_tx(body, DEFAULT_CHAIN_ID),
+            "consent",
+        );
+    }
+
+    #[test]
+    fn a_missing_consent_signature_is_refused() {
+        let (mut state, m, op) = world();
+        assert_refused_untouched(
+            &mut state,
+            &op.address(),
+            open_tx(unsigned_body(&m, &op), DEFAULT_CHAIN_ID),
+            "consent",
+        );
+    }
+
+    #[test]
+    fn an_unregistered_manifest_is_refused() {
+        let (mut state, m, op) = world();
+        let mut body = unsigned_body(&m, &op);
+        body.manifest_id = ContentId([0xEEu8; 32]);
+        body.operator_consent = consent(&op, DEFAULT_CHAIN_ID, &payer(), 0, &body);
+
+        assert_refused_untouched(
+            &mut state,
+            &op.address(),
+            open_tx(body, DEFAULT_CHAIN_ID),
+            "not registered",
+        );
+    }
+
+    #[test]
+    fn an_operator_in_cooldown_is_refused_until_the_cooldown_ends() {
+        let (mut state, m, op) = world();
+        let start = 1_000;
+        state
+            .storage_registry
+            .begin_operator_cooldown(op.address(), start);
+        state.current_block_unix_secs = start;
+        let body = signed_body(&m, &op);
+
+        assert_refused_untouched(
+            &mut state,
+            &op.address(),
+            open_tx(body.clone(), DEFAULT_CHAIN_ID),
+            "missed a challenge",
+        );
+
+        state.current_block_unix_secs = start + MISSED_CHALLENGE_COOLDOWN_SECS;
+        apply(&mut state, open_tx(body, DEFAULT_CHAIN_ID)).expect("the cooldown has ended");
+        assert_eq!(state.storage_registry.deals_iter().count(), 1);
+    }
+
+    #[test]
+    fn mainnet_refuses_to_open_a_deal_in_block() {
+        let (mut state, m, op) = world();
+        let mut body = unsigned_body(&m, &op);
+        body.operator_consent = consent(&op, MAINNET, &payer(), 0, &body);
+
+        assert_refused_untouched(&mut state, &op.address(), open_tx(body, MAINNET), "mainnet");
+    }
+
+    #[test]
+    fn a_value_carrying_open_is_refused_before_anything_moves() {
+        let (mut state, m, op) = world();
+        let mut tx = open_tx(signed_body(&m, &op), DEFAULT_CHAIN_ID);
+        tx.amount = 5;
+        assert_refused_untouched(&mut state, &op.address(), tx, "storage_amount_must_be_zero");
+    }
+
+    #[test]
+    fn a_payer_who_cannot_keep_the_fee_after_escrow_is_refused() {
+        let (mut state, m, op) = world();
+        // Enough for the escrow, not for the escrow and the transaction fee.
+        let funds = state.get_balance(&payer());
+        state.get_or_create(&payer()).balance = DEAL_FEE;
+        assert!(funds > DEAL_FEE);
+
+        assert_refused_untouched(
+            &mut state,
+            &op.address(),
+            open_tx(signed_body(&m, &op), DEFAULT_CHAIN_ID),
+            "Insufficient payer balance",
+        );
+    }
+
+    #[test]
+    fn a_payer_who_is_also_the_operator_keeps_the_fee_after_the_bond() {
+        let mut state = AccountState::new();
+        let op = WalletKeyPair::generate();
+        let mut m = deal_manifest();
+        m.owner = op.address();
+        state.storage_registry.register_manifest(&m);
+        // Covers the escrow and the bond but not the transaction fee as well.
+        state.add_balance(&op.address(), DEAL_FEE + STORAGE_MIN_OPERATOR_BOND);
+        let mut body = unsigned_body(&m, &op);
+        body.operator_consent = consent(&op, DEFAULT_CHAIN_ID, &op.address(), 0, &body);
+        let tx = Transaction::new_with_chain_id(
+            op.address(),
+            Address::zero(),
+            0,
+            TX_FEE,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::Storage(StorageTx::OpenDeal(body)),
+        );
+
+        let before = state.get_balance(&op.address());
+        let root = state.calculate_state_root();
+        let err = apply(&mut state, tx).unwrap_err();
+        assert!(err.contains("Insufficient payer balance"), "{err}");
+        assert_eq!(state.get_balance(&op.address()), before);
+        assert_eq!(state.calculate_state_root(), root);
+    }
+
+    #[test]
+    fn a_relay_rewriting_any_open_field_changes_the_signing_hash() {
+        let (_, m, op) = world();
+        let base = signed_body(&m, &op);
+        let hash_of = |b: &StorageDealOpen| open_tx(b.clone(), DEFAULT_CHAIN_ID).calculate_hash();
+        let honest = hash_of(&base);
+
+        let mut variants: Vec<(&str, StorageDealOpen)> = Vec::new();
+        let mut v = base.clone();
+        v.domain_id += 1;
+        variants.push(("domain_id", v));
+        let mut v = base.clone();
+        v.manifest_id = ContentId([1u8; 32]);
+        variants.push(("manifest_id", v));
+        let mut v = base.clone();
+        v.shard_id = ContentId([2u8; 32]);
+        variants.push(("shard_id", v));
+        let mut v = base.clone();
+        v.operator = addr(3);
+        variants.push(("operator", v));
+        let mut v = base.clone();
+        v.replica_index += 1;
+        variants.push(("replica_index", v));
+        let mut v = base.clone();
+        v.start_epoch += 1;
+        variants.push(("start_epoch", v));
+        let mut v = base.clone();
+        v.end_epoch += 1;
+        variants.push(("end_epoch", v));
+        let mut v = base.clone();
+        v.economics.operator_bond += 1;
+        variants.push(("economics.operator_bond", v));
+        let mut v = base.clone();
+        v.economics.fee_per_byte_epoch += 1;
+        variants.push(("economics.fee_per_byte_epoch", v));
+        let mut v = base.clone();
+        v.merkle_proof.push(0);
+        variants.push(("merkle_proof", v));
+        let mut v = base.clone();
+        v.storage_root[0] ^= 1;
+        variants.push(("storage_root", v));
+        let mut v = base.clone();
+        v.operator_consent.owner_key[0] ^= 1;
+        variants.push(("operator_consent.owner_key", v));
+        let mut v = base.clone();
+        v.operator_consent.signature[0] ^= 1;
+        variants.push(("operator_consent.signature", v));
+
+        for (field, variant) in variants {
+            assert_ne!(
+                hash_of(&variant),
+                honest,
+                "{field} is not in the signing hash"
+            );
+        }
+    }
+}

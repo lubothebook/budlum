@@ -2476,7 +2476,16 @@ impl Executor {
                         "insufficient balance for the storage transaction fee",
                     ));
                 }
-                crate::domain::execute_storage_tx(state, &tx.from, storage_tx)
+                // The nonce is read before the epilogue below advances it:
+                // an operator's consent to a deal-open is bound to it, so
+                // the consent is spent by this transaction.
+                let ctx = crate::domain::StorageTxContext {
+                    sender: tx.from,
+                    nonce: state.get_nonce(&tx.from),
+                    chain_id: tx.chain_id,
+                    fee: tx.fee,
+                };
+                crate::domain::execute_storage_tx(state, &ctx, storage_tx)
                     .map_err(|e| BudlumError::validation("storage_tx_failed", e.to_string()))?;
                 let sender = state.get_or_create(&tx.from);
                 sender.balance = sender.balance.checked_sub(tx.fee).ok_or_else(|| {
