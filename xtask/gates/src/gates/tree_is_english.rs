@@ -7,7 +7,9 @@
 //!
 //! # What is allowed to stay Turkish
 //!
-//! Exactly three things:
+//! Exactly three things (plus the owner's directive documents named in
+//! [`ALLOWED_FILES`], and the Turkish agent definitions under
+//! `.claude/agents/`, which are the owner's directive in agent form):
 //!
 //!   * [`ALLOWED_FILES`] - `README.tr.md` is a deliberate translation for
 //!     Turkish readers and is published as such.
@@ -94,6 +96,14 @@ const ALLOWED_FILES: &[&str] = &[
     // the file is honest; the alternative is obfuscating the dictionary until
     // nobody can audit what the gate actually bans.
     "tree_is_english.rs",
+    // The owner's Turkish directive documents. They are binding instructions
+    // written by the owner for every session and are kept in the owner's
+    // words; translating them would change the owner's rules. Exempt by exact
+    // file name only, so a look-alike name is still a finding.
+    "CLAUDE.md",
+    "MODEL_ROUTING.md",
+    "MODEL_ROUTING_KURULUM.md",
+    "BUD-AI-KAPSAMLI-DIREKTIF.md",
 ];
 
 /// Path fragments whose contents are a Turkish localisation.
@@ -103,7 +113,11 @@ const ALLOWED_FILES: &[&str] = &[
 /// so that a localisation gains files without the gate having to be edited,
 /// and it is deliberately narrow - only the Turkish locale of the browser,
 /// never a source tree.
-const ALLOWED_DIRS: &[&str] = &["browser/l10n/tr-TR/"];
+///
+/// `.claude/agents/` holds the owner's Turkish agent definitions. Like the
+/// directive documents they are the owner's words and are kept verbatim;
+/// `.claude/` elsewhere is not exempt.
+const ALLOWED_DIRS: &[&str] = &["browser/l10n/tr-TR/", ".claude/agents/"];
 
 /// The one Turkish word that may appear anywhere: the label on the link to the
 /// Turkish README. Scrubbed before both scans.
@@ -972,6 +986,43 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         ));
     }
 
+    // The owner's Turkish directive documents are exempt by exact file name.
+    for name in [
+        "CLAUDE.md",
+        "MODEL_ROUTING.md",
+        "MODEL_ROUTING_KURULUM.md",
+        "BUD-AI-KAPSAMLI-DIREKTIF.md",
+    ] {
+        if !counted_accepts_with(
+            &mut ran,
+            clean,
+            tmp,
+            "directive",
+            name,
+            "# Direktif\n\nBu belge sahibin kuralıdır; kanit dogrulama.\n",
+        )? {
+            let _ = fs::remove_dir_all(tmp);
+            return Err(format!(
+                "canary: {name} was rejected, but it is an owner directive document"
+            ));
+        }
+    }
+
+    // A look-alike name is not exempt: the exemption is by exact file name.
+    if counted_accepts_with(
+        &mut ran,
+        clean,
+        tmp,
+        "directivespill",
+        "CLAUDE2.md",
+        "# Direktif\n\nBu belge sahibin kuralıdır; kanit dogrulama.\n",
+    )? {
+        let _ = fs::remove_dir_all(tmp);
+        return Err(String::from(
+            "canary: the directive exemption leaked into a look-alike file name",
+        ));
+    }
+
     // A Turkish localisation is exempt: what is written there is what the
     // Turkish user reads.
     if !counted_accepts_with(
@@ -1004,6 +1055,16 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         ));
     }
 
+    ran += agents_canaries(clean, tmp)?;
+
+    ran += word_canaries(clean, tmp)?;
+
+    Ok(ran)
+}
+
+/// Canaries for the words that stay acceptable anywhere.
+fn word_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
+    let mut ran = 0usize;
     // The word "Türkçe" is the link label and must survive anywhere.
     if !counted_accepts_with(
         &mut ran,
@@ -1032,6 +1093,45 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         return Err(String::from(
             "canary: a proper noun was reported as Turkish",
         ));
+    }
+
+    Ok(ran)
+}
+
+/// Canaries for the `.claude/agents/` directory exemption.
+fn agents_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
+    let mut ran = 0usize;
+    // The owner's Turkish agent definitions are exempt by directory.
+    if !counted_accepts_with(
+        &mut ran,
+        clean,
+        tmp,
+        "agents",
+        ".claude/agents/reviewer.md",
+        "# Ajan\n\nBu ajan sahibin direktifidir; kanit dogrulama.\n",
+    )? {
+        let _ = fs::remove_dir_all(tmp);
+        return Err(String::from(
+            "canary: .claude/agents/ was rejected, but it holds the owner's directive agents",
+        ));
+    }
+
+    // The agents exemption must not spill into other directories.
+    for (name, file) in [
+        ("agentsspill", ".claude/other/reviewer.md"),
+        ("agentssrc", "src/reviewer.rs"),
+    ] {
+        if counted_accepts_with(
+            &mut ran,
+            clean,
+            tmp,
+            name,
+            file,
+            "// Bu ajan sahibin direktifidir; kanit dogrulama.\n",
+        )? {
+            let _ = fs::remove_dir_all(tmp);
+            return Err(format!("canary: the agents exemption leaked into {file}"));
+        }
     }
 
     Ok(ran)
@@ -1081,7 +1181,7 @@ const CANARY_GROUPS: [CanaryGroup; 3] = [
 /// Hard-coded on purpose. A group that stops testing anything still returns
 /// `Ok`, so the only way to notice is to know the number beforehand. Raise it
 /// deliberately when a canary is added; a drop is a defect.
-const EXPECTED_CANARIES: usize = 65;
+const EXPECTED_CANARIES: usize = 73;
 
 pub fn self_test() -> Result<String, String> {
     let tmp = scratch_dir()?;

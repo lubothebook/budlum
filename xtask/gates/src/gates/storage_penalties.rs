@@ -142,6 +142,15 @@ fn check_root_escrow_deal(
     open_code: &str,
     problems: &mut Vec<String>,
 ) -> usize {
+    check_root_hashes_both_maps(deal_code, problems)
+        + check_escrow_wrappers(chain_code, problems)
+        + check_shared_escrow_entries(open_code, problems)
+        + check_refuse_cooling_operator(open_code, problems)
+        + check_open_deal_primary_rule(deal_code, problems)
+}
+
+/// Check 4: `root()` commits to both operator maps.
+fn check_root_hashes_both_maps(deal_code: &str, problems: &mut Vec<String>) -> usize {
     let mut checked = 0usize;
     // 4. root hashes both maps.
     checked += 1;
@@ -163,9 +172,12 @@ fn check_root_escrow_deal(
         }
     }
 
-    // 5. Escrow enforces the cooldown. The check lives in `open_deal_escrowed`
-    // so the RPC path and the in-block path share it; the RPC entry point
-    // must route through it.
+    checked
+}
+
+/// Check 5a: the RPC entry points route through the shared escrow paths.
+fn check_escrow_wrappers(chain_code: &str, problems: &mut Vec<String>) -> usize {
+    let mut checked = 0usize;
     checked += 1;
     match body_of(chain_code, "pub fn open_storage_deal_with_escrow(") {
         None => problems.push(
@@ -199,6 +211,13 @@ fn check_root_escrow_deal(
         ),
         Some(_) => {}
     }
+
+    checked
+}
+
+/// Check 5b: both shared entry points ask the one cooldown helper.
+fn check_shared_escrow_entries(open_code: &str, problems: &mut Vec<String>) -> usize {
+    let mut checked = 0usize;
     // Both shared entry points must ask the one cooldown helper, and the
     // helper must ask about the operator taking the work.
     for entry in [
@@ -218,6 +237,13 @@ fn check_root_escrow_deal(
             Some(_) => {}
         }
     }
+
+    checked
+}
+
+/// Check 5c: the helper asks about the operator taking the work.
+fn check_refuse_cooling_operator(open_code: &str, problems: &mut Vec<String>) -> usize {
+    let mut checked = 0usize;
     checked += 1;
     match body_of(open_code, "fn refuse_cooling_operator(") {
         None => problems.push(
@@ -256,6 +282,12 @@ fn check_root_escrow_deal(
         }
     }
 
+    checked
+}
+
+/// Check 6: `open_deal` enforces the mobile-primary rule.
+fn check_open_deal_primary_rule(deal_code: &str, problems: &mut Vec<String>) -> usize {
+    let mut checked = 0usize;
     // 6. open_deal enforces the mobile-primary rule.
     checked += 1;
     let open_deal = body_of(deal_code, "pub fn open_deal(");
