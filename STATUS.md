@@ -51,7 +51,7 @@ All Python and shell tooling was ported to Rust and the scripts deleted: `xtask/
 - Opus verification passed with fixes applied for: ADIM 1 (manifest signing), ADIM 5 (operator class and policy), ADIM 2b (deal open and reallocation).
 - zkVM commits b64163d and cf9a35f: Opus verification PASS with notes. New forgery tests verify on the parent AIR and are refused on the fixed AIR. Notes: VerifyInference expansion length is not enforced (superseded by queue step 7, which makes 0x1F fail closed); an honest VerifyMerkle with an out-of-bounds path address is unprovable (fix before activation); some callers (cross-domain adapter, ai_inference verify) use the default closed activation implicitly, which is correct.
 - Pending verification: ADIM 2c `OpenDeal` (e649082) has no separate Opus verification yet.
-- CI on GitHub (PR #1) was red on: Dependency Review, Typos, Repo Lint, Gates, Budlum Core, docker-smoke. Several workflows are `disabled_fork` and must be enabled by the owner in the Actions tab. Review the CI logs together at the end of the next round and fix in one pass. Expected causes to check first: Turkish text in `.claude/agents/*.md` against Typos, the new proto message against Repo Lint (buf), the tool ports against Gates, and whether the Rust workspace tests pass.
+- CI on GitHub (PR #1) was red when last looked at (before the latest commits) on: Dependency Review, Typos, Repo Lint, Gates, Budlum Core, docker-smoke. The owner enabled Actions; the latest runs were not read. See section 6, step 2.
 - Baseline edits approved by owner: four lines removed from `.github/idle-code-baseline.txt` (items gained production callers).
 
 ## 4. Work queues (in order)
@@ -110,11 +110,14 @@ Gates touched: air-selectors-are-opcode-bound (B1, B2), logup-multipliers-are-bo
 
 ## 6. Next step (do this first in a new session)
 
-1. Read this file, run the environment check from MODEL_ROUTING.md section 10, compare with `git log` and `git status`.
-2. Check that the commits up to `da99226` (directives, STATUS rewrite, K0 report, gate repair) are on the remote. If `git push` fails with a missing username, GitHub credentials were lost: ask the owner to reconnect GitHub; commits are safe locally.
-3. Review the CI results of PR #1 together and fix the red checks in one pass (coder agents).
-4. Plan K1 with an architect (Opus) from the K0 gap table, then run K1 steps with coder agents. In parallel keep the zkVM queue moving, starting with step 1 (architect plan, then coder-deep).
-5. Rewrite sections 1 to 6 of this file before ending the session.
+State at the end of the last session: branch `claude/zkvm-bud-completion-84r6jc` is fully pushed and the working tree is clean. GitHub push works (credentials had to be reconnected once). A second branch `wip/zkvm-b1-reserve-0x1f` holds unfinished work (see 4.3 step 1); it is not part of PR #1.
+
+1. Read this file, run the environment check from MODEL_ROUTING.md section 10, compare with `git log` and `git status`. `.claude/settings.json` (model opusplan) and the seven agents load at session start. The main session writes no code; use the agents (scout, finder, architect, coder, coder-deep, coder-lite).
+2. Check GitHub Actions on PR #1 (the workflows are enabled now; some were `disabled_fork` and need the owner to enable them). Fix the red checks in one pass with coder agents. Earlier failures: Dependency Review, Typos, Repo Lint, Gates, Budlum Core, docker-smoke. Likely causes: a new proto message (buf lint), Turkish text and typos config, the tool ports, the Rust workspace tests. Read the logs before guessing.
+3. zkVM step B1 (make 0x1F fail closed): continue from the WIP branch. `git diff claude/zkvm-bud-completion-84r6jc..wip/zkvm-b1-reserve-0x1f` shows the VM change and the test edits; the AIR part (assert the VerifyInference selector and expansion flag to zero, remove it from the Poseidon gadget selector sum and gas table, keep columns 690 to 693 reserved) and the docs fixes are not done. Then continue with R1 to R8 as listed in 4.3.
+4. K1 (Priority Zero): the owner decisions are final (A A A A, section 5). The architect plan for K1 was cut off twice; re-run it (architect, Opus, read-only) from `docs/bud/BUD-KESIF-RAPORU.md` and the decisions in section 5, then run the steps with coder agents. Keep K1 inside those decisions. Do not ask the owner about a generated versus organic content split; the plan has none.
+5. B.U.D. in-block queue (4.2) can run in parallel with the zkVM queue when different files are touched.
+6. Rewrite sections 1 to 6 of this file before ending the session.
 
 ## EFFORT LOG
 
