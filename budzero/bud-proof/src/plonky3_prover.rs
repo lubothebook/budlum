@@ -9198,24 +9198,14 @@ mod tests {
         );
     }
 
-    /// Kademe 1 control (2026-08-28): with a 16-byte VM memory the
-    /// expansion guard (proof_addr+32 <= len) is false, so the trace holds
-    /// only the original VerifyInference row. The clean proof must verify
-    /// without any expansion rows.
-    #[test]
-    fn verify_inference_clean_proof_without_expansion_verifies() {
-        let program = vec![
-            inst(Opcode::VerifyInference, 1, 2, 3, 0),
-            inst(Opcode::Halt, 0, 0, 0, 0),
-        ];
-        let mut vm = Vm::new(16); // too small for any expansion
-        let receipt = vm.run_receipt(&program);
-        assert!(receipt.success);
-        assert!(
-            vm.trace.iter().all(|s| !s.inference_is_expand),
-            "no expansion rows expected with 16-byte memory"
-        );
-
+    /// Proves `trace` for `program` and verifies it with every opcode
+    /// activated. The error text says whether proving or verifying refused.
+    fn prove_and_verify_all_active(
+        trace: &[Step],
+        program: &[u64],
+        gas_used: u64,
+        gas_limit: u64,
+    ) -> Result<(), String> {
         let program_bytes: Vec<u8> = program
             .iter()
             .flat_map(|&i| i.to_le_bytes().to_vec())
@@ -9233,249 +9223,143 @@ mod tests {
             sender: 0,
             nonce: 0,
             block_height: 0,
-            gas_limit: vm.gas_limit,
-            gas_used: vm.gas_used,
+            gas_limit,
+            gas_used,
             exit_code: 0,
-            trace_len: vm.trace.len() as u64,
+            trace_len: trace.len() as u64,
             event_digest: [0u8; 32],
             state_writes_digest: [0u8; 32],
         };
-
-        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify_with_activation(
+        let envelope = Plonky3Adapter::prove(trace, &pi, program)
+            .map_err(|e| format!("prove refused: {e:?}"))?;
+        Plonky3Adapter::verify_with_activation(
             &envelope,
             &pi,
-            &program,
+            program,
             bud_isa::MainnetActivation::full(),
-        );
-        assert!(
-            res.is_ok(),
-            "no-expansion VerifyInference proof must verify, got {:?}",
-            res
-        );
+        )
+        .map(|_| ())
+        .map_err(|e| format!("verify refused: {e:?}"))
     }
 
-    /// Kademe 1 (2026-08-28): a clean VerifyInference proof with imm=0
-    /// (STARK proof type) must verify.
-    /// This was red before the LogUp fix: the Register and Program
-    /// arguments did not exclude COL_INFERENCE_IS_EXPAND rows, so every
-    /// VerifyInference proof (regardless of imm) returned InvalidProof.
+    /// No trace that contains opcode 0x1F can be proven, whatever the
+    /// immediate or the memory behind the register. The opcode is reserved
+    /// and the AIR forces its selector to zero on every row.
     #[test]
-    fn verify_inference_clean_proof_verifies() {
-        let program = vec![
-            inst(Opcode::VerifyInference, 1, 2, 3, 0),
-            inst(Opcode::Halt, 0, 0, 0, 0),
-        ];
-        let mut vm = Vm::new(1024);
-        let receipt = vm.run_receipt(&program);
-        assert!(receipt.success);
-
-        let program_bytes: Vec<u8> = program
-            .iter()
-            .flat_map(|&i| i.to_le_bytes().to_vec())
-            .collect();
-        let mut hasher = Keccak::v256();
-        hasher.update(&program_bytes);
-        let mut program_hash = [0u8; 32];
-        hasher.finalize(&mut program_hash);
-
-        let pi = ExecutionPublicInputs {
-            chain_id: 1,
-            program_hash,
-            initial_state_root: [0u8; 32],
-            final_state_root: [0u8; 32],
-            sender: 0,
-            nonce: 0,
-            block_height: 0,
-            gas_limit: vm.gas_limit,
-            gas_used: vm.gas_used,
-            exit_code: 0,
-            trace_len: vm.trace.len() as u64,
-            event_digest: [0u8; 32],
-            state_writes_digest: [0u8; 32],
-        };
-
-        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify_with_activation(
-            &envelope,
-            &pi,
-            &program,
-            bud_isa::MainnetActivation::full(),
-        );
-        assert!(
-            res.is_ok(),
-            "clean VerifyInference (imm=0, STARK) proof must verify, got {:?}",
-            res
-        );
-    }
-
-    /// Kademe 3a (2026-08-28): a program whose VerifyInference window holds
-    /// a valid commitment chain (output_c == Poseidon(model_c, input_c))
-    /// gets rd = 1, and the STARK proof of that trace must verify - the AIR
-    /// equality constraint must agree with the VM's answer.
-    #[test]
-    fn verify_inference_valid_chain_proof_verifies() {
+    fn rejects_verify_inference_in_any_trace() {
         let model_c = 0xABCD_EF01_2345_6789u64;
         let input_c = 0x1122_3344_5566_7788u64;
         let output_c = bud_vm::poseidon4_hash(model_c, input_c);
-        let program = vec![
-            inst(Opcode::VerifyInference, 2, 1, 0, 0),
-            inst(Opcode::Halt, 0, 0, 0, 0),
-        ];
-        let mut vm = Vm::new(1024);
-        vm.memory[64..72].copy_from_slice(&model_c.to_le_bytes());
-        vm.memory[72..80].copy_from_slice(&input_c.to_le_bytes());
-        vm.memory[80..88].copy_from_slice(&output_c.to_le_bytes());
-        vm.registers[1] = 64; // proof address
-        let receipt = vm.run_receipt(&program);
-        assert!(receipt.success);
-        assert_eq!(vm.registers[2], 1, "valid chain must answer 1");
+        for imm in [0i32, 1, 2] {
+            let program = vec![
+                inst(Opcode::VerifyInference, 2, 1, 0, imm),
+                inst(Opcode::Halt, 0, 0, 0, 0),
+            ];
+            let mut vm = Vm::new(1024);
+            vm.memory[64..72].copy_from_slice(&model_c.to_le_bytes());
+            vm.memory[72..80].copy_from_slice(&input_c.to_le_bytes());
+            vm.memory[80..88].copy_from_slice(&output_c.to_le_bytes());
+            vm.registers[1] = 64;
+            let receipt = vm.run_receipt(&program);
+            assert!(receipt.success);
+            assert!(vm
+                .trace
+                .iter()
+                .any(|s| s.instruction.opcode == Opcode::VerifyInference));
 
-        // The initial state root commits the memory and register images; the
-        // proof window is at r1=64, so the register image is not all zeros.
-        let initial_root = crate::adapter::initial_state_root_of(
-            crate::adapter::memory_image_commitment_of_reads(&initial_memory_reads(&vm.trace)),
-            crate::adapter::register_image_commitment_of_reads(&initial_register_reads(&vm.trace)),
-        );
-
-        let program_bytes: Vec<u8> = program
-            .iter()
-            .flat_map(|&i| i.to_le_bytes().to_vec())
-            .collect();
-        let mut hasher = Keccak::v256();
-        hasher.update(&program_bytes);
-        let mut program_hash = [0u8; 32];
-        hasher.finalize(&mut program_hash);
-
-        let pi = ExecutionPublicInputs {
-            chain_id: 1,
-            program_hash,
-            initial_state_root: initial_root,
-            final_state_root: [0u8; 32],
-            sender: 0,
-            nonce: 0,
-            block_height: 0,
-            gas_limit: vm.gas_limit,
-            gas_used: vm.gas_used,
-            exit_code: 0,
-            trace_len: vm.trace.len() as u64,
-            event_digest: [0u8; 32],
-            state_writes_digest: [0u8; 32],
-        };
-
-        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify_with_activation(
-            &envelope,
-            &pi,
-            &program,
-            bud_isa::MainnetActivation::full(),
-        );
-        assert!(
-            res.is_ok(),
-            "valid-chain VerifyInference proof must verify, got {:?}",
-            res
-        );
+            // The initial register image is part of the statement, so the
+            // pre-set r1 is committed the same way the old tests did it.
+            let initial_root = crate::adapter::initial_state_root_of(
+                crate::adapter::memory_image_commitment_of_reads(&initial_memory_reads(&vm.trace)),
+                crate::adapter::register_image_commitment_of_reads(&initial_register_reads(
+                    &vm.trace,
+                )),
+            );
+            let program_bytes: Vec<u8> = program
+                .iter()
+                .flat_map(|&i| i.to_le_bytes().to_vec())
+                .collect();
+            let mut hasher = Keccak::v256();
+            hasher.update(&program_bytes);
+            let mut program_hash = [0u8; 32];
+            hasher.finalize(&mut program_hash);
+            let pi = ExecutionPublicInputs {
+                chain_id: 1,
+                program_hash,
+                initial_state_root: initial_root,
+                final_state_root: [0u8; 32],
+                sender: 0,
+                nonce: 0,
+                block_height: 0,
+                gas_limit: vm.gas_limit,
+                gas_used: vm.gas_used,
+                exit_code: 0,
+                trace_len: vm.trace.len() as u64,
+                event_digest: [0u8; 32],
+                state_writes_digest: [0u8; 32],
+            };
+            let res = Plonky3Adapter::prove(&vm.trace, &pi, &program).and_then(|envelope| {
+                Plonky3Adapter::verify_with_activation(
+                    &envelope,
+                    &pi,
+                    &program,
+                    bud_isa::MainnetActivation::full(),
+                )
+            });
+            assert!(
+                res.is_err(),
+                "a trace with VerifyInference (imm={imm}) must be refused, got {res:?}"
+            );
+        }
     }
 
-    /// Kademe 1b: imm=1 (SNARK wrap) is a defined proof type and must also
-    /// verify while the circuit is fail-closed (VM still returns rd=0).
+    /// Inference expansion rows must not work as free filler. The honest
+    /// prefix ends in Halt, and extra rows with the expansion flag set are
+    /// spliced after the VerifyInference row. They add no gas and the row
+    /// count is not part of the statement, so the flag has to be refused.
     #[test]
-    fn verify_inference_snark_wrap_proof_verifies() {
+    fn rejects_inference_expansion_rows_used_as_filler() {
         let program = vec![
-            inst(Opcode::VerifyInference, 1, 2, 3, 1),
+            inst(Opcode::VerifyInference, 1, 2, 3, 0),
             inst(Opcode::Halt, 0, 0, 0, 0),
         ];
         let mut vm = Vm::new(1024);
         let receipt = vm.run_receipt(&program);
         assert!(receipt.success);
 
-        let program_bytes: Vec<u8> = program
+        let mut trace = vm.trace.clone();
+        let vi_idx = trace
             .iter()
-            .flat_map(|&i| i.to_le_bytes().to_vec())
-            .collect();
-        let mut hasher = Keccak::v256();
-        hasher.update(&program_bytes);
-        let mut program_hash = [0u8; 32];
-        hasher.finalize(&mut program_hash);
+            .position(|s| s.instruction.opcode == Opcode::VerifyInference)
+            .expect("trace holds the VerifyInference row");
+        let fillers = 11u8;
+        {
+            let main = &mut trace[vi_idx];
+            main.inference_model_commitment = Some(5);
+            main.inference_input_commitment = Some(6);
+            main.inference_output_commitment = Some(7);
+            main.next_pc = main.pc;
+        }
+        for round in 0..fillers {
+            let mut row = trace[vi_idx].clone();
+            row.next_pc = if round == fillers - 1 {
+                row.pc + 1
+            } else {
+                row.pc
+            };
+            row.instruction.rd = 0;
+            row.instruction.imm = (round % 2) as i32;
+            row.dst_idx = 0;
+            row.dst_val = 0;
+            row.inference_proof_round = Some(round);
+            row.inference_is_expand = true;
+            trace.insert(vi_idx + 1 + round as usize, row);
+        }
 
-        let pi = ExecutionPublicInputs {
-            chain_id: 1,
-            program_hash,
-            initial_state_root: [0u8; 32],
-            final_state_root: [0u8; 32],
-            sender: 0,
-            nonce: 0,
-            block_height: 0,
-            gas_limit: vm.gas_limit,
-            gas_used: vm.gas_used,
-            exit_code: 0,
-            trace_len: vm.trace.len() as u64,
-            event_digest: [0u8; 32],
-            state_writes_digest: [0u8; 32],
-        };
-
-        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify_with_activation(
-            &envelope,
-            &pi,
-            &program,
-            bud_isa::MainnetActivation::full(),
-        );
-        assert!(
-            res.is_ok(),
-            "VerifyInference imm=1 (SNARK wrap) must verify, got {:?}",
-            res
-        );
-    }
-
-    /// Kademe 2 (2026-08-28): the AIR refuses an undefined proof type -
-    /// imm=2 is neither STARK (0) nor SNARK wrap (1). Pinned by the
-    /// `imm * (imm - 1)` constraint on non-expansion VerifyInference rows.
-    #[test]
-    fn rejects_verify_inference_with_undefined_proof_type() {
-        let program = vec![
-            inst(Opcode::VerifyInference, 1, 2, 3, 2),
-            inst(Opcode::Halt, 0, 0, 0, 0),
-        ];
-        let mut vm = Vm::new(1024);
-        let receipt = vm.run_receipt(&program);
-        assert!(receipt.success);
-
-        let program_bytes: Vec<u8> = program
-            .iter()
-            .flat_map(|&i| i.to_le_bytes().to_vec())
-            .collect();
-        let mut hasher = Keccak::v256();
-        hasher.update(&program_bytes);
-        let mut program_hash = [0u8; 32];
-        hasher.finalize(&mut program_hash);
-
-        let pi = ExecutionPublicInputs {
-            chain_id: 1,
-            program_hash,
-            initial_state_root: [0u8; 32],
-            final_state_root: [0u8; 32],
-            sender: 0,
-            nonce: 0,
-            block_height: 0,
-            gas_limit: vm.gas_limit,
-            gas_used: vm.gas_used,
-            exit_code: 0,
-            trace_len: vm.trace.len() as u64,
-            event_digest: [0u8; 32],
-            state_writes_digest: [0u8; 32],
-        };
-
-        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify_with_activation(
-            &envelope,
-            &pi,
-            &program,
-            bud_isa::MainnetActivation::full(),
-        );
+        let res = prove_and_verify_all_active(&trace, &program, vm.gas_used, vm.gas_limit);
         assert!(
             res.is_err(),
-            "undefined proof type imm=2 must be rejected by the AIR, but it verified!"
+            "inference expansion rows used as filler must be refused, got {res:?}"
         );
     }
 
