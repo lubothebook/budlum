@@ -446,6 +446,106 @@ mod tests {
         );
     }
 
+    /// A valid proof of a `VerifyMerkle` program is refused here.
+    ///
+    /// The opcode is closed until it is activated, and this adapter verifies
+    /// under the default activation state, so an honest, verifying proof of a
+    /// program that uses it is still not attestable. The same proof verifies
+    /// under full activation, which is what shows the refusal is the opcode
+    /// gate and not a bad proof.
+    #[test]
+    fn a_proof_of_a_verify_merkle_program_is_refused() {
+        use bud_isa::{Instruction, Opcode};
+
+        let program = vec![
+            Instruction {
+                opcode: Opcode::VerifyMerkle,
+                rd: 1,
+                rs1: 2,
+                rs2: 3,
+                imm: 256,
+            }
+            .encode(),
+            Instruction {
+                opcode: Opcode::Halt,
+                rd: 0,
+                rs1: 0,
+                rs2: 0,
+                imm: 0,
+            }
+            .encode(),
+        ];
+        // A path of 64 zero siblings under key 0, so the memory image is the
+        // all-zero default and the root is the chain from the leaf.
+        let leaf = 0xBEEFu64;
+        let root = (0..64).fold(leaf, |cur, _| bud_vm::merkle_poseidon_round(cur, 0));
+        let mut vm = bud_vm::Vm::new(1024);
+        vm.registers[2] = root;
+        vm.registers[3] = leaf;
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success);
+
+        let inputs = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash: bud_proof::canonical_set::program_hash_of(&program),
+            initial_state_root: bud_proof::initial_state_root_of(
+                bud_proof::memory_image_commitment_of_reads(&bud_proof::initial_memory_reads(
+                    &vm.trace,
+                )),
+                bud_proof::register_image_commitment_of_reads(&bud_proof::initial_register_reads(
+                    &vm.trace,
+                )),
+            ),
+            final_state_root: [0; 32],
+            sender: 0,
+            nonce: 0,
+            block_height: 1,
+            gas_limit: vm.gas_limit,
+            gas_used: vm.gas_used,
+            exit_code: 0,
+            trace_len: vm.trace.len() as u64,
+            event_digest: [0; 32],
+            state_writes_digest: [0; 32],
+        };
+        let envelope =
+            bud_proof::DefaultAdapter::prove(&vm.trace, &inputs, &program).expect("honest proof");
+        bud_proof::Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &inputs,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        )
+        .expect("the proof is valid under full activation");
+
+        let adapter = ZkVmFinalityAdapter::new("testnet");
+        let payload = ZkFinalityEvidence {
+            envelope,
+            inputs,
+            program,
+        }
+        .encode()
+        .expect("encodes");
+        let evidence = RawConsensusEvidence {
+            adapter: adapter.descriptor().id,
+            evidence_version: EVIDENCE_VERSION,
+            network: "testnet".to_string(),
+            payload,
+            declared_height: 1,
+            declared_root: [0; 32],
+            submitter: crate::core::address::Address([1; 32]),
+        };
+        let err = adapter
+            .verify(&evidence, &VerificationPolicy::proven(10))
+            .unwrap_err();
+        match err {
+            AdapterError::Crypto { what } => assert!(
+                what.contains("VerifyMerkle") && what.contains("not activated"),
+                "the refusal names the opcode gate: {what}"
+            ),
+            other => panic!("a VerifyMerkle proof must be refused as invalid, got {other:?}"),
+        }
+    }
+
     #[test]
     fn the_probe_set_is_offset_independent_and_covers_every_edge() {
         let probes = ZkVmFinalityAdapter::new("testnet").fault_probes();

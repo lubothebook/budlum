@@ -1846,7 +1846,26 @@ impl Plonky3Adapter {
         expected_inputs: &ExecutionPublicInputs,
         program: &[u64],
     ) -> Result<(), VerifyError> {
-        <Self as ProverAdapter>::verify(envelope, expected_inputs, program)?;
+        Self::verify_canonical_program_with_activation(
+            envelope,
+            expected_inputs,
+            program,
+            bud_isa::MainnetActivation::default(),
+        )
+    }
+
+    /// [`Plonky3Adapter::verify_canonical_program`] under an explicit
+    /// activation state. The canonical set holds a program that uses
+    /// `VerifyMerkle` (the storage challenge), so a verifier that has not
+    /// activated that opcode refuses it here rather than accepting it by way
+    /// of the canonical set.
+    pub fn verify_canonical_program_with_activation(
+        envelope: &ProofEnvelope,
+        expected_inputs: &ExecutionPublicInputs,
+        program: &[u64],
+        activation: bud_isa::MainnetActivation,
+    ) -> Result<(), VerifyError> {
+        Self::verify_with_activation(envelope, expected_inputs, program, activation)?;
         if !crate::canonical_set::is_canonical_program_hash(&expected_inputs.program_hash) {
             return Err(VerifyError::NonCanonicalProgram(
                 expected_inputs.program_hash,
