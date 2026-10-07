@@ -1,12 +1,14 @@
 //! Storage penalties must be enforced end to end.
 //!
 //! Ported from `scripts/check-storage-penalties-are-enforced.sh`. Nine
-//! claims over `src/domain/storage_deal.rs` and `src/chain/blockchain.rs`:
+//! claims over `src/domain/storage_deal.rs`, `src/domain/deal_open.rs` and
+//! `src/chain/blockchain.rs`:
 //! the cooldown is a six-hour named constant, `begin_operator_cooldown` takes
 //! the later deadline, `prune_expired_cooldowns` exists and is called, `root`
 //! hashes both cooldowns and operator classes, `open_storage_deal_with_escrow`
-//! enforces the cooldown, `open_deal` enforces the mobile-primary rule, and
-//! nine regression tests exist.
+//! routes through `open_deal_escrowed`, which enforces the cooldown,
+//! `open_deal` enforces the mobile-primary rule, and nine regression tests
+//! exist.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -133,7 +135,12 @@ fn check_cooldown(deal_code: &str, chain_code: &str, problems: &mut Vec<String>)
 
 /// Checks 4-6: root hashes both maps, escrow enforces the cooldown,
 /// `open_deal` enforces the mobile-primary rule.
-fn check_root_escrow_deal(deal_code: &str, chain_code: &str, problems: &mut Vec<String>) -> usize {
+fn check_root_escrow_deal(
+    deal_code: &str,
+    chain_code: &str,
+    open_code: &str,
+    problems: &mut Vec<String>,
+) -> usize {
     let mut checked = 0usize;
     // 4. root hashes both maps.
     checked += 1;
@@ -155,17 +162,33 @@ fn check_root_escrow_deal(deal_code: &str, chain_code: &str, problems: &mut Vec<
         }
     }
 
-    // 5. Escrow enforces the cooldown.
+    // 5. Escrow enforces the cooldown. The check lives in `open_deal_escrowed`
+    // so the RPC path and the in-block path share it; the RPC entry point
+    // must route through it.
     checked += 1;
-    let escrow = body_of(chain_code, "pub fn open_storage_deal_with_escrow(");
-    match escrow {
+    match body_of(chain_code, "pub fn open_storage_deal_with_escrow(") {
         None => problems.push(
             "cannot find `open_storage_deal_with_escrow`. If it was renamed, \
              update this gate in the same commit so the enforcement stays watched."
                 .to_string(),
         ),
+        Some(w) if !w.contains("open_deal_escrowed(") => problems.push(
+            "`open_storage_deal_with_escrow` does not call `open_deal_escrowed`. \
+             The cooldown check lives there, so a wrapper that skips it lets an \
+             operator in its cooldown take storage work."
+                .to_string(),
+        ),
+        Some(_) => {}
+    }
+    checked += 1;
+    match body_of(open_code, "pub fn open_deal_escrowed(") {
+        None => problems.push(
+            "cannot find `open_deal_escrowed`. If it was renamed, \
+             update this gate in the same commit so the enforcement stays watched."
+                .to_string(),
+        ),
         Some(e) if !e.contains("operator_cooldown_until") => problems.push(
-            "`open_storage_deal_with_escrow` never calls \
+            "`open_deal_escrowed` never calls \
              `operator_cooldown_until`. The cooldown would be recorded, hashed \
              into the state root, and never once stop anybody."
                 .to_string(),
@@ -180,12 +203,12 @@ fn check_root_escrow_deal(deal_code: &str, chain_code: &str, problems: &mut Vec<
             match args {
                 None => problems.push(
                     "`operator_cooldown_until` appears in \
-                     `open_storage_deal_with_escrow` but not as a call this gate can \
+                     `open_deal_escrowed` but not as a call this gate can \
                      read. Keep it a direct call so its arguments stay checkable."
                         .to_string(),
                 ),
                 Some(a) if !a.contains("operator") => problems.push(
-                    "`open_storage_deal_with_escrow` asks about somebody other \
+                    "`open_deal_escrowed` asks about somebody other \
                      than the operator opening the deal. Every operator would \
                      then be subject to somebody else's cooldown."
                         .to_string(),
@@ -274,21 +297,32 @@ fn eval_u64(expr: &str) -> Option<u64> {
 pub fn run(root: &Path) -> Result<String, String> {
     let deal = root.join("src/domain/storage_deal.rs");
     let chain = root.join("src/chain/blockchain.rs");
+    let open = root.join("src/domain/deal_open.rs");
     if !deal.is_file() {
         return Err(format!("expected source file missing: {}", deal.display()));
     }
     if !chain.is_file() {
         return Err(format!("expected source file missing: {}", chain.display()));
     }
+    if !open.is_file() {
+        return Err(format!("expected source file missing: {}", open.display()));
+    }
+    let open_src = std::fs::read_to_string(&open).map_err(|e| e.to_string())?;
     let deal_src = std::fs::read_to_string(&deal).map_err(|e| e.to_string())?;
     let chain_src = std::fs::read_to_string(&chain).map_err(|e| e.to_string())?;
     let deal_code = strip_comments_and_literals(&deal_src);
     let chain_code = strip_comments_and_literals(&chain_src);
+    let open_code = strip_comments_and_literals(&open_src);
     let mut problems: Vec<String> = Vec::new();
     let mut checked = 0usize;
 
     checked += check_cooldown(deal_code.as_str(), chain_code.as_str(), &mut problems);
-    checked += check_root_escrow_deal(deal_code.as_str(), chain_code.as_str(), &mut problems);
+    checked += check_root_escrow_deal(
+        deal_code.as_str(),
+        chain_code.as_str(),
+        open_code.as_str(),
+        &mut problems,
+    );
     // 7. Regression tests.
     checked += 1;
     for test in [
@@ -349,12 +383,37 @@ pub fn self_test() -> Result<String, String> {
         writeln!(deal, "#[test]\nfn {t}() {{}}").expect("writing to a String cannot fail");
     }
     std::fs::write(dir.join("src/domain/storage_deal.rs"), &deal).map_err(|e| e.to_string())?;
-    let chain = "fn f() {\n    self.state.storage_registry.prune_expired_cooldowns(now_unix);\n    let _ = self.state.storage_registry.operator_cooldown_until(&operator, now_unix);\n}\npub fn open_storage_deal_with_escrow() {\n    let _ = self.state.storage_registry.operator_cooldown_until(&operator, now_unix);\n}\n";
+    let chain = "fn f() {\n    self.state.storage_registry.prune_expired_cooldowns(now_unix);\n}\npub fn open_storage_deal_with_escrow() {\n    let _ = open_deal_escrowed(&mut self.state, &terms, payer, now_unix, bond, 0);\n}\n";
     std::fs::write(dir.join("src/chain/blockchain.rs"), chain).map_err(|e| e.to_string())?;
+    let open = "pub fn open_deal_escrowed() {\n    let _ = state.storage_registry.operator_cooldown_until(&operator, now_unix);\n}\n";
+    std::fs::write(dir.join("src/domain/deal_open.rs"), open).map_err(|e| e.to_string())?;
     if run(&dir).is_err() {
         let _ = std::fs::remove_dir_all(&dir);
         return Err(String::from("canary: a correct tree was refused"));
     }
+
+    // Bad: the shared deal-open path no longer asks about the cooldown.
+    let no_check =
+        "pub fn open_deal_escrowed() {\n    let _ = state.storage_registry.deals_for_shard();\n}\n";
+    std::fs::write(dir.join("src/domain/deal_open.rs"), no_check).map_err(|e| e.to_string())?;
+    if run(&dir).is_ok() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(String::from(
+            "canary: a deal-open without the cooldown check passed",
+        ));
+    }
+    std::fs::write(dir.join("src/domain/deal_open.rs"), open).map_err(|e| e.to_string())?;
+
+    // Bad: the wrapper bypasses the shared path.
+    let bypass = chain.replace("open_deal_escrowed(", "something_else(");
+    std::fs::write(dir.join("src/chain/blockchain.rs"), bypass).map_err(|e| e.to_string())?;
+    if run(&dir).is_ok() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(String::from(
+            "canary: a wrapper that skips the shared open passed",
+        ));
+    }
+    std::fs::write(dir.join("src/chain/blockchain.rs"), chain).map_err(|e| e.to_string())?;
 
     // Bad: cooldown wrong length.
     let bad = deal.replace("6 * 60 * 60", "60");

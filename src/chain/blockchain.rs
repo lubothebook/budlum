@@ -6009,106 +6009,10 @@ impl Blockchain {
         merkle_proof: Option<Vec<u8>>,
         storage_root: Option<crate::domain::Hash32>,
     ) -> Result<u64, String> {
-        // An operator that missed a challenge sits out six hours. Checked
-        // here rather than inside `open_deal` because this is the layer that
-        // knows wall time: `StorageRegistry` works in epochs, and an epoch is
-        // two governance parameters multiplied together.
-        //
-        // The registry holds the record and answers the question; the
-        // enforcement lives beside the escrow and the bond, which is where
-        // every other economic refusal already is.
-        let now_unix = self.current_unix_secs();
-        if let Some(until) = self
-            .state
-            .storage_registry
-            .operator_cooldown_until(&operator, now_unix)
-        {
-            return Err(format!(
-                "operator {operator} missed a challenge and cannot take                  storage work until unix {until} ({} seconds left)",
-                until.saturating_sub(now_unix)
-            ));
-        }
-
-        // 1. Calculate total client fee escrow needed
-        let epochs = end_epoch.saturating_sub(start_epoch);
-        if epochs == 0 {
-            return Err("Deal duration must be > 0".into());
-        }
-        // Price the deal by the bytes it actually covers. The shard is looked
-        // up here rather than trusting a caller-supplied size, so the escrow
-        // and the deal that `open_deal` records below are computed from the
-        // same manifest entry.
-        let shard_bytes = u64::from(
-            manifest
-                .shard(&shard_id)
-                .ok_or_else(|| {
-                    format!(
-                        "shard {shard_id:?} is not part of manifest {:?}",
-                        manifest.manifest_id
-                    )
-                })?
-                .size,
-        );
-
-        // Replay guard: a signed deal-open (CWE-294) must not be able
-        // to debit escrow and lock bond twice for the same placement. If an
-        // ACTIVE deal already covers this (manifest, shard, operator,
-        // replica, epoch range), refuse before any balance moves. The
-        // caller-chosen request_id is bound in the RPC-layer signature; this
-        // second check makes the same authorization non-replayable on the
-        // chain even if the RPC layer were bypassed.
-        let duplicate = self
-            .state
-            .storage_registry
-            .deals_for_shard(&manifest.manifest_id, &shard_id)
-            .iter()
-            .any(|d| {
-                d.status == crate::domain::storage_deal::DealStatus::Active
-                    && d.operator == operator
-                    && d.replica_index == replica_index
-                    && d.deal_start_epoch == start_epoch
-                    && d.deal_end_epoch == end_epoch
-            });
-        if duplicate {
-            return Err(format!(
-                "an active deal already covers shard {shard_id:?} for operator {operator} at replica {replica_index} over epochs {start_epoch}..{end_epoch}; refusing a replayed open"
-            ));
-        }
-        let total_fee = economics.total_fee(shard_bytes, epochs);
-
-        // 2. Debit Payer (Client Escrow)
-        if total_fee > 0 {
-            if self.state.get_balance(&payer) < total_fee {
-                return Err(format!(
-                    "Insufficient payer balance for deal fee {total_fee}"
-                ));
-            }
-            // Get_or_create marks the account as dirty automatically
-            let account = self.state.get_or_create(&payer);
-            account.balance = account.balance.saturating_sub(total_fee);
-        }
-
-        // 3. Lock Operator Bond
-        if economics.operator_bond > 0 {
-            if self.state.get_balance(&operator) < economics.operator_bond {
-                // Return payer fee if bond fails
-                if total_fee > 0 {
-                    self.state
-                        .try_add_balance(&payer, total_fee)
-                        .map_err(|e| format!("fee refund overflow: {e}"))?;
-                }
-                return Err(format!(
-                    "Insufficient operator balance for bond {}",
-                    economics.operator_bond
-                ));
-            }
-            // Get_or_create marks the account as dirty automatically
-            let account = self.state.get_or_create(&operator);
-            account.balance = account.balance.saturating_sub(economics.operator_bond);
-        }
-
-        // 4. Register Deal
-        match self.state.storage_registry.open_deal(
+        // The checks, the registry open and the debits live in `deal_open`,
+        // so the in-block path shares them. This wrapper adds the wall clock,
+        // the caller's bond floor and the persist.
+        let terms = crate::domain::deal_open::DealOpenTerms {
             domain_id,
             manifest,
             shard_id,
@@ -6116,30 +6020,21 @@ impl Blockchain {
             replica_index,
             start_epoch,
             end_epoch,
-            economics.clone(),
-            domain_params,
+            economics,
             merkle_proof,
             storage_root,
-        ) {
-            Ok(deal_id) => {
-                self.persist_storage_registry()?;
-                Ok(deal_id)
-            }
-            Err(e) => {
-                // Refund on deal failure - try_add_balance
-                if total_fee > 0 {
-                    self.state
-                        .try_add_balance(&payer, total_fee)
-                        .map_err(|e| format!("deal fee refund overflow: {e}"))?;
-                }
-                if economics.operator_bond > 0 {
-                    self.state
-                        .try_add_balance(&operator, economics.operator_bond)
-                        .map_err(|e| format!("deal bond refund overflow: {e}"))?;
-                }
-                Err(format!("open_deal failed: {e:?}"))
-            }
-        }
+        };
+        let now_unix_secs = self.current_unix_secs();
+        let deal_id = crate::domain::deal_open::open_deal_escrowed(
+            &mut self.state,
+            &terms,
+            payer,
+            now_unix_secs,
+            domain_params.min_operator_bond,
+            0,
+        )?;
+        self.persist_storage_registry()?;
+        Ok(deal_id)
     }
 
     /// B.U.D.: On-chain acceptance of a reallocation (repair) ticket.
