@@ -942,6 +942,11 @@ impl Blockchain {
             }
         }
 
+        // Restored state carries no block clock, so seed it from the tip.
+        if let Some(last) = bc.chain.last() {
+            bc.state.current_block_unix_secs = Self::block_timestamp_secs(last.timestamp);
+        }
+
         bc
     }
 
@@ -993,7 +998,18 @@ impl Blockchain {
     /// `SystemTime::now()` guarantees they will not.
     #[must_use]
     pub fn current_unix_secs(&self) -> u64 {
-        u64::try_from(self.last_block().timestamp / 1_000).unwrap_or(u64::MAX)
+        Self::block_timestamp_secs(self.last_block().timestamp)
+    }
+
+    /// Converts a block timestamp in milliseconds to whole seconds.
+    fn block_timestamp_secs(timestamp_ms: u128) -> u64 {
+        u64::try_from(timestamp_ms / 1_000).unwrap_or(u64::MAX)
+    }
+
+    /// The timestamp a block at `index` is stamped with when produced.
+    fn planned_block_timestamp(&self, index: u64) -> u128 {
+        let slot_ms = crate::core::chain_config::slot_ms_for_chain_id(self.chain_id);
+        self.genesis_time + (u128::from(index) * u128::from(slot_ms))
     }
 
     /// The chain tip.
@@ -4189,13 +4205,14 @@ impl Blockchain {
         })
     }
 
-    fn collect_block_transactions(&self) -> Vec<Transaction> {
+    fn collect_block_transactions(&self, block_timestamp_ms: u128) -> Vec<Transaction> {
         let pending_txs = self
             .mempool
             .get_sorted_transactions(crate::consensus::MAX_TRANSACTIONS_PER_BLOCK);
         let mut valid_txs = Vec::new();
         let mut temp_state = self.state.clone();
         temp_state.current_block_height = self.chain.len() as u64;
+        temp_state.current_block_unix_secs = Self::block_timestamp_secs(block_timestamp_ms);
         let mut included = std::collections::HashSet::new();
         let mut progress = true;
         let mut contract_calls: u64 = 0;
@@ -4499,6 +4516,7 @@ impl Blockchain {
         let burn_cids = Self::collect_nft_burn_cids_from_state(base_state, block);
         let mut next_state = base_state.clone();
         next_state.current_block_height = block.index;
+        next_state.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
         Executor::apply_block_checked(
             &mut next_state,
             &block.transactions,
@@ -4565,14 +4583,14 @@ impl Blockchain {
             .chain
             .last()
             .map_or_else(|| "0".repeat(64), |block| block.hash.clone());
-        let valid_txs = self.collect_block_transactions();
+        let block_timestamp = self.planned_block_timestamp(index);
+        let valid_txs = self.collect_block_transactions(block_timestamp);
         let mut block = Block::new_with_chain_id(index, previous_hash, valid_txs, self.chain_id);
         if !self.pending_slashing_evidence.is_empty() {
             block.slashing_evidence = Some(self.pending_slashing_evidence.clone());
         }
         block.producer = Some(producer_address);
-        let slot_ms = crate::core::chain_config::slot_ms_for_chain_id(self.chain_id);
-        block.timestamp = self.genesis_time + (u128::from(index) * u128::from(slot_ms));
+        block.timestamp = block_timestamp;
         block.validator_set_hash = self.get_validator_set_hash();
 
         if self
@@ -4889,6 +4907,7 @@ impl Blockchain {
         // Validate transactions against current state before applying
         let mut temp_state = self.state.clone();
         temp_state.current_block_height = block.index;
+        temp_state.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
         for (i, tx) in block.transactions.iter().enumerate() {
             if tx.chain_id != block.chain_id {
                 return Err(format!(
@@ -5119,6 +5138,7 @@ impl Blockchain {
 
             let mut projected = state.clone();
             projected.current_block_height = block.index;
+            projected.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
             for (tx_index, transaction) in block.transactions.iter().enumerate() {
                 if transaction.chain_id != self.chain_id {
                     return Err(format!(
@@ -5602,6 +5622,7 @@ impl Blockchain {
         // Accounts dirty so the next durable commit cannot leave the database
         // With pre-restore balances/nonces.
         snapshot_state.mark_all_accounts_dirty();
+        snapshot_state.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
         self.state = snapshot_state;
         self.finalized_height = snapshot.finalized_height;
         self.finalized_hash = snapshot.finalized_hash;
@@ -5641,6 +5662,7 @@ impl Blockchain {
         // V2 restore also replaces the account map; make the replacement
         // Durable on the next commit rather than relying on a later mutation.
         v2_state.mark_all_accounts_dirty();
+        v2_state.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
         self.state = v2_state;
         self.finalized_height = v2.finalized_height;
         self.finalized_hash = v2.finalized_hash.clone();

@@ -208,4 +208,6 @@ pub mod consensus_bypass_locks;
 // The fixture is the single source: config/fixtures/real-chain.json, and the
 // xtask `fixture-integrity` gate verifies the same file.
 #[cfg(test)]
+pub mod block_clock;
+#[cfg(test)]
 pub mod real_chain_fixtures;

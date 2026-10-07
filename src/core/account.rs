@@ -331,6 +331,10 @@ pub struct AccountState {
     /// `epoch_index * 100`, which drifted by up to 99 blocks. It is set during
     /// block production and validation, before transaction processing.
     pub current_block_height: u64,
+    /// Seconds of the block being applied. Block context like
+    /// `current_block_height`: not hashed, not persisted, and set before every
+    /// application.
+    pub current_block_unix_secs: u64,
     pub governance: GovernanceState,
     pub base_fee: u64,
     /// Legacy EIP-1559 preview records. Not part of live flat-fee settlement.
@@ -393,6 +397,7 @@ impl AccountState {
             epoch_index: 0,
             last_epoch_time: 0,
             current_block_height: 0,
+            current_block_unix_secs: 0,
             governance: GovernanceState::default(),
             bns_registry: crate::bns::BnsRegistry::new(),
             nft_registry: crate::socialfi::NftRegistry::new(),
@@ -441,6 +446,7 @@ impl AccountState {
             epoch_index: 0,
             last_epoch_time: 0,
             current_block_height: 0,
+            current_block_unix_secs: 0,
             governance: GovernanceState::default(),
             storage_registry: StorageRegistry::new(),
             ai_registry: crate::ai::registry::AiRegistry::new(),
@@ -511,6 +517,7 @@ impl AccountState {
             epoch_index: snapshot.height / 100,
             last_epoch_time: 0,
             current_block_height: 0,
+            current_block_unix_secs: 0,
             governance: GovernanceState::default(),
             bns_registry: crate::bns::BnsRegistry::new(),
             nft_registry: crate::socialfi::NftRegistry::new(),
@@ -592,6 +599,7 @@ impl AccountState {
             storage: None,
             epoch_index: snapshot.epoch_index,
             current_block_height: snapshot.height,
+            current_block_unix_secs: 0,
             last_epoch_time: snapshot.last_epoch_time,
             bns_registry: snapshot.bns_registry.clone().unwrap_or_default(),
             nft_registry: snapshot.nft_registry.clone().unwrap_or_default(),
