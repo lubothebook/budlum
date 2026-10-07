@@ -6,8 +6,9 @@
 //! the cooldown is a six-hour named constant, `begin_operator_cooldown` takes
 //! the later deadline, `prune_expired_cooldowns` exists and is called, `root`
 //! hashes both cooldowns and operator classes, `open_storage_deal_with_escrow`
-//! routes through `open_deal_escrowed`, which enforces the cooldown,
-//! `open_deal` enforces the mobile-primary rule, and nine regression tests
+//! and `accept_storage_reallocation_with_escrow` route through
+//! `open_deal_escrowed` and `accept_reallocation_escrowed`, which enforce the
+//! cooldown, `open_deal` enforces the mobile-primary rule, and nine regression tests
 //! exist.
 
 use std::fmt::Write as _;
@@ -181,14 +182,51 @@ fn check_root_escrow_deal(
         Some(_) => {}
     }
     checked += 1;
-    match body_of(open_code, "pub fn open_deal_escrowed(") {
+    match body_of(
+        chain_code,
+        "pub fn accept_storage_reallocation_with_escrow(",
+    ) {
         None => problems.push(
-            "cannot find `open_deal_escrowed`. If it was renamed, \
+            "cannot find `accept_storage_reallocation_with_escrow`. If it was renamed, \
+             update this gate in the same commit so the enforcement stays watched."
+                .to_string(),
+        ),
+        Some(w) if !w.contains("accept_reallocation_escrowed(") => problems.push(
+            "`accept_storage_reallocation_with_escrow` does not call \
+             `accept_reallocation_escrowed`. The cooldown check lives there, so a \
+             wrapper that skips it lets an operator in its cooldown take a repair."
+                .to_string(),
+        ),
+        Some(_) => {}
+    }
+    // Both shared entry points must ask the one cooldown helper, and the
+    // helper must ask about the operator taking the work.
+    for entry in [
+        "pub fn open_deal_escrowed(",
+        "pub fn accept_reallocation_escrowed(",
+    ] {
+        checked += 1;
+        match body_of(open_code, entry) {
+            None => problems.push(format!(
+                "cannot find `{entry}`. If it was renamed, \
+                 update this gate in the same commit so the enforcement stays watched."
+            )),
+            Some(e) if !e.contains("refuse_cooling_operator(") => problems.push(format!(
+                "`{entry}` never calls `refuse_cooling_operator`. The cooldown would \
+                 be recorded, hashed into the state root, and never once stop anybody."
+            )),
+            Some(_) => {}
+        }
+    }
+    checked += 1;
+    match body_of(open_code, "fn refuse_cooling_operator(") {
+        None => problems.push(
+            "cannot find `refuse_cooling_operator`. If it was renamed, \
              update this gate in the same commit so the enforcement stays watched."
                 .to_string(),
         ),
         Some(e) if !e.contains("operator_cooldown_until") => problems.push(
-            "`open_deal_escrowed` never calls \
+            "`refuse_cooling_operator` never calls \
              `operator_cooldown_until`. The cooldown would be recorded, hashed \
              into the state root, and never once stop anybody."
                 .to_string(),
@@ -203,13 +241,13 @@ fn check_root_escrow_deal(
             match args {
                 None => problems.push(
                     "`operator_cooldown_until` appears in \
-                     `open_deal_escrowed` but not as a call this gate can \
+                     `refuse_cooling_operator` but not as a call this gate can \
                      read. Keep it a direct call so its arguments stay checkable."
                         .to_string(),
                 ),
                 Some(a) if !a.contains("operator") => problems.push(
-                    "`open_deal_escrowed` asks about somebody other \
-                     than the operator opening the deal. Every operator would \
+                    "`refuse_cooling_operator` asks about somebody other \
+                     than the operator taking the work. Every operator would \
                      then be subject to somebody else's cooldown."
                         .to_string(),
                 ),
@@ -383,9 +421,9 @@ pub fn self_test() -> Result<String, String> {
         writeln!(deal, "#[test]\nfn {t}() {{}}").expect("writing to a String cannot fail");
     }
     std::fs::write(dir.join("src/domain/storage_deal.rs"), &deal).map_err(|e| e.to_string())?;
-    let chain = "fn f() {\n    self.state.storage_registry.prune_expired_cooldowns(now_unix);\n}\npub fn open_storage_deal_with_escrow() {\n    let _ = open_deal_escrowed(&mut self.state, &terms, payer, now_unix, bond, 0);\n}\n";
+    let chain = "fn f() {\n    self.state.storage_registry.prune_expired_cooldowns(now_unix);\n}\npub fn open_storage_deal_with_escrow() {\n    let _ = open_deal_escrowed(&mut self.state, &terms, payer, now_unix, bond, 0);\n}\npub fn accept_storage_reallocation_with_escrow() {\n    let _ = accept_reallocation_escrowed(&mut self.state, &terms, payer, now_unix, bond, 0);\n}\n";
     std::fs::write(dir.join("src/chain/blockchain.rs"), chain).map_err(|e| e.to_string())?;
-    let open = "pub fn open_deal_escrowed() {\n    let _ = state.storage_registry.operator_cooldown_until(&operator, now_unix);\n}\n";
+    let open = "pub fn open_deal_escrowed() {\n    refuse_cooling_operator(state, &operator, now_unix)?;\n}\npub fn accept_reallocation_escrowed() {\n    refuse_cooling_operator(state, &operator, now_unix)?;\n}\nfn refuse_cooling_operator() {\n    let _ = state.storage_registry.operator_cooldown_until(operator, now_unix);\n}\n";
     std::fs::write(dir.join("src/domain/deal_open.rs"), open).map_err(|e| e.to_string())?;
     if run(&dir).is_err() {
         let _ = std::fs::remove_dir_all(&dir);
@@ -393,13 +431,32 @@ pub fn self_test() -> Result<String, String> {
     }
 
     // Bad: the shared deal-open path no longer asks about the cooldown.
-    let no_check =
-        "pub fn open_deal_escrowed() {\n    let _ = state.storage_registry.deals_for_shard();\n}\n";
-    std::fs::write(dir.join("src/domain/deal_open.rs"), no_check).map_err(|e| e.to_string())?;
+    let no_check = open.replacen(
+        "pub fn open_deal_escrowed() {\n    refuse_cooling_operator(state, &operator, now_unix)?;\n}",
+        "pub fn open_deal_escrowed() {\n    let _ = state.storage_registry.deals_for_shard();\n}",
+        1,
+    );
+    std::fs::write(dir.join("src/domain/deal_open.rs"), &no_check).map_err(|e| e.to_string())?;
     if run(&dir).is_ok() {
         let _ = std::fs::remove_dir_all(&dir);
         return Err(String::from(
             "canary: a deal-open without the cooldown check passed",
+        ));
+    }
+    std::fs::write(dir.join("src/domain/deal_open.rs"), open).map_err(|e| e.to_string())?;
+
+    // Bad: the repair acceptance no longer asks about the cooldown.
+    let no_realloc_check = open.replacen(
+        "pub fn accept_reallocation_escrowed() {\n    refuse_cooling_operator(state, &operator, now_unix)?;\n}",
+        "pub fn accept_reallocation_escrowed() {\n    let _ = 0;\n}",
+        1,
+    );
+    std::fs::write(dir.join("src/domain/deal_open.rs"), no_realloc_check)
+        .map_err(|e| e.to_string())?;
+    if run(&dir).is_ok() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(String::from(
+            "canary: a repair acceptance without the cooldown check passed",
         ));
     }
     std::fs::write(dir.join("src/domain/deal_open.rs"), open).map_err(|e| e.to_string())?;
@@ -411,6 +468,18 @@ pub fn self_test() -> Result<String, String> {
         let _ = std::fs::remove_dir_all(&dir);
         return Err(String::from(
             "canary: a wrapper that skips the shared open passed",
+        ));
+    }
+    std::fs::write(dir.join("src/chain/blockchain.rs"), chain).map_err(|e| e.to_string())?;
+
+    // Bad: the repair wrapper bypasses the shared path.
+    let realloc_bypass = chain.replace("accept_reallocation_escrowed(", "something_else(");
+    std::fs::write(dir.join("src/chain/blockchain.rs"), realloc_bypass)
+        .map_err(|e| e.to_string())?;
+    if run(&dir).is_ok() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(String::from(
+            "canary: a repair wrapper that skips the shared path passed",
         ));
     }
     std::fs::write(dir.join("src/chain/blockchain.rs"), chain).map_err(|e| e.to_string())?;

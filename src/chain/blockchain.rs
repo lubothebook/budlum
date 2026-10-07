@@ -6042,8 +6042,10 @@ impl Blockchain {
     /// The economic mirror of [`Self::open_storage_deal_with_escrow`] for
     /// the replacement placement: the placement is decided by the ticket,
     /// not the caller - manifest, shard and replica come from the registry
-    /// record - while the escrow and the bond are debited by this layer and
-    /// refunded on refusal, exactly like the original open.
+    /// record. The ticket checks, the cooldown, the balance checks and the
+    /// registry acceptance all live in `deal_open::accept_reallocation_escrowed`
+    /// and run before any debit, so a refusal leaves balances and the registry
+    /// untouched and there is nothing to refund.
     ///
     /// The registry's `accept_reallocation_ticket` keeps the one-shot
     /// guarantee (a filled ticket refuses a second acceptance) and the
@@ -6064,124 +6066,26 @@ impl Blockchain {
         merkle_proof: Option<Vec<u8>>,
         storage_root: Option<crate::domain::Hash32>,
     ) -> Result<u64, String> {
-        let now_unix = self.current_unix_secs();
-
-        let ticket = self
-            .state
-            .storage_registry
-            .get_reallocation_ticket(ticket_id)
-            .cloned()
-            .ok_or_else(|| format!("unknown reallocation ticket {ticket_id}"))?;
-        if !matches!(
-            ticket.status,
-            crate::domain::storage_deal::ReallocationStatus::Pending
-                | crate::domain::storage_deal::ReallocationStatus::UnderReplicated
-        ) {
-            return Err(format!(
-                "reallocation ticket {ticket_id} is not open for acceptance"
-            ));
-        }
-        // The identity refusal precedes the cooldown refusal deliberately: the
-        // slash that opened this very ticket also starts the operator's
-        // cooldown, so the cooldown message would otherwise always shadow the
-        // more specific answer - "you are the operator this ticket replaces".
-        // A cooldown expires; being the slashed operator of the ticket does
-        // not, and the caller deserves the refusal that never goes away.
-        if replacement_operator == ticket.slashed_operator {
-            return Err(format!(
-                "operator {replacement_operator} is the slashed operator of ticket {ticket_id}"
-            ));
-        }
-        if let Some(until) = self
-            .state
-            .storage_registry
-            .operator_cooldown_until(&replacement_operator, now_unix)
-        {
-            return Err(format!(
-                "operator {replacement_operator} missed a challenge and cannot take storage work until unix {until} ({} seconds left)",
-                until.saturating_sub(now_unix)
-            ));
-        }
-
-        let manifest = self
-            .state
-            .storage_registry
-            .get_manifest(&ticket.manifest_id)
-            .cloned()
-            .ok_or_else(|| {
-                format!(
-                    "manifest {} of ticket {ticket_id} vanished",
-                    ticket.manifest_id
-                )
-            })?;
-        let epochs = end_epoch.saturating_sub(start_epoch);
-        if epochs == 0 {
-            return Err("Deal duration must be > 0".into());
-        }
-        // The ticket decides the placement; the bytes come from the
-        // manifest, the same source `open_deal` records below prices from.
-        let shard_bytes = u64::from(
-            manifest
-                .shard(&ticket.shard_id)
-                .ok_or_else(|| {
-                    format!(
-                        "shard {:?} is not part of manifest {:?}",
-                        ticket.shard_id, ticket.manifest_id
-                    )
-                })?
-                .size,
-        );
-        let total_fee = economics.total_fee(shard_bytes, epochs);
-        let bond = economics.operator_bond;
-
-        // 1. Debit Payer (Client Escrow) - same shape as the open path.
-        if total_fee > 0 {
-            if self.state.get_balance(&payer) < total_fee {
-                return Err(format!(
-                    "Insufficient payer balance for deal fee {total_fee}"
-                ));
-            }
-            let account = self.state.get_or_create(&payer);
-            account.balance = account.balance.saturating_sub(total_fee);
-        }
-        // 2. Lock Operator Bond.
-        if bond > 0 {
-            if self.state.get_balance(&replacement_operator) < bond {
-                return Err(format!("Insufficient operator balance for bond {bond}"));
-            }
-            let account = self.state.get_or_create(&replacement_operator);
-            account.balance = account.balance.saturating_sub(bond);
-        }
-        match self.state.storage_registry.accept_reallocation_ticket(
+        let terms = crate::domain::deal_open::ReallocationTerms {
             ticket_id,
             replacement_operator,
             start_epoch,
             end_epoch,
             economics,
-            domain_params,
             merkle_proof,
             storage_root,
-        ) {
-            Ok(replacement_deal_id) => {
-                self.persist_storage_registry()?;
-                Ok(replacement_deal_id)
-            }
-            Err(e) => {
-                // Refund on refusal - mirroring the open path, where a
-                // refused deal never keeps the escrow or the bond.
-                if total_fee > 0 {
-                    self.state
-                        .try_add_balance(&payer, total_fee)
-                        .map_err(|e| format!("deal fee refund overflow: {e}"))?;
-                }
-                if bond > 0 {
-                    self.state
-                        .try_add_balance(&replacement_operator, bond)
-                        .map_err(|e| format!("deal bond refund overflow: {e}"))?;
-                }
-                Err(format!("accept_reallocation_ticket failed: {e:?}"))
-            }
-        }
+        };
+        let now_unix_secs = self.current_unix_secs();
+        let replacement_deal_id = crate::domain::deal_open::accept_reallocation_escrowed(
+            &mut self.state,
+            &terms,
+            payer,
+            now_unix_secs,
+            domain_params.min_operator_bond,
+            0,
+        )?;
+        self.persist_storage_registry()?;
+        Ok(replacement_deal_id)
     }
 
     /// Accrue storage operator rewards up to `current_epoch`. This is the

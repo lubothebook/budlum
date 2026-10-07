@@ -1,12 +1,16 @@
 //! One deal-open implementation for every path that opens a paid storage deal.
 //!
 //! The RPC path and the in-block path both escrow a client fee and lock an
-//! operator bond. Keeping that in one function on `AccountState` means one
-//! copy of the rules and one answer to "what does a refused open leave behind".
+//! operator bond, and a repair (reallocation) acceptance does the same for the
+//! replacement placement. Keeping that in functions on `AccountState` means
+//! one copy of the rules and one answer to "what does a refused open leave
+//! behind".
 
 use crate::core::account::AccountState;
 use crate::core::address::Address;
-use crate::domain::storage_deal::{DealStatus, StorageEconomicsParams, StorageError};
+use crate::domain::storage_deal::{
+    DealStatus, ReallocationStatus, StorageEconomicsParams, StorageError,
+};
 use crate::domain::storage_params::StorageDomainParams;
 use crate::domain::Hash32;
 use crate::storage::generated::held_bytes;
@@ -23,6 +27,24 @@ pub struct DealOpenTerms<'a> {
     pub economics: StorageEconomicsParams,
     pub merkle_proof: Option<Vec<u8>>,
     pub storage_root: Option<Hash32>,
+}
+
+/// What a repair acceptance asks for. The placement itself (manifest, shard,
+/// replica, domain) comes from the ticket, not from the caller.
+pub struct ReallocationTerms {
+    pub ticket_id: u64,
+    pub replacement_operator: Address,
+    pub start_epoch: u64,
+    pub end_epoch: u64,
+    pub economics: StorageEconomicsParams,
+    pub merkle_proof: Option<Vec<u8>>,
+    pub storage_root: Option<Hash32>,
+}
+
+/// The two amounts a deal moves out of balances once it is accepted.
+struct Escrow {
+    fee: u64,
+    bond: u64,
 }
 
 /// Open a paid storage deal: every refusal is decided before any write.
@@ -43,40 +65,11 @@ pub fn open_deal_escrowed(
     payer_reserve: u64,
 ) -> Result<u64, String> {
     let operator = terms.operator;
-    let economics = &terms.economics;
     let manifest = terms.manifest;
     let shard_id = terms.shard_id;
 
-    // An operator that missed a challenge sits out six hours. Checked here
-    // because this layer knows wall time; the registry works in epochs.
-    if let Some(until) = state
-        .storage_registry
-        .operator_cooldown_until(&operator, now_unix_secs)
-    {
-        return Err(format!(
-            "operator {operator} missed a challenge and cannot take                  storage work until unix {until} ({} seconds left)",
-            until.saturating_sub(now_unix_secs)
-        ));
-    }
-
-    let epochs = terms.end_epoch.saturating_sub(terms.start_epoch);
-    if epochs == 0 {
-        return Err("Deal duration must be > 0".into());
-    }
-
-    // The shard is looked up here rather than trusting a caller-supplied
-    // size, so the escrow and the deal are computed from the same entry.
-    let listed_bytes = u64::from(
-        manifest
-            .shard(&shard_id)
-            .ok_or_else(|| {
-                format!(
-                    "shard {shard_id:?} is not part of manifest {:?}",
-                    manifest.manifest_id
-                )
-            })?
-            .size,
-    );
+    refuse_cooling_operator(state, &operator, now_unix_secs)?;
+    let (epochs, listed_bytes) = epochs_and_listed_bytes(terms)?;
 
     // Replay guard: a signed deal-open must not debit escrow and lock bond
     // twice for the same placement. An ACTIVE deal that already covers this
@@ -99,41 +92,8 @@ pub fn open_deal_escrowed(
         ));
     }
 
-    // Price what the operator holds, which is what `open_deal` records.
-    let held = held_bytes(&manifest.source, listed_bytes).ok_or_else(|| {
-        format!(
-            "open_deal failed: {:?}",
-            StorageError::InvalidManifest {
-                reason: String::from(
-                    "held_bytes refused the source (hybrid prefix longer than listed size)",
-                ),
-            }
-        )
-    })?;
-    let total_fee = economics.total_fee(held, epochs);
-    let bond = economics.operator_bond;
+    let escrow = check_funds(state, terms, listed_bytes, epochs, &payer, payer_reserve)?;
 
-    // Read-only balance checks. When one account is both payer and operator
-    // it must cover the fee, the reserve and the bond together.
-    let payer_needs = total_fee.checked_add(payer_reserve);
-    if payer_needs.is_none_or(|need| state.get_balance(&payer) < need) {
-        return Err(format!(
-            "Insufficient payer balance for deal fee {total_fee}"
-        ));
-    }
-    let operator_has = if payer == operator {
-        state.get_balance(&operator).checked_sub(total_fee)
-    } else {
-        Some(state.get_balance(&operator))
-    };
-    if bond > 0 && operator_has.is_none_or(|have| have < bond) {
-        return Err(format!("Insufficient operator balance for bond {bond}"));
-    }
-
-    let domain_params = StorageDomainParams {
-        min_operator_bond,
-        ..StorageDomainParams::default()
-    };
     let deal_id = state
         .storage_registry
         .open_deal(
@@ -144,16 +104,218 @@ pub fn open_deal_escrowed(
             terms.replica_index,
             terms.start_epoch,
             terms.end_epoch,
-            economics.clone(),
-            &domain_params,
+            terms.economics.clone(),
+            &registry_params(min_operator_bond),
             terms.merkle_proof.clone(),
             terms.storage_root,
         )
         .map_err(|e| format!("open_deal failed: {e:?}"))?;
 
-    debit(state, &payer, total_fee)?;
-    debit(state, &operator, bond)?;
+    debit_escrow(state, &payer, &operator, &escrow)?;
     Ok(deal_id)
+}
+
+/// Accept a repair ticket for a replacement operator, escrowing the fee and
+/// locking the bond the same way a fresh open does.
+///
+/// Same order as [`open_deal_escrowed`]: every refusal is decided before any
+/// write. The ticket checks and the cooldown read only, the balance checks
+/// read only, the registry acceptance writes nothing when it refuses, and the
+/// debits come last. The escrow is priced on `held_bytes` of the ticket's
+/// shard, which is what the replacement deal records.
+pub fn accept_reallocation_escrowed(
+    state: &mut AccountState,
+    terms: &ReallocationTerms,
+    payer: Address,
+    now_unix_secs: u64,
+    min_operator_bond: u64,
+    payer_reserve: u64,
+) -> Result<u64, String> {
+    let ticket_id = terms.ticket_id;
+    let operator = terms.replacement_operator;
+
+    let ticket = state
+        .storage_registry
+        .get_reallocation_ticket(ticket_id)
+        .cloned()
+        .ok_or_else(|| format!("unknown reallocation ticket {ticket_id}"))?;
+    if !matches!(
+        ticket.status,
+        ReallocationStatus::Pending | ReallocationStatus::UnderReplicated
+    ) {
+        return Err(format!(
+            "reallocation ticket {ticket_id} is not open for acceptance"
+        ));
+    }
+    // The identity refusal precedes the cooldown refusal deliberately: the
+    // slash that opened this very ticket also starts the operator's
+    // cooldown, so the cooldown message would otherwise always shadow the
+    // more specific answer: "you are the operator this ticket replaces".
+    // A cooldown expires; being the slashed operator of the ticket does
+    // not, and the caller deserves the refusal that never goes away.
+    if operator == ticket.slashed_operator {
+        return Err(format!(
+            "operator {operator} is the slashed operator of ticket {ticket_id}"
+        ));
+    }
+    refuse_cooling_operator(state, &operator, now_unix_secs)?;
+
+    let manifest = state
+        .storage_registry
+        .get_manifest(&ticket.manifest_id)
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "manifest {} of ticket {ticket_id} vanished",
+                ticket.manifest_id
+            )
+        })?;
+    let open_terms = DealOpenTerms {
+        domain_id: ticket.domain_id,
+        manifest: &manifest,
+        shard_id: ticket.shard_id,
+        operator,
+        replica_index: ticket.replica_index,
+        start_epoch: terms.start_epoch,
+        end_epoch: terms.end_epoch,
+        economics: terms.economics.clone(),
+        merkle_proof: terms.merkle_proof.clone(),
+        storage_root: terms.storage_root,
+    };
+    let (epochs, listed_bytes) = epochs_and_listed_bytes(&open_terms)?;
+    let escrow = check_funds(
+        state,
+        &open_terms,
+        listed_bytes,
+        epochs,
+        &payer,
+        payer_reserve,
+    )?;
+
+    let replacement_deal_id = state
+        .storage_registry
+        .accept_reallocation_ticket(
+            ticket_id,
+            operator,
+            terms.start_epoch,
+            terms.end_epoch,
+            terms.economics.clone(),
+            &registry_params(min_operator_bond),
+            terms.merkle_proof.clone(),
+            terms.storage_root,
+        )
+        .map_err(|e| format!("accept_reallocation_ticket failed: {e:?}"))?;
+
+    debit_escrow(state, &payer, &operator, &escrow)?;
+    Ok(replacement_deal_id)
+}
+
+/// An operator that missed a challenge sits out six hours. Checked here
+/// because this layer knows wall time; the registry works in epochs. Both
+/// entry points call this before anything else that can be refused for cause.
+fn refuse_cooling_operator(
+    state: &AccountState,
+    operator: &Address,
+    now_unix_secs: u64,
+) -> Result<(), String> {
+    if let Some(until) = state
+        .storage_registry
+        .operator_cooldown_until(operator, now_unix_secs)
+    {
+        return Err(format!(
+            "operator {operator} missed a challenge and cannot take storage work until unix {until} ({} seconds left)",
+            until.saturating_sub(now_unix_secs)
+        ));
+    }
+    Ok(())
+}
+
+/// The deal length in epochs and the listed size of the shard.
+///
+/// The shard is looked up here rather than trusting a caller-supplied
+/// size, so the escrow and the deal are computed from the same entry.
+fn epochs_and_listed_bytes(terms: &DealOpenTerms<'_>) -> Result<(u64, u64), String> {
+    let epochs = terms.end_epoch.saturating_sub(terms.start_epoch);
+    if epochs == 0 {
+        return Err("Deal duration must be > 0".into());
+    }
+    let listed_bytes = u64::from(
+        terms
+            .manifest
+            .shard(&terms.shard_id)
+            .ok_or_else(|| {
+                format!(
+                    "shard {:?} is not part of manifest {:?}",
+                    terms.shard_id, terms.manifest.manifest_id
+                )
+            })?
+            .size,
+    );
+    Ok((epochs, listed_bytes))
+}
+
+/// Price the deal on what the operator holds, which is what `open_deal`
+/// records, and check both balances without writing.
+///
+/// When one account is both payer and operator it must cover the fee, the
+/// reserve and the bond together.
+fn check_funds(
+    state: &AccountState,
+    terms: &DealOpenTerms<'_>,
+    listed_bytes: u64,
+    epochs: u64,
+    payer: &Address,
+    payer_reserve: u64,
+) -> Result<Escrow, String> {
+    let held = held_bytes(&terms.manifest.source, listed_bytes).ok_or_else(|| {
+        format!(
+            "open_deal failed: {:?}",
+            StorageError::InvalidManifest {
+                reason: String::from(
+                    "held_bytes refused the source (hybrid prefix longer than listed size)",
+                ),
+            }
+        )
+    })?;
+    let fee = terms.economics.total_fee(held, epochs);
+    let bond = terms.economics.operator_bond;
+
+    let payer_needs = fee.checked_add(payer_reserve);
+    if payer_needs.is_none_or(|need| state.get_balance(payer) < need) {
+        return Err(format!("Insufficient payer balance for deal fee {fee}"));
+    }
+    if bond > 0 {
+        let operator_needs = if *payer == terms.operator {
+            payer_needs.and_then(|need| need.checked_add(bond))
+        } else {
+            Some(bond)
+        };
+        if operator_needs.is_none_or(|need| state.get_balance(&terms.operator) < need) {
+            return Err(format!("Insufficient operator balance for bond {bond}"));
+        }
+    }
+    Ok(Escrow { fee, bond })
+}
+
+/// The registry reads only `min_operator_bond` from the domain params when it
+/// opens a deal, so the defaults for every other field are inert here.
+fn registry_params(min_operator_bond: u64) -> StorageDomainParams {
+    StorageDomainParams {
+        min_operator_bond,
+        ..StorageDomainParams::default()
+    }
+}
+
+/// Move the fee and the bond out of the balances. The checks before the
+/// registry write make a failure here unreachable.
+fn debit_escrow(
+    state: &mut AccountState,
+    payer: &Address,
+    operator: &Address,
+    escrow: &Escrow,
+) -> Result<(), String> {
+    debit(state, payer, escrow.fee)?;
+    debit(state, operator, escrow.bond)
 }
 
 /// Subtract `amount` from an account balance. The checks in the caller
@@ -440,5 +602,220 @@ mod tests {
             5_000_000 - deal.total_fee(epochs)
         );
         assert_eq!(state.get_balance(&operator()), 5_000_000 - BOND);
+    }
+    #[test]
+    fn payer_as_operator_must_also_keep_the_reserve() {
+        let manifest = manifest();
+        let t = terms(&manifest, operator());
+        let fee = fee_of(&t);
+        // Covers fee + bond and, separately, fee + reserve, but not all three.
+        let reserve = BOND;
+        let mut state = AccountState::new();
+        state.add_balance(&operator(), fee + BOND);
+        let before = (
+            state.get_balance(&operator()),
+            state.storage_registry.root(),
+        );
+        let err = open_deal_escrowed(&mut state, &t, operator(), 0, BOND, reserve)
+            .expect_err("fee, reserve and bond together must be covered");
+        assert!(err.contains("Insufficient operator balance"), "got {err:?}");
+        assert_eq!(
+            (
+                state.get_balance(&operator()),
+                state.storage_registry.root()
+            ),
+            before,
+            "a refusal must not write"
+        );
+
+        let mut enough = AccountState::new();
+        enough.add_balance(&operator(), fee + BOND + reserve);
+        open_deal_escrowed(&mut enough, &t, operator(), 0, BOND, reserve).unwrap();
+        assert_eq!(enough.get_balance(&operator()), reserve);
+    }
+
+    /// A hybrid manifest listing 13 bytes of which 4 are held, so the held
+    /// price and the listed price differ.
+    fn hybrid_manifest(prefix_bytes: u32) -> ContentManifest {
+        use crate::storage::generated::{ContentSource, GeneratedSpec, GeneratorId};
+        let spec = GeneratedSpec {
+            generator: GeneratorId::Avatar,
+            seed: [7u8; 32],
+            output_len: 32 * 32,
+            step_budget: 8_000,
+        };
+        ContentManifest::from_bytes_sliced(b"prefixed cont", 13)
+            .unwrap()
+            .with_source(ContentSource::Hybrid { prefix_bytes, spec })
+    }
+
+    fn generated_manifest() -> ContentManifest {
+        use crate::storage::generated::{
+            generate_content, ContentSource, GeneratedSpec, GeneratorId,
+        };
+        let spec = GeneratedSpec {
+            generator: GeneratorId::Avatar,
+            seed: [7u8; 32],
+            output_len: 32 * 32,
+            step_budget: 8_000,
+        };
+        let bytes = generate_content(&spec).expect("the recipe must run");
+        ContentManifest::from_bytes_sliced(&bytes, bytes.len() as u32)
+            .unwrap()
+            .with_source(ContentSource::Generated(spec))
+    }
+
+    /// One byte costs one base unit per epoch, so a fee reads as bytes times
+    /// epochs.
+    fn unit_rate_terms(manifest: &ContentManifest, operator: Address) -> DealOpenTerms<'_> {
+        let mut t = terms(manifest, operator);
+        t.economics.fee_per_byte_epoch = FEE_RATE_SCALE as u64;
+        t
+    }
+
+    #[test]
+    fn a_hybrid_deal_escrows_the_held_prefix_not_the_listed_size() {
+        let manifest = hybrid_manifest(4);
+        let t = unit_rate_terms(&manifest, operator());
+        let epochs = t.end_epoch - t.start_epoch;
+        let listed = shard_bytes(&manifest);
+        assert_eq!(listed, 13);
+        assert_ne!(
+            t.economics.total_fee(4, epochs),
+            t.economics.total_fee(listed, epochs)
+        );
+
+        let mut state = funded(5_000_000, 5_000_000);
+        let deal_id = open_deal_escrowed(&mut state, &t, payer(), 0, BOND, 0).unwrap();
+        let deal = state.storage_registry.get_deal(deal_id).unwrap();
+        assert_eq!(deal.shard_bytes, 4);
+        assert_eq!(deal.total_fee(epochs), 4 * epochs);
+        assert_eq!(
+            state.get_balance(&payer()),
+            5_000_000 - deal.total_fee(epochs)
+        );
+        assert_eq!(state.get_balance(&operator()), 5_000_000 - BOND);
+    }
+
+    #[test]
+    fn a_generated_deal_escrows_no_fee_but_locks_the_bond() {
+        let manifest = generated_manifest();
+        let t = unit_rate_terms(&manifest, operator());
+        let epochs = t.end_epoch - t.start_epoch;
+        assert!(
+            t.economics.total_fee(shard_bytes(&manifest), epochs) > 0,
+            "control: the listed size would not be free"
+        );
+
+        let mut state = funded(5_000_000, 5_000_000);
+        let deal_id = open_deal_escrowed(&mut state, &t, payer(), 0, BOND, 0).unwrap();
+        let deal = state.storage_registry.get_deal(deal_id).unwrap();
+        assert_eq!(deal.shard_bytes, 0);
+        assert_eq!(deal.total_fee(epochs), 0);
+        assert_eq!(state.get_balance(&payer()), 5_000_000);
+        assert_eq!(state.get_balance(&operator()), 5_000_000 - BOND);
+    }
+
+    #[test]
+    fn a_hybrid_with_an_oversized_prefix_is_refused_without_a_write() {
+        let manifest = hybrid_manifest(100);
+        let t = unit_rate_terms(&manifest, operator());
+        assert_refused_untouched(
+            funded(5_000_000, 5_000_000),
+            &t,
+            payer(),
+            0,
+            0,
+            "held_bytes refused the source",
+        );
+    }
+
+    fn reallocation_terms(
+        ticket_id: u64,
+        replacement_operator: Address,
+        manifest: &ContentManifest,
+    ) -> ReallocationTerms {
+        let t = unit_rate_terms(manifest, replacement_operator);
+        ReallocationTerms {
+            ticket_id,
+            replacement_operator,
+            start_epoch: t.start_epoch,
+            end_epoch: t.end_epoch,
+            economics: t.economics,
+            merkle_proof: t.merkle_proof,
+            storage_root: t.storage_root,
+        }
+    }
+
+    /// A state holding the manifest and the sweep's ticket for its empty slot.
+    fn state_with_ticket(
+        manifest: &ContentManifest,
+        payer_balance: u64,
+        operator_balance: u64,
+    ) -> (AccountState, u64) {
+        let mut state = funded(payer_balance, operator_balance);
+        state.storage_registry.register_manifest(manifest);
+        let ticket_id = state
+            .storage_registry
+            .open_never_placed_ticket(42, manifest.manifest_id, manifest.shards[0].shard_id, 0, 1)
+            .expect("the sweep's ticket opens for an empty slot");
+        (state, ticket_id)
+    }
+
+    #[test]
+    fn a_reallocation_whose_bond_check_fails_leaves_everything_unchanged() {
+        let manifest = manifest();
+        let (mut state, ticket_id) = state_with_ticket(&manifest, 5_000_000, BOND - 1);
+        let terms = reallocation_terms(ticket_id, operator(), &manifest);
+        let before = snapshot(&state);
+
+        let err = accept_reallocation_escrowed(&mut state, &terms, payer(), 0, BOND, 0)
+            .expect_err("a short operator cannot take the repair");
+        assert!(err.contains("Insufficient operator balance"), "got {err:?}");
+        assert_eq!(snapshot(&state), before, "the payer must not lose the fee");
+        let ticket = state
+            .storage_registry
+            .get_reallocation_ticket(ticket_id)
+            .unwrap();
+        assert_eq!(ticket.status, ReallocationStatus::Pending);
+    }
+
+    #[test]
+    fn a_reallocation_escrow_equals_the_recorded_fee_for_a_hybrid_manifest() {
+        let manifest = hybrid_manifest(4);
+        let (mut state, ticket_id) = state_with_ticket(&manifest, 5_000_000, 5_000_000);
+        let terms = reallocation_terms(ticket_id, operator(), &manifest);
+        let epochs = terms.end_epoch - terms.start_epoch;
+        let listed = shard_bytes(&manifest);
+        assert_ne!(
+            terms.economics.total_fee(4, epochs),
+            terms.economics.total_fee(listed, epochs)
+        );
+
+        let deal_id =
+            accept_reallocation_escrowed(&mut state, &terms, payer(), 0, BOND, 0).unwrap();
+        let deal = state.storage_registry.get_deal(deal_id).unwrap();
+        assert_eq!(deal.shard_bytes, 4);
+        assert_eq!(deal.total_fee(epochs), 4 * epochs);
+        assert_eq!(
+            state.get_balance(&payer()),
+            5_000_000 - deal.total_fee(epochs)
+        );
+        assert_eq!(state.get_balance(&operator()), 5_000_000 - BOND);
+    }
+
+    #[test]
+    fn a_reallocation_to_a_cooled_down_operator_is_refused_without_a_write() {
+        let manifest = manifest();
+        let (mut state, ticket_id) = state_with_ticket(&manifest, 5_000_000, 5_000_000);
+        state
+            .storage_registry
+            .begin_operator_cooldown(operator(), 100);
+        let terms = reallocation_terms(ticket_id, operator(), &manifest);
+        let before = snapshot(&state);
+        let err = accept_reallocation_escrowed(&mut state, &terms, payer(), 200, BOND, 0)
+            .expect_err("the cooldown applies to repairs too");
+        assert!(err.contains("missed a challenge"), "got {err:?}");
+        assert_eq!(snapshot(&state), before);
     }
 }
