@@ -45,7 +45,8 @@ All Python and shell tooling was ported to Rust and the scripts deleted: `xtask/
 
 - Local checks used so far: `cargo check --lib --tests`, `cargo fmt --check`, clippy, the xtask gates (`cargo run -q --release --manifest-path xtask/gates/Cargo.toml -- <gate>`) and filtered tests. No full `cargo test` has been run locally.
 - Opus verification passed with fixes applied for: ADIM 1 (manifest signing), ADIM 5 (operator class and policy), ADIM 2b (deal open and reallocation).
-- Pending verification: ADIM 2c `OpenDeal` (e649082) and the zkVM commits b64163d, cf9a35f. An architect run for the zkVM commits was started; if it did not report, re-run it first.
+- zkVM commits b64163d and cf9a35f: Opus verification PASS with notes. New forgery tests verify on the parent AIR and are refused on the fixed AIR. Notes: VerifyInference expansion length is not enforced (superseded by queue step 7, which makes 0x1F fail closed); an honest VerifyMerkle with an out-of-bounds path address is unprovable (fix before activation); some callers (cross-domain adapter, ai_inference verify) use the default closed activation implicitly, which is correct.
+- Pending verification: ADIM 2c `OpenDeal` (e649082) has no separate Opus verification yet.
 - CI on GitHub (PR #1) was red on: Dependency Review, Typos, Repo Lint, Gates, Budlum Core, docker-smoke. Several workflows are `disabled_fork` and must be enabled by the owner in the Actions tab. Review the CI logs together at the end of the next round and fix in one pass. Expected causes to check first: Turkish text in `.claude/agents/*.md` against Typos, the new proto message against Repo Lint (buf), the tool ports against Gates, and whether the Rust workspace tests pass.
 - Baseline edits approved by owner: four lines removed from `.github/idle-code-baseline.txt` (items gained production callers).
 
@@ -96,7 +97,7 @@ All Python and shell tooling was ported to Rust and the scripts deleted: `xtask/
 ## 6. Next step (do this first in a new session)
 
 1. Read this file, run the environment check from MODEL_ROUTING.md section 10, compare with `git log` and `git status`.
-2. If the K0 report, the directive-documents commit or the zkVM verification are not in the log, finish them (their agents may have been cut off).
+2. If the K0 report or the gate repair (tree-is-english exemption for .claude/agents, clippy fix in storage_penalties.rs) are not in the log, finish them (their agents may have been cut off). If `git push` fails with a missing username, GitHub credentials were lost: ask the owner to reconnect GitHub; commits are safe locally.
 3. Review the CI results of PR #1 together and fix the red checks in one pass (coder agents).
 4. Plan K1 with an architect (Opus) from the K0 gap table, then run K1 steps with coder agents. In parallel keep the zkVM queue moving, starting with step 1 (architect plan, then coder-deep).
 5. Rewrite sections 1 to 6 of this file before ending the session.
