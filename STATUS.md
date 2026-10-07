@@ -43,6 +43,8 @@ All Python and shell tooling was ported to Rust and the scripts deleted: `xtask/
 
 ## 3. Verification state
 
+- Session tooling installed: Karpathy behaviour principles appended to CLAUDE.md (MODEL_ROUTING_KURULUM 3.2). Not installed: cloudflare security-audit skill (needs owner approval and an `opus xhigh` session), autoharness (owner approval and source review required), memanto (needs Docker and Ollama, not available in the cloud container; durable decisions stay in this file).
+
 - Local checks used so far: `cargo check --lib --tests`, `cargo fmt --check`, clippy, the xtask gates (`cargo run -q --release --manifest-path xtask/gates/Cargo.toml -- <gate>`) and filtered tests. No full `cargo test` has been run locally.
 - Opus verification passed with fixes applied for: ADIM 1 (manifest signing), ADIM 5 (operator class and policy), ADIM 2b (deal open and reallocation).
 - zkVM commits b64163d and cf9a35f: Opus verification PASS with notes. New forgery tests verify on the parent AIR and are refused on the fixed AIR. Notes: VerifyInference expansion length is not enforced (superseded by queue step 7, which makes 0x1F fail closed); an honest VerifyMerkle with an out-of-bounds path address is unprovable (fix before activation); some callers (cross-domain adapter, ai_inference verify) use the default closed activation implicitly, which is correct.
