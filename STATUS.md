@@ -119,6 +119,12 @@ State at the end of the last session: branch `claude/zkvm-bud-completion-84r6jc`
 5. B.U.D. in-block queue (4.2) can run in parallel with the zkVM queue when different files are touched.
 6. Rewrite sections 1 to 6 of this file before ending the session.
 
+## Official Anthropic skills (github.com/anthropics/skills, looked at, none installed)
+
+Install: `/plugin marketplace add anthropics/skills`, then `/plugin install document-skills@anthropic-agent-skills` or `/plugin install example-skills@anthropic-agent-skills`. Skills in the repository: academy-guide, algorithmic-art, brand-guidelines, canvas-design, claude-api, discernment-nudge, doc-coauthoring, docx, frontend-design, internal-comms, mcp-builder, pdf, pptx, skill-creator, slack-gif-creator, theme-factory, web-artifacts-builder, webapp-testing, xlsx.
+
+Useful for this work: doc-coauthoring (design notes and the K0 to K6 reports), skill-creator (own project skills), frontend-design and webapp-testing (later, for the wallet and budscan shell). Not relevant to the Rust core: the rest. Read a skill's source before installing it.
+
 ## EFFORT LOG
 
 (no finder-max calls)
