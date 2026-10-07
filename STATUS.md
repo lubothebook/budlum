@@ -71,21 +71,23 @@ All Python and shell tooling was ported to Rust and the scripts deleted: `xtask/
 - ADIM 6: remove the RPC mutation paths; then open storage on mainnet (owner: Claude opens the gate when payouts, challenges and audits run in block).
 - Low: `declare_operator_class` scans all deals; index by operator later.
 
-### 4.3 BudZKVM queue (each step: a forgery test that verifies before the fix and is refused after; Opus verifies)
+### 4.3 BudZKVM queue (architect plan done; each step: a forgery test that verifies before the fix and is refused after; Opus verifies where marked)
 
-1. Memory and register argument (architect plan first): booleanity, prefix contiguity and boundary rules for the active flags; pin the memory same-address flag with an inverse witness; order the tables by (index, clock) with a range check or use timestamped offline memory checking; commit the initial image soundly; make `Store` with `rs1 = r0` create memory demand; bound addresses and the stack pointer; separate stack and storage tables; only opcodes that write `rd` write it on the register bus.
-2. Run boundary: force `cpu_active = 0` on the last row; derive `exit_code`; trace length counter with a transition; prove or stop exposing `final_state_root` (consumer `src/execution/proof_verifier.rs`).
-3. Dynamic storage slots (`imm = -1`) in the address and the digest; no i32 truncation in the VM.
-4. Canonical u64 values in the VM; field subtraction in `EQ_DIFF_INV`.
-5. `event_digest` as a Poseidon chain.
-6. Verifier checks `gas_used <= gas_limit`.
-7. Make VerifyInference (0x1F) fail closed.
-8. VerifyMerkle node hash: two full Poseidon permutations (rate 4, capacity 4), leaf and node domain tags, 4-limb digests, 265-word window, 329 rows, gas 2075 (decided by Claude).
-9. AIR and prover for 8; `PROOF_FORMAT_VERSION = 2`.
-10. BudL builtin `verify_merkle_proof(window_const)`.
-11. Storage challenge proofs checkable end to end; then `storage_challenge_proofs_are_checkable()` may return true.
-12. HashMem opcode 0x23 (decided by Claude); 13. bind MLP guest weights, input and output with it.
-14. AIR audit of the remaining opcode groups (Poseidon, privacy opcodes, syscalls, storage digest, call and return).
+Design choices (architect, accepted): sorted register and memory tables with a range-checked lexicographic order (32-bit decompositions; no 2^16 lookup table); initial image through a lookup against a preprocessed image (BudAir carries the image; initial_state_root limbs become a native hash of it); memory bus table ids 1 memory, 2 stack, 3 storage; trace width about 754 to 856; max constraint degree 6. One PROOF_FORMAT_VERSION bump to 2 for the whole series (nothing is released yet). The verifying key now depends on the image, so it is per execution.
+
+Order (single coder at a time, all steps edit `budzero/bud-proof/src/plonky3_air.rs`):
+1. B1: make VerifyInference (0x1F) fail closed (VM rd = 0 with no expansion; AIR asserts the selector and expansion flag are 0; flip the tests; fix ISA comments and docs/AI_VERIFICATION_STATUS.md). Also closes the free-filler-row finding.
+2. R1: `Store` through r0 creates memory demand; canonical immediates in the VM; EQ inverse in the field. (coder, no Opus)
+3. R2: register bus write only for opcodes that write rd. (coder, Opus)
+4. R3: register table activity as a boolean prefix and strict (index, time) order. (coder-deep, Opus)
+5. R4a: memory tables by id, same-address inverse, order and prefix. (coder-deep, Opus)
+6. R4b: address bounds, word alignment, stack floor, resolved dynamic storage slot in address and digest. Check first that the compiler emits aligned addresses and non-negative slots; stop if not. (coder-deep, Opus)
+7. R5: initial image lookup instead of the linear folds; update `cross_table_checks` gate columns without weakening it. (coder-deep, Opus)
+8. R6: computed trace length, exit code and gas bound. The consumer must stop reporting `final_state_root` as proof-verified: this changes meaning, ask the owner before doing it. (coder, Opus)
+9. R7: Poseidon chain for `event_digest`. (coder, Opus)
+10. R8: PROOF_FORMAT_VERSION to 2, ARCHITECTURE table, four gates. (coder-lite, Opus reviews the whole R diff)
+11. A1 VerifyMerkle sponge node hash and window (reads tid 1, aligned); 12. A2 AIR and prover for A1 (no second version bump); 13. A3 BudL builtin; 14. B2 HashMem 0x23 (needs R4b); 15. A4 storage proofs checkable end to end (tid 3 init through the R5 image); 16. B3 bind MLP guest; 17. AIR audit of remaining opcode groups.
+Gates touched: air-selectors-are-opcode-bound (B1, B2), logup-multipliers-are-boolean (R1, R2, R5), cross-table-checks-use-last-row (R5), every-opcode-has-a-forgery-test (R1, R2, R4b, R6, R7, B2).
 
 ### 4.4 Tooling and platform
 
