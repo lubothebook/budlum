@@ -1693,10 +1693,37 @@ impl ProverAdapter for Plonky3Adapter {
         })
     }
 
+    /// Verify under the default activation state, in which the staged
+    /// opcodes (`VerifyMerkle`, `VerifyInference`) are off. A program that
+    /// uses one is refused; see [`Plonky3Adapter::verify_with_activation`].
     fn verify(
         envelope: &ProofEnvelope,
         expected_inputs: &ExecutionPublicInputs,
         program: &[u64],
+    ) -> Result<(), VerifyError> {
+        Self::verify_with_activation(
+            envelope,
+            expected_inputs,
+            program,
+            bud_isa::MainnetActivation::default(),
+        )
+    }
+}
+
+impl Plonky3Adapter {
+    /// Verify a proof exactly as [`ProverAdapter::verify`] does, but under an
+    /// explicit activation state.
+    ///
+    /// [`ProverAdapter::verify`] uses [`bud_isa::MainnetActivation::default`],
+    /// in which `VerifyMerkle` and `VerifyInference` are off: a proof whose
+    /// program contains either is refused with
+    /// `VerifyError::InvalidEnvelope` before the STARK is looked at. A network
+    /// that has activated them passes its own state here.
+    pub fn verify_with_activation(
+        envelope: &ProofEnvelope,
+        expected_inputs: &ExecutionPublicInputs,
+        program: &[u64],
+        activation: bud_isa::MainnetActivation,
     ) -> Result<(), VerifyError> {
         debug!(
             version = envelope.proof_format_version,
@@ -1752,6 +1779,23 @@ impl ProverAdapter for Plonky3Adapter {
 
         if computed_prog_hash != expected_inputs.program_hash {
             return Err(VerifyError::PublicInputsMismatch);
+        }
+
+        // The AIR proves that a program ran; it does not decide whether the
+        // chain allows the program to run. An opcode that is not activated
+        // is refused here, on the program the proof is bound to, so that a
+        // staged opcode cannot enter through a proof even though the
+        // execution path would have refused to run it. Words that do not
+        // decode are left to the AIR, which has no row for them.
+        for word in program {
+            if let Ok(instruction) = bud_isa::Instruction::decode_any(*word) {
+                if !activation.allows(instruction.opcode) {
+                    return Err(VerifyError::InvalidEnvelope(format!(
+                        "opcode {:?} is not activated",
+                        instruction.opcode
+                    )));
+                }
+            }
         }
 
         let config = build_config();
@@ -1933,6 +1977,144 @@ mod tests {
             Plonky3Adapter::verify(&envelope, &pi, &program).is_ok(),
             "the untouched envelope must still verify"
         );
+    }
+
+    /// Prove a hand-built step list and return what the verifier answers.
+    ///
+    /// The trace goes through `trace_matrix` unchanged and the proof is made
+    /// with the lower-level prover, so nothing between the forged steps and
+    /// the AIR gets a chance to refuse them first. The public inputs are
+    /// derived from the steps and from the two gas figures the caller states,
+    /// which is what a prover claiming a different run would publish.
+    fn verify_forged_trace(
+        program: &[u64],
+        trace: &[Step],
+        gas_limit: u64,
+        gas_used: u64,
+    ) -> Result<(), VerifyError> {
+        let program_bytes: Vec<u8> = program
+            .iter()
+            .flat_map(|&i| i.to_le_bytes().to_vec())
+            .collect();
+        let mut hasher = Keccak::v256();
+        hasher.update(&program_bytes);
+        let mut program_hash = [0u8; 32];
+        hasher.finalize(&mut program_hash);
+
+        let pi = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash,
+            initial_state_root: crate::adapter::initial_state_root_of(
+                crate::adapter::memory_image_commitment_of_reads(&initial_memory_reads(trace)),
+                crate::adapter::register_image_commitment_of_reads(&initial_register_reads(trace)),
+            ),
+            final_state_root: [0u8; 32],
+            sender: 0,
+            nonce: 0,
+            block_height: 0,
+            gas_limit,
+            gas_used,
+            exit_code: 0,
+            trace_len: trace.len() as u64,
+            event_digest: [0u8; 32],
+            state_writes_digest: [0u8; 32],
+        };
+
+        let (matrix, n_cpu) = trace_matrix(trace, program, &pi);
+        let matrix = RowMajorMatrix::new(matrix.values, TRACE_WIDTH);
+        let air = BudAir {
+            num_steps: trace.len(),
+            program: program.to_vec(),
+        };
+        let config = build_config();
+        let public_values = to_public_values(&pi);
+        let degree_bits = p3_util::log2_strict_usize(matrix.height());
+        let preprocessed = setup_preprocessed(&config, &air, degree_bits);
+        let preprocessed_ref = preprocessed.as_ref().map(|(p, _)| p);
+
+        let p3_proof = prove_with_preprocessed(
+            &config,
+            &air,
+            matrix.clone(),
+            Some(crate::plonky3_prover::aux_trace_generator(
+                matrix.clone(),
+                n_cpu,
+                program.to_vec(),
+            )),
+            &public_values,
+            preprocessed_ref,
+        );
+        let proof_bytes = postcard::to_allocvec(&p3_proof).unwrap();
+        let envelope = ProofEnvelope {
+            proof_format_version: PROOF_FORMAT_VERSION,
+            backend: "Plonky3-Keccak-Goldilocks".to_string(),
+            p3_version: "0.5.2".to_string(),
+            fri_params_id: "test_fri_params".to_string(),
+            public_inputs_hash: pi.hash(),
+            proof_bytes,
+            degree_bits: degree_bits as u32,
+        };
+        Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            program,
+            bud_isa::MainnetActivation::full(),
+        )
+    }
+
+    /// The `VerifyMerkle` fixture the forgery tests below start from: the
+    /// one-sibling path of `proves_verify_merkle_valid_1_depth`, run through
+    /// the honest VM.
+    fn merkle_one_depth_run() -> (Vec<u64>, Vm) {
+        let program = vec![
+            inst(Opcode::VerifyMerkle, 1, 2, 3, 256),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let key: u64 = 0;
+        let mut siblings = [0u64; 64];
+        siblings[0] = 1;
+        let leaf: u64 = 0xBEEF;
+        let mut cur = leaf;
+        for &sib in siblings.iter() {
+            cur = bud_vm::merkle_poseidon_round(cur, sib);
+        }
+        vm.memory[256..264].copy_from_slice(&key.to_le_bytes());
+        for (i, &sib) in siblings.iter().enumerate() {
+            let off = 264 + i * 8;
+            vm.memory[off..off + 8].copy_from_slice(&sib.to_le_bytes());
+        }
+        vm.registers[2] = cur;
+        vm.registers[3] = leaf;
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success);
+        assert_eq!(vm.trace.len(), 66, "the original row, 64 rounds, Halt");
+        (program, vm)
+    }
+
+    /// Point a forged `VerifyMerkle` trace at the root its (altered) rounds
+    /// actually produce: re-run the chain from the leaf over whatever
+    /// siblings the expansion rows now carry, and make the original row, its
+    /// root operand and every register snapshot agree on the result. This is
+    /// what a prover forging a path does, because the root register is the
+    /// prover's to choose.
+    fn rechain_merkle_trace(trace: &mut [Step]) {
+        let mut cur = trace[0].src2_val;
+        for step in trace.iter_mut().filter(|s| s.merkle_is_expand) {
+            step.merkle_current = Some(cur);
+            let sib = step.merkle_sibling.expect("expansion rows carry one");
+            let bit = (step.merkle_key.expect("and the key") >> step.merkle_round.unwrap()) & 1;
+            cur = if bit == 0 {
+                bud_vm::merkle_poseidon_round(cur, sib)
+            } else {
+                bud_vm::merkle_poseidon_round(sib, cur)
+            };
+        }
+        trace[0].merkle_current = Some(cur);
+        trace[0].src1_val = cur;
+        for step in trace.iter_mut() {
+            step.registers[2] = cur;
+        }
     }
 
     /// Run the program, tamper the trace, and assert that proving FAILS.
@@ -3413,6 +3595,13 @@ mod tests {
     /// Someone optimising the Program CTL, or relaxing `IS_ACTIVE`, would
     /// otherwise reopen arbitrary control flow without editing a line that
     /// looks like it has anything to do with jumps.
+    ///
+    /// The fixture's first row is a `Load`, not a jump, so the sequential
+    /// `next_pc` rule (a row that does not branch, stop or return must have
+    /// `next_pc == pc + 1`) also refuses it. The Program CTL remains the
+    /// defence for a real jump, whose `next_pc == pc + imm` is a rule the
+    /// jump keeps; `rejects_a_fall_through_that_skips_an_instruction` pins the
+    /// sequential rule on its own.
     #[test]
     fn rejects_a_jump_past_the_end_of_the_program() {
         let program = vec![
@@ -3503,6 +3692,310 @@ mod tests {
              proof verified. Nothing in the AIR bounds `COL_PC`; the Program \
              CTL is the only thing between a prover and arbitrary control \
              flow, and it just stopped being that."
+        );
+    }
+
+    /// The default verifier refuses the staged opcodes, whatever the proof.
+    ///
+    /// The AIR proves that a program ran, not that the chain allows it to run.
+    /// `VerifyMerkle` and `VerifyInference` are off unless activated, and
+    /// the execution path refuses them, but a proof reaches the verifier
+    /// without passing through it. Both proofs below are honest and verify
+    /// under full activation; under the default they are refused before the
+    /// STARK is looked at, with an error that names the opcode.
+    #[test]
+    fn verifier_refuses_verify_merkle_under_default_activation() {
+        // VerifyMerkle: the honest one-sibling path.
+        let (program, vm) = merkle_one_depth_run();
+        let program_hash = {
+            let bytes: Vec<u8> = program.iter().flat_map(|&i| i.to_le_bytes()).collect();
+            let mut hasher = Keccak::v256();
+            hasher.update(&bytes);
+            let mut out = [0u8; 32];
+            hasher.finalize(&mut out);
+            out
+        };
+        let pi = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash,
+            initial_state_root: crate::adapter::initial_state_root_of(
+                crate::adapter::memory_image_commitment_of_reads(&initial_memory_reads(&vm.trace)),
+                crate::adapter::register_image_commitment_of_reads(&initial_register_reads(
+                    &vm.trace,
+                )),
+            ),
+            final_state_root: [0u8; 32],
+            sender: 0,
+            nonce: 0,
+            block_height: 0,
+            gas_limit: vm.gas_limit,
+            gas_used: vm.gas_used,
+            exit_code: 0,
+            trace_len: vm.trace.len() as u64,
+            event_digest: [0u8; 32],
+            state_writes_digest: [0u8; 32],
+        };
+        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
+        assert!(Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full()
+        )
+        .is_ok());
+        for refused in [
+            Plonky3Adapter::verify(&envelope, &pi, &program),
+            Plonky3Adapter::verify_with_activation(
+                &envelope,
+                &pi,
+                &program,
+                bud_isa::MainnetActivation::default(),
+            ),
+        ] {
+            match refused {
+                Err(VerifyError::InvalidEnvelope(msg)) => {
+                    assert!(
+                        msg.contains("VerifyMerkle"),
+                        "the error names the opcode: {msg}"
+                    );
+                }
+                other => panic!("VerifyMerkle must be refused by default, got {other:?}"),
+            }
+        }
+
+        // One opcode on does not turn the other on.
+        let only_inference = bud_isa::MainnetActivation {
+            verify_inference_enabled: true,
+            ..bud_isa::MainnetActivation::default()
+        };
+        assert!(matches!(
+            Plonky3Adapter::verify_with_activation(&envelope, &pi, &program, only_inference),
+            Err(VerifyError::InvalidEnvelope(_))
+        ));
+
+        // VerifyInference: no expansion rows are needed to reach the gate.
+        let program = vec![
+            inst(Opcode::VerifyInference, 1, 2, 3, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(16);
+        assert!(vm.run_receipt(&program).success);
+        let bytes: Vec<u8> = program.iter().flat_map(|&i| i.to_le_bytes()).collect();
+        let mut hasher = Keccak::v256();
+        hasher.update(&bytes);
+        let mut program_hash = [0u8; 32];
+        hasher.finalize(&mut program_hash);
+        let pi = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash,
+            initial_state_root: [0u8; 32],
+            final_state_root: [0u8; 32],
+            sender: 0,
+            nonce: 0,
+            block_height: 0,
+            gas_limit: vm.gas_limit,
+            gas_used: vm.gas_used,
+            exit_code: 0,
+            trace_len: vm.trace.len() as u64,
+            event_digest: [0u8; 32],
+            state_writes_digest: [0u8; 32],
+        };
+        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
+        assert!(Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full()
+        )
+        .is_ok());
+        match Plonky3Adapter::verify(&envelope, &pi, &program) {
+            Err(VerifyError::InvalidEnvelope(msg)) => {
+                assert!(
+                    msg.contains("VerifyInference"),
+                    "the error names the opcode: {msg}"
+                );
+            }
+            other => panic!("VerifyInference must be refused by default, got {other:?}"),
+        }
+    }
+
+    /// A row that falls through must land on the next instruction, not on
+    /// one the prover picks.
+    ///
+    /// The only link between consecutive rows is `nxt_pc == next_pc`, and
+    /// `next_pc` was constrained for jumps, calls, `Ret`, `Push`, `Pop` and
+    /// `Halt` only. Every other opcode left it free, so a `Load` could claim
+    /// its successor sits at pc 2 and the row for pc 1 was never executed.
+    ///
+    /// Here the program is `Load r1 = 0; Assert r1; Halt`, which the VM
+    /// refuses at the `Assert`. The forgery drops that step: the `Load` row
+    /// names pc 2 as its successor and the terminal row sits at pc 2. The
+    /// Program CTL is satisfied because both rows match real instructions, and
+    /// the gas claimed is the honest figure minus the skipped `Assert`.
+    #[test]
+    fn rejects_a_fall_through_that_skips_an_instruction() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 0),
+            inst(Opcode::Assert, 0, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(64);
+        let receipt = vm.run_receipt(&program);
+        assert!(!receipt.success, "the honest run fails at the Assert");
+        assert_eq!(vm.trace.len(), 2, "a Load row and the terminal row");
+
+        let assert_gas = Vm::gas_cost(Opcode::Assert);
+        let mut trace = vm.trace.clone();
+        trace[0].next_pc = 2;
+        trace[1].pc = 2;
+        trace[1].next_pc = 2;
+
+        let verdict = verify_forged_trace(&program, &trace, vm.gas_limit, vm.gas_used - assert_gas);
+        assert!(
+            verdict.is_err(),
+            "a Load that claimed its successor sits two instructions on \
+             verified: the Assert in between was never executed and the \
+             proof says the program completed. verdict={verdict:?}"
+        );
+    }
+
+    /// A `VerifyMerkle` with no expansion rows after it proves nothing.
+    ///
+    /// The root comparison lives on the original row and the only thing that
+    /// ties its `merkle_current` to a walked path is the expansion block that
+    /// follows. Leave the block out and the cell is the prover's to write: it
+    /// is set to the claimed root, the comparison holds, and `rd` is 1.
+    #[test]
+    fn rejects_verify_merkle_without_expansion_rows() {
+        let (program, vm) = merkle_one_depth_run();
+        let mut trace = vm.trace.clone();
+        trace.drain(1..65);
+        trace[0].next_pc = 1;
+        assert_eq!(trace[0].dst_val, 1, "the claim being forged is a pass");
+
+        let verdict = verify_forged_trace(&program, &trace, vm.gas_limit, vm.gas_used);
+        assert!(
+            verdict.is_err(),
+            "a VerifyMerkle row with no expansion block verified: its result \
+             was never derived from a path. verdict={verdict:?}"
+        );
+    }
+
+    /// A path that stops after its first round proves membership under a
+    /// root only one hash deep.
+    ///
+    /// The key is zero, so every direction bit is zero and the shortened walk
+    /// satisfies every per-row rule: round 0 is followed by a row that is not
+    /// an expansion, which the terminator treats as the end of the path. The
+    /// claimed root is the round-0 output, so the comparison holds.
+    #[test]
+    fn rejects_verify_merkle_that_stops_early() {
+        let (program, vm) = merkle_one_depth_run();
+        let mut trace = vm.trace.clone();
+        trace.drain(2..65);
+        trace[1].next_pc = 1;
+        rechain_merkle_trace(&mut trace);
+        assert_eq!(trace.len(), 3, "original row, round 0, Halt");
+
+        let verdict = verify_forged_trace(&program, &trace, vm.gas_limit, vm.gas_used);
+        assert!(
+            verdict.is_err(),
+            "a Merkle path cut to one round verified against a root one hash \
+             deep. verdict={verdict:?}"
+        );
+    }
+
+    /// The path buffer address may not move between rows of one path.
+    ///
+    /// Each expansion row's memory address is `imm + 8 + 8 * round`, and `imm`
+    /// on an expansion row is exempt from the program table, so nothing tied
+    /// it to the instruction's. Round 0 here reads the word round 1 reads, one
+    /// slot over, and the root is recomputed from what it found there: the
+    /// walk is over words the program laid out, but not along the path the
+    /// instruction names.
+    #[test]
+    fn rejects_verify_merkle_with_a_shifted_sibling_address() {
+        let (program, vm) = merkle_one_depth_run();
+        let mut trace = vm.trace.clone();
+        let shifted = trace[1].memory_addr.unwrap() + 8;
+        let mut word = [0u8; 8];
+        word.copy_from_slice(&vm.memory[shifted..shifted + 8]);
+        let word = u64::from_le_bytes(word);
+        trace[1].instruction.imm += 8;
+        trace[1].memory_addr = Some(shifted);
+        trace[1].memory_val = Some(word);
+        trace[1].merkle_sibling = Some(word);
+        rechain_merkle_trace(&mut trace);
+        assert_ne!(word, 1, "round 0 must now read a different word");
+
+        let verdict = verify_forged_trace(&program, &trace, vm.gas_limit, vm.gas_used);
+        assert!(
+            verdict.is_err(),
+            "an expansion row whose address was shifted off the instruction's \
+             path buffer verified. verdict={verdict:?}"
+        );
+    }
+
+    /// A `VerifyMerkle` expansion row cannot stand alone.
+    ///
+    /// An expansion row is exempt from the program lookup, the register
+    /// argument and the gas charge, and nothing required it to belong to an
+    /// original `VerifyMerkle` row before it or to a path that runs its 64
+    /// rounds. The program here has no 0x1E in it. Its `Store` row is
+    /// replaced by a lone expansion row: the row for that pc is no longer
+    /// matched against the program, the register file is not asked about it,
+    /// and the store never happens. The proof still says the program ran to
+    /// the end, at the honest gas minus the skipped store.
+    #[test]
+    fn rejects_a_stray_merkle_expansion_row_that_stores() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 7),
+            inst(Opcode::Load, 2, 0, 0, 16),
+            inst(Opcode::Store, 0, 2, 1, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(64);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success);
+        assert_eq!(vm.trace.len(), 4);
+        assert_eq!(vm.trace[2].instruction.opcode, Opcode::Store);
+
+        let mut trace = vm.trace.clone();
+        let sibling = 5u64;
+        // The expansion block reads the value the previous non-expansion row
+        // carries; give it the one this round produces.
+        trace[1].merkle_current = Some(bud_vm::merkle_poseidon_round(0, sibling));
+        let imm = 16;
+        let stray = &mut trace[2];
+        stray.instruction = Instruction {
+            opcode: Opcode::VerifyMerkle,
+            rd: 0,
+            rs1: 0,
+            rs2: 0,
+            imm,
+        };
+        stray.src1_idx = 0;
+        stray.src2_idx = 0;
+        stray.dst_idx = 0;
+        stray.src1_val = 0;
+        stray.src2_val = 0;
+        stray.dst_val = 0;
+        stray.memory_addr = Some(imm as usize + 8);
+        stray.memory_val = Some(sibling);
+        stray.is_memory_write = false;
+        stray.merkle_key = Some(0);
+        stray.merkle_current = Some(0);
+        stray.merkle_sibling = Some(sibling);
+        stray.merkle_round = Some(0);
+        stray.merkle_is_expand = true;
+
+        let store_gas = Vm::gas_cost(Opcode::Store);
+        let verdict = verify_forged_trace(&program, &trace, vm.gas_limit, vm.gas_used - store_gas);
+        assert!(
+            verdict.is_err(),
+            "a lone Merkle expansion row stood in for a Store and the proof \
+             verified: an instruction of the program was never executed. \
+             verdict={verdict:?}"
         );
     }
 
@@ -5213,7 +5706,12 @@ mod tests {
         // Verification must reject the proof because the
         // Is_verify_merkle selector was zeroed out on a row where
         // COL_OPCODE = 0x1E, which violates the new AIR constraint.
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_err(),
             "Expected verification to FAIL when is_verify_merkle is zeroed on a 0x1E row, but it succeeded!"
@@ -7058,7 +7556,13 @@ mod tests {
                     proof_bytes,
                     degree_bits: degree_bits as u32,
                 };
-                Plonky3Adapter::verify(&envelope, &pi, &program).is_err()
+                Plonky3Adapter::verify_with_activation(
+                    &envelope,
+                    &pi,
+                    &program,
+                    bud_isa::MainnetActivation::full(),
+                )
+                .is_err()
             }
         };
 
@@ -7179,7 +7683,13 @@ mod tests {
             Ok(Ok(_)) => false,
         };
         let rejected_at_verification = match attempted {
-            Ok(Ok(envelope)) => Plonky3Adapter::verify(&envelope, &pi, &program).is_err(),
+            Ok(Ok(envelope)) => Plonky3Adapter::verify_with_activation(
+                &envelope,
+                &pi,
+                &program,
+                bud_isa::MainnetActivation::full(),
+            )
+            .is_err(),
             _ => false,
         };
 
@@ -7341,7 +7851,13 @@ mod tests {
                     proof_bytes,
                     degree_bits: degree_bits as u32,
                 };
-                Plonky3Adapter::verify(&envelope, &pi, &program).is_err()
+                Plonky3Adapter::verify_with_activation(
+                    &envelope,
+                    &pi,
+                    &program,
+                    bud_isa::MainnetActivation::full(),
+                )
+                .is_err()
             }
         };
 
@@ -7438,7 +7954,12 @@ mod tests {
             degree_bits: degree_bits as u32,
         };
 
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_err(),
             "Expected verification to FAIL with a skipped Merkle round, but it succeeded!"
@@ -7650,7 +8171,12 @@ mod tests {
             state_writes_digest: [0u8; 32],
         };
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(res.is_ok(), "1-depth should succeed: {:?}", res);
     }
 
@@ -7726,7 +8252,12 @@ mod tests {
             state_writes_digest: [0u8; 32],
         };
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(res.is_ok(), "2-depth should succeed: {:?}", res);
     }
 
@@ -7806,7 +8337,12 @@ mod tests {
         // Single-round transition or final root check is broken,
         // Verification will fail.
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_ok(),
             "Expected verification to SUCCEED for a valid 64-depth path, but it failed: {:?}",
@@ -7928,7 +8464,12 @@ mod tests {
             degree_bits: degree_bits as u32,
         };
 
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_err(),
             "Expected verification to FAIL with a tampered final accumulator, but it succeeded!"
@@ -8038,7 +8579,12 @@ mod tests {
             degree_bits: degree_bits as u32,
         };
 
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_err(),
             "Expected verification to FAIL with a tampered Poseidon S-box, but it succeeded!"
@@ -8502,7 +9048,13 @@ mod tests {
         // This proof SHOULD verify because we are proving that the VM
         // CORRECTLY COMPUTES '0' when the root doesn't match.
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        assert!(Plonky3Adapter::verify(&envelope, &pi, &program).is_ok());
+        assert!(Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full()
+        )
+        .is_ok());
     }
 
     /// VerifyInference AIR binding soundness test.
@@ -8615,7 +9167,12 @@ mod tests {
             degree_bits: degree_bits as u32,
         };
 
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_err(),
             "Expected verification to FAIL when is_verify_inference is zeroed on a 0x1F row, but it succeeded!"
@@ -8666,7 +9223,12 @@ mod tests {
         };
 
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_ok(),
             "no-expansion VerifyInference proof must verify, got {:?}",
@@ -8715,7 +9277,12 @@ mod tests {
         };
 
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_ok(),
             "clean VerifyInference (imm=0, STARK) proof must verify, got {:?}",
@@ -8778,7 +9345,12 @@ mod tests {
         };
 
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_ok(),
             "valid-chain VerifyInference proof must verify, got {:?}",
@@ -8824,7 +9396,12 @@ mod tests {
         };
 
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_ok(),
             "VerifyInference imm=1 (SNARK wrap) must verify, got {:?}",
@@ -8871,7 +9448,12 @@ mod tests {
         };
 
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let res = Plonky3Adapter::verify(&envelope, &pi, &program);
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
         assert!(
             res.is_err(),
             "undefined proof type imm=2 must be rejected by the AIR, but it verified!"

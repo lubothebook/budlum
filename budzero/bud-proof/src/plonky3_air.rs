@@ -890,6 +890,54 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
             .when_transition()
             .assert_zero(is_cpu.clone() * (nxt_pc.clone() - next_pc.clone()));
 
+        // Control flow: where `next_pc` may point.
+        //
+        // The line above only says the next row sits at this row's `next_pc`.
+        // `next_pc` itself was constrained for the jumps, calls, `Push`,
+        // `Pop` and `Halt`, and for `Ret` through the stack tuple; every
+        // other opcode left it to the prover, so a fall-through could land
+        // anywhere the program table has a row and the instructions in
+        // between were never executed. Two rules close it.
+        //
+        // A row stays on its pc only while it is part of a multi-row
+        // instruction: a `VerifyMerkle` or `VerifyInference` row whose
+        // successor is one of its own expansion rows. The expansion rows are
+        // the only rows that share a pc, and each expansion row has to be
+        // preceded by a row of the same opcode, so the flag cannot be raised
+        // anywhere else.
+        let exp_merkle: AB::Expr = cur[COL_VM_MERKLE_IS_EXPAND].into();
+        let exp_infer: AB::Expr = cur[COL_INFERENCE_IS_EXPAND].into();
+        let nxt_exp_merkle: AB::Expr = nxt[COL_VM_MERKLE_IS_EXPAND].into();
+        let nxt_exp_infer: AB::Expr = nxt[COL_INFERENCE_IS_EXPAND].into();
+        builder.when_last_row().assert_one(is_halt.clone());
+        builder.when_first_row().assert_zero(exp_merkle.clone());
+        builder.when_first_row().assert_zero(exp_infer.clone());
+        builder
+            .when_transition()
+            .assert_zero(nxt_exp_merkle.clone() * (one.clone() - is_verify_merkle.clone()));
+        builder
+            .when_transition()
+            .assert_zero(nxt_exp_infer.clone() * (one.clone() - is_verify_inference.clone()));
+        let stays_on_pc: AB::Expr =
+            is_verify_merkle.clone() * nxt_exp_merkle + is_verify_inference.clone() * nxt_exp_infer;
+        builder
+            .when_transition()
+            .assert_zero(stays_on_pc.clone() * (next_pc.clone() - pc.clone()));
+        // Everything else that does not branch, stop or return falls through
+        // to the next instruction. The branching opcodes keep their own rules
+        // below (`Jmp`, `Call`, `Jnz`) or are bound through the stack tuple
+        // (`Ret`); `Halt` is held in place by its own transition.
+        builder.when_transition().assert_zero(
+            (one.clone()
+                - is_jmp.clone()
+                - is_jnz.clone()
+                - is_call.clone()
+                - is_ret.clone()
+                - is_halt.clone()
+                - stays_on_pc)
+                * (next_pc.clone() - pc.clone() - one.clone()),
+        );
+
         // Cpu_active transition and boundary constraints
         let cpu_active: AB::Expr = cur[COL_CPU_ACTIVE].into();
         let nxt_cpu_active: AB::Expr = nxt[COL_CPU_ACTIVE].into();
@@ -1361,6 +1409,32 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         // because to a reader it looks like it is being checked.
         let on_original_row: AB::Expr =
             is_verify_merkle.clone() * (one.clone() - is_expand.clone());
+
+        // The block is closed on both sides.
+        //
+        // An expansion row has to be a `VerifyMerkle` row: the flag switches
+        // off the program lookup, the register argument and the gas charge,
+        // and without this it could be raised on any other opcode.
+        builder.assert_zero(is_expand.clone() * (one.clone() - is_verify_merkle.clone()));
+        // An original row has to be followed by its expansion rows: the root
+        // comparison on it is only worth anything when the path behind it was
+        // walked, and a path that is not there cannot have been.
+        builder
+            .when_transition()
+            .assert_zero(on_original_row.clone() * (one.clone() - nxt_is_expand.clone()));
+        // And the path runs to its end: the last row of an expansion block is
+        // round 63, so a block cannot stop after the first few rounds.
+        builder.when_transition().assert_zero(
+            is_expand.clone()
+                * (one.clone() - nxt_is_expand.clone())
+                * (merkle_round.clone() - AB::Expr::from(AB::F::from_u8(63))),
+        );
+        // The path buffer address is one value for the whole path. Each
+        // expansion row derives its memory address from `imm`, and `imm` on an
+        // expansion row is exempt from the program table.
+        builder.when_transition().assert_zero(
+            is_verify_merkle.clone() * nxt_is_expand.clone() * (nxt[COL_IMM].into() - imm.clone()),
+        );
         let merkle_final_expected: AB::Expr = cur[COL_MERKLE_FINAL_FLAG].into();
         let nxt_merkle_final_expected: AB::Expr = nxt[COL_MERKLE_FINAL_FLAG].into();
 
