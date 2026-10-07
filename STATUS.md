@@ -23,6 +23,12 @@ Complete B.U.D. and BudZKVM for mainnet. Branch `claude/zkvm-bud-completion-84r6
   - 1B: the Solidity verifier stays (Ethereum runs it); it is bound to Rust-generated ABI and test vectors.
   - 2A: the budscan Firefox patch layer is replaced by a Rust-engine browser shell over the existing Rust core.
   - 3: inline shell in CI YAML moves into Rust xtask commands. Nix, Dockerfile, systemd and YAML stay as configuration formats.
+- Security channel (owner, 1 C): BudZKVM soundness fixes go to the public branch with neutral commit messages, no exploit write-ups.
+- Baseline edits (owner, 2): the four idle-code baseline line removals are approved.
+- B.U.D. mainnet gate (owner, 3): Claude opens it when storage payouts, challenges and audits run in block and the RPC mutation paths are gone.
+- Session (owner, 4): continue in a new session. The project settings (.claude/settings.json opusplan, .claude/agents) load at session start.
+- Main session writes no code. Code is written by coder agents (Sonnet), discovery by scout (Haiku), R3 bug hunts and verification by finder/architect (Opus). At most 2 agents in parallel.
+- Tests run on GitHub CI. Locally: cargo check and cargo fmt only, plus the specific new tests. CI is reviewed at the end.
 - Standing rule: ask the owner only for hard architecture changes. Decide the rest, record it here.
 
 ## Steps
