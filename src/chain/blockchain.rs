@@ -660,21 +660,12 @@ impl Blockchain {
             let preceding = &chain_vec[..block.index as usize];
             state = match Self::apply_block_effects(&state, block, preceding) {
                 Ok(mut next_state) => {
-                    // Startup replay must reconstruct exactly the same canonical
-                    // State as `produce_block` committed and as
-                    // `validate_candidate_chain` recomputes. `apply_block_effects`
-                    // Alone does not refresh these four commitment fields, so
-                    // Without this the restarted node carries stale roots: its
-                    // `calculate_state_root` then disagrees with the very
-                    // `block.state_root` it just replayed, and the next reorg
-                    // Fails with "Candidate state root mismatch".
-                    next_state.bridge_root = next_state.bridge_state.root();
-                    next_state.message_root = next_state.message_registry.root();
-                    // Same canonical (empty) values the reorg validator uses:
-                    // External settlement/header effects are not reconstructible
-                    // From an L1 block today.
-                    next_state.settlement_root = merkle_root(&[]);
-                    next_state.global_header_summary = [0u8; 32];
+                    // Startup replay must reconstruct exactly the same state
+                    // as `produce_block` committed. `apply_block_effects`
+                    // alone does not refresh the four commitment fields, so
+                    // without this the restarted node carries stale roots and
+                    // the next reorg fails with "Candidate state root mismatch".
+                    Self::apply_block_end_roots(&mut next_state, preceding, chain_id);
                     next_state
                 }
                 Err(e) => {
@@ -1881,24 +1872,51 @@ impl Blockchain {
     /// Burial depth is a pure function of the blocks both nodes already
     /// hold, so every node derives the same window for the same tip.
     fn settlement_finality_window(&self) -> Vec<crate::domain::Hash32> {
+        Self::settlement_finality_window_for(&self.chain, self.chain_id)
+    }
+
+    /// The window for the blocks that precede a new block. Live and replay
+    /// paths both call this with the same prefix.
+    fn settlement_finality_window_for(
+        chain: &[Block],
+        chain_id: u64,
+    ) -> Vec<crate::domain::Hash32> {
         let interval =
-            crate::core::chain_config::finality_checkpoint_interval_for_chain_id(self.chain_id);
-        if self.chain.is_empty() {
+            crate::core::chain_config::finality_checkpoint_interval_for_chain_id(chain_id);
+        if chain.is_empty() {
             return Vec::new();
         }
-        let tip = (self.chain.len() - 1) as u64;
+        let tip = (chain.len() - 1) as u64;
         // Only the retention band can matter; scanning it keeps the cost
         // bounded by the window, not by the chain length.
         let oldest =
             tip.saturating_sub(crate::cross_domain::bridge::SETTLED_RETENTION_BLOCKS) as usize;
         crate::chain::finality::settlement_finality_window_from(
-            self.chain[oldest..]
+            chain[oldest..]
                 .iter()
                 .enumerate()
                 .map(|(i, block)| ((oldest + i) as u64, block.hash.as_str())),
             interval,
             tip,
         )
+    }
+
+    /// Set the four end-of-block commitment fields after a block's effects.
+    ///
+    /// `preceding` is the chain before the new block. Live production,
+    /// live validation, startup replay, candidate validation, reorg replay
+    /// and state rebuild all call this one function, so all of them derive
+    /// the same roots for the same block.
+    ///
+    /// The global header summary stays zero in the state root (audit
+    /// 2026-09-09, F-3): the last sealed header is node-local operator
+    /// state, and hashing it in would make the root irreproducible.
+    fn apply_block_end_roots(state: &mut AccountState, preceding: &[Block], chain_id: u64) {
+        state.bridge_root = state.bridge_state.root();
+        state.message_root = state.message_registry.root();
+        state.settlement_root =
+            merkle_root(&Self::settlement_finality_window_for(preceding, chain_id));
+        state.global_header_summary = [0u8; 32];
     }
 
     pub fn build_global_header(&self, proposer: Option<Address>) -> GlobalBlockHeader {
@@ -4629,26 +4647,7 @@ impl Blockchain {
             Ok(state) => state,
             Err(_) => return None,
         };
-        committed_state.bridge_root = committed_state.bridge_state.root();
-        committed_state.message_root = committed_state.message_registry.root();
-        let settlement_window = self.settlement_finality_window();
-        let settlement_root = if settlement_window.is_empty() {
-            merkle_root(&[])
-        } else {
-            merkle_root(&settlement_window)
-        };
-        committed_state.settlement_root = settlement_root;
-        // Canonical (zero) global header summary in the state root (audit
-        // 2026-09-09, F-3): the last sealed header is node-local operator
-        // state. Until H-10 carries the commitment into the L1 block,
-        // hashing the node's own seal into the root made the root
-        // irreproducible by every other node - a guaranteed self-fork the
-        // moment an operator seals. The validation paths
-        // (validate_candidate_chain / try_reorg) already use the empty
-        // canonical value; production now matches them. The sealed chain
-        // stays committed via its own previous_global_hash chain +
-        // persistence.
-        committed_state.global_header_summary = [0u8; 32];
+        Self::apply_block_end_roots(&mut committed_state, &self.chain, self.chain_id);
         block.state_root = committed_state.calculate_state_root();
         if self.sharding.is_active_at(block.index) {
             block.shards_root = Some(crate::sharding::shards_commitment(
@@ -4956,20 +4955,7 @@ impl Blockchain {
         let mut commit_state = Self::apply_block_effects(&self.state, &block, &self.chain)?;
 
         if block.index > 0 {
-            commit_state.bridge_root = commit_state.bridge_state.root();
-            commit_state.message_root = commit_state.message_registry.root();
-            let settlement_window = self.settlement_finality_window();
-            let settlement_root = if settlement_window.is_empty() {
-                merkle_root(&[])
-            } else {
-                merkle_root(&settlement_window)
-            };
-            commit_state.settlement_root = settlement_root;
-            // Canonical (zero) global header summary - the same rule the
-            // producer applies (audit 2026-09-09, F-3): the sealed header is
-            // node-local operator state and must not enter the reproducible
-            // state root until H-10 carries the commitment in the block.
-            commit_state.global_header_summary = [0u8; 32];
+            Self::apply_block_end_roots(&mut commit_state, &self.chain, self.chain_id);
             let computed_root = commit_state.calculate_state_root();
             if computed_root != block.state_root {
                 return Err(format!(
@@ -5188,14 +5174,8 @@ impl Blockchain {
             }
 
             let mut next_state = Self::apply_block_effects(&state, block, &chain[..index])?;
-            next_state.bridge_root = next_state.bridge_state.root();
-            next_state.message_root = next_state.message_registry.root();
-            // External settlement/header effects are not reconstructible from an
-            // L1 block today. The empty canonical values are replayable; a chain
-            // With out-of-band roots is rejected until H-10 atomically carries
-            // Those commitments in the L1 block.
-            next_state.settlement_root = merkle_root(&[]);
-            next_state.global_header_summary = [0u8; 32];
+            // The roots are derived from the chain prefix, as on the live path.
+            Self::apply_block_end_roots(&mut next_state, &chain[..index], self.chain_id);
             if next_state.calculate_state_root() != block.state_root {
                 return Err(format!(
                     "Candidate state root mismatch at block {}",
@@ -5401,10 +5381,11 @@ impl Blockchain {
                     block,
                     &self.chain[..block.index as usize],
                 )?;
-                current_state.bridge_root = current_state.bridge_state.root();
-                current_state.message_root = current_state.message_registry.root();
-                current_state.settlement_root = merkle_root(&[]);
-                current_state.global_header_summary = [0u8; 32];
+                Self::apply_block_end_roots(
+                    &mut current_state,
+                    &self.chain[..block.index as usize],
+                    self.chain_id,
+                );
                 if current_state.calculate_state_root() != block.state_root {
                     return Err(format!(
                         "Reorg persistence state root mismatch at block {}",
@@ -5450,10 +5431,7 @@ impl Blockchain {
         for (index, block) in chain.iter().enumerate().skip(1) {
             let mut next_state = Self::apply_block_effects(&state, block, &chain[..index])
                 .map_err(|e| format!("Failed to rebuild state at block {}: {}", block.index, e))?;
-            next_state.bridge_root = next_state.bridge_state.root();
-            next_state.message_root = next_state.message_registry.root();
-            next_state.settlement_root = merkle_root(&[]);
-            next_state.global_header_summary = [0u8; 32];
+            Self::apply_block_end_roots(&mut next_state, &chain[..index], genesis_config.chain_id);
             if next_state.calculate_state_root() != block.state_root {
                 return Err(format!(
                     "Failed to rebuild state root at block {}",
@@ -7641,6 +7619,43 @@ mod tests {
 
         assert_eq!(restarted.state.epoch_index, 1);
         assert_eq!(restarted.last_block().index, expected_height);
+    }
+
+    /// Past the settlement horizon the live path folds buried checkpoints
+    /// into `settlement_root`. Every replay entry must derive the same root,
+    /// or a restarted node and a validating node disagree with the tip.
+    #[test]
+    fn replay_roots_match_live_past_settlement_horizon() {
+        let tmp = tempdir().unwrap();
+        let db_path = tmp.path().join("budlum.db").to_string_lossy().to_string();
+        let mut bc = Blockchain::new(
+            Arc::new(PoWEngine::new(0)),
+            Some(Storage::new(&db_path).unwrap()),
+            45262,
+            None,
+        );
+
+        // The first checkpoint (height 10) is buried one horizon (1000)
+        // deep when the preceding tip is 1010, so the window is non-empty
+        // from block 1011 on.
+        while bc.chain.len() < 1012 {
+            bc.produce_block(Address::from([3u8; 32])).unwrap();
+        }
+
+        assert_ne!(bc.state.settlement_root, merkle_root(&[]));
+        assert!(bc.is_valid());
+        let live_root = bc.last_block().state_root.clone();
+        drop(bc);
+
+        let mut restarted = Blockchain::new(
+            Arc::new(PoWEngine::new(0)),
+            Some(Storage::new(&db_path).unwrap()),
+            45262,
+            None,
+        );
+        assert_eq!(restarted.last_block().state_root, live_root);
+        assert_eq!(restarted.state.calculate_state_root(), live_root);
+        assert!(restarted.is_valid());
     }
 
     #[test]
