@@ -1780,7 +1780,10 @@ mod tests {
             ];
             let receipt = vm.run_receipt(&program);
             assert!(receipt.success);
-            assert_eq!(vm.registers[3], 0, "reserved opcode must answer 0 (imm={imm})");
+            assert_eq!(
+                vm.registers[3], 0,
+                "reserved opcode must answer 0 (imm={imm})"
+            );
             let n = vm
                 .trace
                 .iter()

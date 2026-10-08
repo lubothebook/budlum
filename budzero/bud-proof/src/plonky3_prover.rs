@@ -3820,13 +3820,18 @@ mod tests {
             state_writes_digest: [0u8; 32],
         };
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        assert!(Plonky3Adapter::verify_with_activation(
+        // The opcode is reserved: with every opcode activated the activation
+        // gate lets it through and the AIR refuses the proof.
+        let full = Plonky3Adapter::verify_with_activation(
             &envelope,
             &pi,
             &program,
-            bud_isa::MainnetActivation::full()
-        )
-        .is_ok());
+            bud_isa::MainnetActivation::full(),
+        );
+        assert!(
+            full.is_err() && !matches!(full, Err(VerifyError::InvalidEnvelope(_))),
+            "a reserved VerifyInference must be refused by the AIR, got {full:?}"
+        );
         match Plonky3Adapter::verify(&envelope, &pi, &program) {
             Err(VerifyError::InvalidEnvelope(msg)) => {
                 assert!(
@@ -9298,14 +9303,17 @@ mod tests {
                 event_digest: [0u8; 32],
                 state_writes_digest: [0u8; 32],
             };
-            let res = Plonky3Adapter::prove(&vm.trace, &pi, &program).and_then(|envelope| {
-                Plonky3Adapter::verify_with_activation(
-                    &envelope,
-                    &pi,
-                    &program,
-                    bud_isa::MainnetActivation::full(),
-                )
-            });
+            let res = Plonky3Adapter::prove(&vm.trace, &pi, &program)
+                .map_err(|e| format!("prove refused: {e:?}"))
+                .and_then(|envelope| {
+                    Plonky3Adapter::verify_with_activation(
+                        &envelope,
+                        &pi,
+                        &program,
+                        bud_isa::MainnetActivation::full(),
+                    )
+                    .map_err(|e| format!("verify refused: {e:?}"))
+                });
             assert!(
                 res.is_err(),
                 "a trace with VerifyInference (imm={imm}) must be refused, got {res:?}"
