@@ -64,6 +64,7 @@ pub enum StorageTx {
 /// encoding: an empty `merkle_proof` means none and an all-zero
 /// `storage_root` means none. The registry refuses a deal without both, so in
 /// block today an open that leaves either empty is refused.
+/// exposed for StorageTx::OpenDeal: the executor and the signing bytes in core/transaction.rs reach it through the variant, not by name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StorageDealOpen {
     pub domain_id: u32,
@@ -222,6 +223,7 @@ pub fn execute_storage_tx(
 /// field except the consent itself, so the consent cannot move to another
 /// chain, payer, placement or price, and it is spent when the payer's nonce
 /// advances.
+/// WIRING: the in-block check is open_deal below; the outside caller is the operator-side consent signer of the storage RPC mutation path, which does not exist yet.
 #[must_use]
 pub fn open_deal_consent_digest(
     chain_id: u64,
