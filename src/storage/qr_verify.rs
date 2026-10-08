@@ -12,11 +12,12 @@
 //! WIRING: `storage::emit::qr_feed_preview` calls [`verify_qr_video`] for the
 //! video it has just encoded (RPC `bud_storageQrFeedPreview`).
 
-use crate::core::hash::hash_fields_bytes;
+use crate::core::hash::{calculate_hash_bytes, hash_fields_bytes};
 use crate::storage::content_id::ContentId;
 use crate::storage::qr_payload::PayloadKind;
-use crate::storage::qr_video::QrVideo;
-use crate::storage::three_pipe::{decode_qr_video, recipe_commitment, EncodedPipe, PipeError};
+use crate::storage::qr_verify_indep::{confirm, IndepError, PrimaryClaim};
+use crate::storage::qr_video::{demux_optical_frames, QrVideo};
+use crate::storage::three_pipe::{decode_frames, recipe_commitment, EncodedPipe, PipeError};
 use std::time::{Duration, Instant};
 
 /// Name of the decode path the record reports.
@@ -31,6 +32,9 @@ pub struct ExpectedCommitments {
     pub recipe_commitment: [u8; 32],
     /// A2 stream commitment the video must carry.
     pub stream_commitment: [u8; 32],
+    /// Payload kind the video must carry. `None` means the A1 header of the
+    /// pipe has no known kind: no video can match it, so every video is refused.
+    pub kind: Option<PayloadKind>,
 }
 
 impl ExpectedCommitments {
@@ -45,6 +49,8 @@ impl ExpectedCommitments {
             content_id: ContentId::of(body),
             recipe_commitment: recipe_commitment(&pipe.recipe),
             stream_commitment: pipe.stream_commitment,
+            // Byte 6 of the A1 container is the kind tag.
+            kind: pipe.packed.get(6).copied().and_then(PayloadKind::from_tag),
         }
     }
 }
@@ -75,6 +81,15 @@ pub enum VerifyError {
         /// In the video.
         got: [u8; 32],
     },
+    /// The video carries another payload kind.
+    KindMismatch {
+        /// Expected.
+        want: Option<PayloadKind>,
+        /// Decoded.
+        got: PayloadKind,
+    },
+    /// The independent verifier refused or disagreed with the primary decode.
+    Independent(IndepError),
     /// The check took longer than the deadline.
     TimedOut {
         /// Deadline in microseconds.
@@ -91,6 +106,8 @@ impl std::fmt::Display for VerifyError {
             Self::ContentIdMismatch { .. } => write!(f, "qr video content id is not expected"),
             Self::RecipeMismatch { .. } => write!(f, "qr video recipe commitment is not expected"),
             Self::StreamMismatch { .. } => write!(f, "qr video stream commitment is not expected"),
+            Self::KindMismatch { .. } => write!(f, "qr video payload kind is not expected"),
+            Self::Independent(e) => write!(f, "qr video independent check: {e}"),
             Self::TimedOut {
                 limit_micros,
                 elapsed_micros,
@@ -172,7 +189,11 @@ fn check(
     started: Instant,
     deadline: Duration,
 ) -> Result<VerifiedVideo, VerifyError> {
-    let (kind, body, video) = decode_qr_video(video_blob)?;
+    // Same steps as `decode_qr_video`, with the optical frames kept for the
+    // independent verifier below.
+    let video = QrVideo::from_bytes(video_blob).map_err(PipeError::from)?;
+    let optical = demux_optical_frames(&video).map_err(PipeError::from)?;
+    let (kind, body) = decode_frames(&video.stream_commitment, &optical)?;
     let got = ContentId::of(&body);
     if got != expected.content_id {
         return Err(VerifyError::ContentIdMismatch {
@@ -192,6 +213,19 @@ fn check(
             got: video.stream_commitment,
         });
     }
+    if expected.kind != Some(kind) {
+        return Err(VerifyError::KindMismatch {
+            want: expected.kind,
+            got: kind,
+        });
+    }
+    // Second reading of the same frames by code that shares nothing with the
+    // decoder above. It returns no content: it confirms kind and body hash.
+    let claim = PrimaryClaim {
+        kind_tag: kind.tag(),
+        content_sha256: calculate_hash_bytes(&body),
+    };
+    confirm(&video.stream_commitment, &optical, &claim).map_err(VerifyError::Independent)?;
     let elapsed = started.elapsed();
     if elapsed > deadline {
         return Err(VerifyError::TimedOut {
@@ -211,7 +245,10 @@ fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::three_pipe::encode_qr_video;
+    use crate::storage::payload_crypt::PayloadKey;
+    use crate::storage::qr_carousel::CarouselEncoder;
+    use crate::storage::qr_frame::pack_frame;
+    use crate::storage::three_pipe::{decode_qr_video, encode_qr_video};
 
     const LIMIT: Duration = Duration::from_secs(60);
 
@@ -304,6 +341,68 @@ mod tests {
         assert!(matches!(
             verify_qr_video(&blob, &exp, Duration::ZERO),
             Err(VerifyError::TimedOut { .. })
+        ));
+    }
+
+    #[test]
+    fn expected_kind_follows_the_pipe() {
+        let clear = encode_qr_video(b"kind-clear", 64, None).unwrap();
+        assert_eq!(
+            ExpectedCommitments::from_encode(b"kind-clear", &clear.pipe).kind,
+            Some(PayloadKind::ContentBytes)
+        );
+        let key = PayloadKey([9u8; 32]);
+        let sealed = encode_qr_video(b"kind-sealed", 64, Some(&key)).unwrap();
+        assert_eq!(
+            ExpectedCommitments::from_encode(b"kind-sealed", &sealed.pipe).kind,
+            Some(PayloadKind::EncryptedContent)
+        );
+    }
+
+    #[test]
+    fn kind_mismatch_is_refused() {
+        let (blob, mut exp) = honest(b"kind-case");
+        exp.kind = Some(PayloadKind::EncryptedContent);
+        assert!(matches!(
+            verify_qr_video(&blob, &exp, LIMIT),
+            Err(VerifyError::KindMismatch {
+                want: Some(PayloadKind::EncryptedContent),
+                got: PayloadKind::ContentBytes
+            })
+        ));
+        exp.kind = None;
+        assert!(matches!(
+            verify_qr_video(&blob, &exp, LIMIT),
+            Err(VerifyError::KindMismatch { want: None, .. })
+        ));
+    }
+
+    #[test]
+    fn independent_path_refuses_a_stream_id_the_bytes_do_not_give() {
+        // Frames bound to an arbitrary stream id decode alone and match
+        // expectations built from the same id; only the independent path
+        // recomputes the id from the rebuilt bytes.
+        let content = b"forged-stream-id".repeat(12);
+        let enc = encode_qr_video(&content, 64, None).unwrap();
+        let sc = [7u8; 32];
+        let carousel = CarouselEncoder::new(&enc.pipe.packed, 64).unwrap();
+        let frames: Vec<Vec<u8>> = carousel
+            .encode_range(0, 16)
+            .iter()
+            .map(|d| pack_frame(&sc, d).unwrap())
+            .collect();
+        let video = QrVideo::from_optical_frames(&enc.pipe.recipe, &sc, &frames, 10).unwrap();
+        let exp = ExpectedCommitments {
+            content_id: ContentId::of(&content),
+            recipe_commitment: video.recipe_commitment,
+            stream_commitment: sc,
+            kind: Some(PayloadKind::ContentBytes),
+        };
+        let blob = video.to_bytes();
+        assert!(decode_qr_video(&blob).is_ok());
+        assert!(matches!(
+            verify_qr_video(&blob, &exp, LIMIT),
+            Err(VerifyError::Independent(IndepError::StreamCommitment))
         ));
     }
 }
