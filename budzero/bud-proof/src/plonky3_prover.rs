@@ -509,7 +509,7 @@ pub fn trace_matrix(
         }
 
         if opcode == bud_isa::Opcode::Eq || opcode == bud_isa::Opcode::Neq {
-            let diff = step.src1_val.wrapping_sub(step.src2_val);
+            let diff = bud_vm::field_sub_goldilocks(step.src1_val, step.src2_val);
             let inv = if diff != 0 {
                 bud_vm::field_inverse_goldilocks(diff)
             } else {
@@ -520,7 +520,7 @@ pub fn trace_matrix(
 
         // SumConservation equality witness (rs1 - rs2).
         if opcode == bud_isa::Opcode::SumConservation {
-            let diff = step.src1_val.wrapping_sub(step.src2_val);
+            let diff = bud_vm::field_sub_goldilocks(step.src1_val, step.src2_val);
             let inv = if diff != 0 {
                 bud_vm::field_inverse_goldilocks(diff)
             } else {
@@ -3044,6 +3044,22 @@ mod tests {
         assert!(vm.run_receipt(&program).success);
         assert_eq!(vm.registers[1], bud_vm::GOLDILOCKS_P - 1);
         prove_and_verify(program, |_| {});
+    }
+
+    /// Honest `Eq`, `Neq` and `SumConservation` with `rs1 < rs2`. The inverse
+    /// witness is the field inverse of `rs1 - rs2`; `wrapping_sub` gave
+    /// `2^64 - d`, which is not that element.
+    #[test]
+    fn proves_eq_neq_sc_when_rs1_lt_rs2() {
+        for op in [Opcode::Eq, Opcode::Neq, Opcode::SumConservation] {
+            let program = vec![
+                inst(Opcode::Load, 1, 0, 0, 1),
+                inst(Opcode::Load, 2, 0, 0, 2),
+                inst(op, 3, 1, 2, 0),
+                inst(Opcode::Halt, 0, 0, 0, 0),
+            ];
+            prove_and_verify(program, |_| {});
+        }
     }
 
     /// `Assert` had no prover coverage either, and BudL's `constrain(...)`
