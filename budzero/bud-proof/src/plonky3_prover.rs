@@ -9314,9 +9314,10 @@ mod tests {
                     )
                     .map_err(|e| format!("verify refused: {e:?}"))
                 });
+            let err = res.expect_err("a trace with VerifyInference must be refused");
             assert!(
-                res.is_err(),
-                "a trace with VerifyInference (imm={imm}) must be refused, got {res:?}"
+                err.starts_with("verify refused"),
+                "the AIR must refuse VerifyInference (imm={imm}), got {err}"
             );
         }
     }
@@ -9368,6 +9369,124 @@ mod tests {
         assert!(
             res.is_err(),
             "inference expansion rows used as filler must be refused, got {res:?}"
+        );
+    }
+
+    /// Positive control for the 0x1F tests: a trace without opcode 0x1F
+    /// proves and verifies, so the refusals above are not a broken setup.
+    #[test]
+    fn accepts_simple_trace_without_verify_inference() {
+        let program = vec![
+            inst(Opcode::Add, 1, 0, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success);
+        let res = prove_and_verify_all_active(&vm.trace, &program, vm.gas_used, vm.gas_limit);
+        assert!(res.is_ok(), "an honest trace must verify, got {res:?}");
+    }
+
+    /// The expansion flag is zero on every row. The trace has no 0x1F row,
+    /// so the selector constraint cannot fire. The Halt row gets the flag,
+    /// its ROM multiplicity is zeroed, and the aux trace is built from that
+    /// same matrix. Without the flag constraint this forgery verifies.
+    #[test]
+    fn rejects_expand_flag_on_non_inference_row() {
+        let program = vec![
+            inst(Opcode::Add, 1, 0, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success);
+        assert!(!vm
+            .trace
+            .iter()
+            .any(|s| s.instruction.opcode == Opcode::VerifyInference));
+
+        let program_bytes: Vec<u8> = program
+            .iter()
+            .flat_map(|&i| i.to_le_bytes().to_vec())
+            .collect();
+        let mut hasher = Keccak::v256();
+        hasher.update(&program_bytes);
+        let mut program_hash = [0u8; 32];
+        hasher.finalize(&mut program_hash);
+        let pi = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash,
+            initial_state_root: [0u8; 32],
+            final_state_root: [0u8; 32],
+            sender: 0,
+            nonce: 0,
+            block_height: 0,
+            gas_limit: vm.gas_limit,
+            gas_used: vm.gas_used,
+            exit_code: 0,
+            trace_len: vm.trace.len() as u64,
+            event_digest: [0u8; 32],
+            state_writes_digest: [0u8; 32],
+        };
+
+        let (mut matrix, n_cpu) = trace_matrix(&vm.trace, &program, &pi);
+        let row = (0..n_cpu)
+            .find(|&i| {
+                matrix.values[i * TRACE_WIDTH + COL_OPCODE].as_canonical_u64()
+                    == Opcode::Halt as u64
+            })
+            .expect("trace holds a Halt row");
+        assert_eq!(
+            matrix.values[row * TRACE_WIDTH + COL_INFERENCE_IS_EXPAND],
+            Goldilocks::ZERO
+        );
+        matrix.values[row * TRACE_WIDTH + COL_INFERENCE_IS_EXPAND] = Goldilocks::new(1);
+        // The flagged row no longer fetches its ROM word, so its ROM
+        // multiplicity goes to zero too. Program CTL then balances and the
+        // flag constraint is the only thing left that can refuse the trace.
+        let pc = matrix.values[row * TRACE_WIDTH + COL_PC].as_canonical_u64() as usize;
+        matrix.values[pc * TRACE_WIDTH + COL_PROG_MULT] = Goldilocks::ZERO;
+        let matrix = RowMajorMatrix::new(matrix.values, TRACE_WIDTH);
+
+        let air = BudAir {
+            num_steps: vm.trace.len(),
+            program: program.clone(),
+        };
+        let config = build_config();
+        let public_values = to_public_values(&pi);
+        let degree_bits = p3_util::log2_strict_usize(matrix.height());
+        let preprocessed = setup_preprocessed(&config, &air, degree_bits);
+        let preprocessed_ref = preprocessed.as_ref().map(|(p, _)| p);
+        let p3_proof = prove_with_preprocessed(
+            &config,
+            &air,
+            matrix.clone(),
+            Some(crate::plonky3_prover::aux_trace_generator(
+                matrix.clone(),
+                n_cpu,
+                program.clone(),
+            )),
+            &public_values,
+            preprocessed_ref,
+        );
+        let envelope = ProofEnvelope {
+            proof_format_version: PROOF_FORMAT_VERSION,
+            backend: "Plonky3-Keccak-Goldilocks".to_string(),
+            p3_version: "0.5.2".to_string(),
+            fri_params_id: "test_fri_params".to_string(),
+            public_inputs_hash: pi.hash(),
+            proof_bytes: postcard::to_allocvec(&p3_proof).unwrap(),
+            degree_bits: degree_bits as u32,
+        };
+        let res = Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        );
+        assert!(
+            res.is_err(),
+            "the expansion flag on a non-0x1F row must be refused, got {res:?}"
         );
     }
 
