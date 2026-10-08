@@ -157,3 +157,6 @@ Ponit = "Ponit"
 # paeth : the PNG Paeth predictor (src/storage/qr_video.rs), named after its author.
 tru = "tru"
 paeth = "paeth"
+# flate : typos splits the crate name `flate2` (zlib backend of the QR PNG code)
+#         and offers "flat". The crate name cannot change.
+flate = "flate"
