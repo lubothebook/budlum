@@ -177,6 +177,12 @@ Waves (steps in one wave touch different files and may run in parallel; W3 steps
 - Deviations to report: (a) directive 1.3.5, validator does not check bytes (owner decision K1-4); (b) directive 1.3.4, symbol layer stays shared (rqrr), the verifier is independent only at A1 to A3, a second QR reader would be a new decoder (forbidden by 1.1.3); (c) no production client call site yet, today the client point is the bud_storageQrFeedPreview library path, wiring into wallet-core is an architecture question; (d) audit records are node-local (open question 6 unanswered); (e) RPC body cap 1 MiB stays, segmentation is reached above 819,200 bytes; (f) if an xtask gate needs every domain tag in domain_tags.rs, K1-07 must stop and ask.
 - Status at time of writing: K1-01 started (coder). Others not started.
 
+### 6.5h zkVM queue state (after R3, Opus verification PASS)
+
+- Done and verified: B1 (990fdcd), K1-VI-T (7bcff68), R1 (2babb74, 0fc7f90, 99ba45b), R2 (a59afac, Opus PASS), R2b (311bf03), R3 (ed5624e, Opus PASS). R3: register table active flag is boolean and a prefix; strict (index, time) order with 32 bit step columns 754..786 (TRACE_WIDTH 786); old 754 wide proofs are refused by the width check; PROOF_FORMAT_VERSION still 1 (bump in R8). bud-proof lib 201 passed / 0 failed; four gates green (33 opcodes, 73 forgery tests); prove run about 345 s wall for the lib suite.
+- New findings from the R3 verification (classes only): (F1) the binding of the initial register image to the committed state is not tied to the active flag or to the first row of a register block (older than R3); (F2) the memory table has no active flag, prefix rule, inverse witness for same-address or order; addresses reach about 2^60 so a 32 bit step is not enough, a range design is needed (this is queue step R4a); (F3) a test where a register's events are split in two blocks is missing.
+- Next: architect plan started for R3b (F1 and F3) and R4a (memory table, address range design). Then R4b, R5 to R8 as in 4.3. Public-channel rule: commit messages stay neutral; no exploit steps in the repository (MODEL_ROUTING 12.10).
+
 ### 6.5d B.U.D. audit state (4a verified by Opus, conditional pass)
 
 - 4a done (3dcbe16): StoredCodingAudit, outcomes, open, answer, finalize in storage_deal.rs; 16 tests. Persistence note: new registry fields change the bincode row; an old sled row makes the node exit at start with a CRITICAL log (fail closed, blockchain.rs about 817-826). Nothing is released, so accepted; release notes must say resync.
