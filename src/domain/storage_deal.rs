@@ -394,6 +394,42 @@ pub struct CodingAudit {
     pub column: u64,
 }
 
+/// How a stored coding audit ended.
+///
+/// `Open` is the only state that can still change. The other three are final:
+/// a decided audit is never decided a second time, so an operator cannot
+/// answer again to repair a `Failed` and a `Missed` cannot be argued away.
+///
+/// WIRING: read by ADIM 4b (the transaction that answers an audit) and 4c
+/// (the maintenance loop that opens and finalizes audits).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CodingAuditOutcome {
+    Open,
+    Passed,
+    Failed,
+    Missed,
+}
+
+/// A coding audit the registry opened, with the operator it asked and the
+/// epoch by which that operator must answer.
+///
+/// Verification only ever uses this stored copy. A caller who could supply
+/// its own [`CodingAudit`] would choose the column, and the audit would test
+/// what the operator is known to hold.
+///
+/// WIRING: created by ADIM 4c (maintenance loop) and read by ADIM 4b (answer
+/// transaction).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredCodingAudit {
+    pub(crate) audit_id: u64,
+    pub(crate) audit: CodingAudit,
+    pub(crate) deal_id: u64,
+    pub(crate) operator: Address,
+    pub(crate) opened_epoch: u64,
+    pub(crate) deadline_epoch: u64,
+    pub(crate) outcome: CodingAuditOutcome,
+}
+
 pub struct StorageChallengeRangeInput<'a> {
     pub entropy: &'a Hash32,
     pub deal: &'a StorageDeal,
@@ -751,13 +787,24 @@ pub struct StorageRegistry {
     /// Epoch a ticket reached `ActiveReplacement`, keyed by that epoch, so
     /// the sweep drops due rows without walking the whole map.
     ///
-    /// Last field on purpose: the registry row is bincode, which is
+    /// New fields go at the end: the registry row is bincode, which is
     /// positional, so a new field anywhere else would make every stored
     /// registry unreadable. `#[serde(default)]` keeps JSON snapshots taken
-    /// before the field loadable; the bincode side is covered by
-    /// `LegacyStorageRegistryV1` in `storage/db.rs`.
+    /// before the field loadable. A bincode row from an older build is
+    /// refused by `load_storage_registry`, not padded.
     #[serde(default)]
     settled_tickets: BTreeMap<u64, Vec<u64>>,
+    /// Next id for a stored coding audit.
+    ///
+    /// Placed after `settled_tickets` and before `coding_audits`: both are
+    /// new, and bincode is positional.
+    #[serde(default)]
+    next_coding_audit_id: u64,
+    /// Coding audits the registry opened, by id. Each carries the operator it
+    /// asked, its deadline and its outcome, so "who was audited and what
+    /// happened" is state every node agrees on instead of a log line.
+    #[serde(default)]
+    coding_audits: BTreeMap<u64, StoredCodingAudit>,
 }
 
 use std::collections::BTreeMap;
@@ -868,6 +915,22 @@ pub enum StorageError {
     /// report a passing audit on an object that was never audited.
     NoParityToAudit {
         manifest_id: ContentId,
+    },
+    /// Nobody holds the parity shard an audit selected.
+    ///
+    /// No deal for that shard is `Active`, so there is no operator to ask.
+    /// Not the same as an operator failing: no audit is opened.
+    NoActiveParityDeal {
+        manifest_id: ContentId,
+        parity_index: u32,
+    },
+    /// Caller referenced a coding audit that does not exist.
+    UnknownCodingAudit(u64),
+    /// The coding audit already has an outcome. Answers are accepted once.
+    CodingAuditNotOpen(u64),
+    /// Someone other than the audited operator tried to answer.
+    CodingAuditWrongResponder {
+        audit_id: u64,
     },
     /// The audit's answer did not satisfy the coding relationship.
     ///
@@ -1006,6 +1069,21 @@ impl std::fmt::Display for StorageError {
                 "manifest {manifest_id} has no parity shards, so there is no \
                  coding relationship to audit"
             ),
+            Self::NoActiveParityDeal {
+                manifest_id,
+                parity_index,
+            } => write!(
+                f,
+                "no active deal holds parity shard {parity_index} of manifest {manifest_id}"
+            ),
+            Self::UnknownCodingAudit(id) => write!(f, "unknown coding audit {id}"),
+            Self::CodingAuditNotOpen(id) => {
+                write!(f, "coding audit {id} already has an outcome")
+            }
+            Self::CodingAuditWrongResponder { audit_id } => write!(
+                f,
+                "coding audit {audit_id} was not addressed to this responder"
+            ),
             Self::ParityColumnMismatch {
                 manifest_id,
                 parity_index,
@@ -1070,6 +1148,8 @@ impl StorageRegistry {
             && self.results.is_empty()
             && self.reallocations.is_empty()
             && self.settled_tickets.is_empty()
+            && self.next_coding_audit_id == 0
+            && self.coding_audits.is_empty()
             && self.operator_cooldowns.is_empty()
             && self.operator_classes.is_empty()
             && self.manifests.is_empty()
@@ -1165,6 +1245,17 @@ impl StorageRegistry {
             hasher.update(manifest_id.0);
             hasher.update(content_id.0);
             hasher.update(bincode::serialize(policy).unwrap_or_else(|_| SERIALIZE_FAILED.to_vec()));
+        }
+        // Stored coding audits decide who sits in a cooldown and when, so a
+        // node that disagrees about one accepts different blocks. Empty
+        // contributes no bytes: a chain that never opened an audit keeps the
+        // root it had. The counter is folded only after the first id was
+        // handed out, for the same reason.
+        if self.next_coding_audit_id > 0 {
+            hasher.update(self.next_coding_audit_id.to_le_bytes());
+        }
+        for stored in self.coding_audits.values() {
+            hasher.update(bincode::serialize(stored).unwrap_or_else(|_| SERIALIZE_FAILED.to_vec()));
         }
         hasher.finalize().into()
     }
@@ -2208,6 +2299,193 @@ impl StorageRegistry {
                 column: audit.column,
             })
         }
+    }
+
+    /// Open a stored coding audit against one operator of one parity shard.
+    ///
+    /// The registry derives the audit from `entropy` ([`Self::derive_coding_audit`]),
+    /// finds the `Active` deals that hold the selected parity shard (shard
+    /// index `k + parity_index`) and, when several operators hold a copy,
+    /// picks one by the same entropy. The caller chooses neither the column
+    /// nor the operator. The audit, its operator and `deadline_epoch` are
+    /// stored, and only that stored copy is used to check the answer.
+    ///
+    /// Known accepted gap (S2): the audit is not bound to a column commitment
+    /// in the manifest, so it detects operators that do not answer or answer
+    /// with a column that breaks the code. It does not detect an operator
+    /// that serves a consistent column of the wrong object.
+    ///
+    /// Returns the new audit id.
+    ///
+    /// WIRING: called by ADIM 4c (the maintenance loop that opens audits,
+    /// with entropy from the chain tip).
+    ///
+    /// # Errors
+    ///
+    /// [`StorageError::UnknownManifest`], [`StorageError::NoParityToAudit`]
+    /// for a replicated object, [`StorageError::InvalidEpochRange`] when the
+    /// deadline is not after `epoch`, and [`StorageError::NoActiveParityDeal`]
+    /// when no active deal holds the selected parity shard.
+    pub fn open_coding_audit(
+        &mut self,
+        entropy: &Hash32,
+        manifest_id: ContentId,
+        epoch: u64,
+        deadline_epoch: u64,
+    ) -> Result<u64, StorageError> {
+        if epoch >= deadline_epoch {
+            return Err(StorageError::InvalidEpochRange {
+                start: epoch,
+                end: deadline_epoch,
+            });
+        }
+        let manifest = self
+            .manifests
+            .get(&manifest_id)
+            .ok_or(StorageError::UnknownManifest(manifest_id))?;
+        let audit_id = self.next_coding_audit_id;
+        let audit = Self::derive_coding_audit(entropy, manifest, audit_id)?;
+        let parity_position = u64::from(manifest.erasure.k) + u64::from(audit.parity_index);
+        let parity_shard = manifest
+            .shards
+            .iter()
+            .find(|shard| {
+                shard.kind == crate::storage::ShardKind::Parity
+                    && u64::from(shard.index) == parity_position
+            })
+            .ok_or(StorageError::NoParityToAudit { manifest_id })?;
+        let holders: Vec<u64> = self
+            .deals_by_shard
+            .get(&(manifest_id, parity_shard.shard_id))
+            .map(|ids| {
+                ids.iter()
+                    .copied()
+                    .filter(|id| self.deals.get(id).is_some_and(StorageDeal::is_active))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if holders.is_empty() {
+            return Err(StorageError::NoActiveParityDeal {
+                manifest_id,
+                parity_index: audit.parity_index,
+            });
+        }
+        let pick = hash_fields_bytes(&[
+            b"BDLM_STORAGE_CODING_AUDIT_HOLDER_V1",
+            entropy,
+            manifest_id.as_bytes(),
+            &audit_id.to_le_bytes(),
+        ]);
+        let mut pick_bytes = [0u8; 8];
+        pick_bytes.copy_from_slice(&pick[..8]);
+        let chosen = holders[(u64::from_le_bytes(pick_bytes) % holders.len() as u64) as usize];
+        let operator = self
+            .deals
+            .get(&chosen)
+            .map(|deal| deal.operator)
+            .ok_or(StorageError::UnknownDeal(chosen))?;
+        self.next_coding_audit_id = audit_id.saturating_add(1);
+        self.coding_audits.insert(
+            audit_id,
+            StoredCodingAudit {
+                audit_id,
+                audit,
+                deal_id: chosen,
+                operator,
+                opened_epoch: epoch,
+                deadline_epoch,
+                outcome: CodingAuditOutcome::Open,
+            },
+        );
+        Ok(audit_id)
+    }
+
+    /// Record the audited operator's answer to a stored coding audit.
+    ///
+    /// `data_column` is byte `column` of each data shard in shard order and
+    /// `parity_byte` is the same column of the audited parity shard. The
+    /// check runs against the STORED audit, never against a caller copy.
+    ///
+    /// A wrong answer ends as `Failed`: the operator enters the six hour
+    /// cooldown ([`Self::begin_operator_cooldown`], with `now_secs`). The
+    /// deal stays `Active` and no bond moves (owner decision B2 A). A right
+    /// answer ends as `Passed`.
+    ///
+    /// Only `Open` audits take an answer, once, from the audited operator,
+    /// at or before the deadline epoch. A refused answer changes nothing.
+    ///
+    /// WIRING: called by ADIM 4b (the transaction that answers an audit).
+    ///
+    /// # Errors
+    ///
+    /// [`StorageError::UnknownCodingAudit`], [`StorageError::CodingAuditNotOpen`],
+    /// [`StorageError::CodingAuditWrongResponder`],
+    /// [`StorageError::InvalidEpochRange`] after the deadline, and the
+    /// non-mismatch errors of [`Self::verify_coding_audit`] (an audit that
+    /// cannot be checked is not the operator's failure and stays `Open`).
+    pub fn answer_coding_audit(
+        &mut self,
+        audit_id: u64,
+        responder: Address,
+        data_column: &[u8],
+        parity_byte: u8,
+        epoch: u64,
+        now_secs: u64,
+    ) -> Result<CodingAuditOutcome, StorageError> {
+        let stored = self
+            .coding_audits
+            .get(&audit_id)
+            .ok_or(StorageError::UnknownCodingAudit(audit_id))?;
+        if stored.outcome != CodingAuditOutcome::Open {
+            return Err(StorageError::CodingAuditNotOpen(audit_id));
+        }
+        if stored.operator != responder {
+            return Err(StorageError::CodingAuditWrongResponder { audit_id });
+        }
+        if epoch > stored.deadline_epoch {
+            return Err(StorageError::InvalidEpochRange {
+                start: epoch,
+                end: stored.deadline_epoch,
+            });
+        }
+        let operator = stored.operator;
+        let outcome = match self.verify_coding_audit(&stored.audit, data_column, parity_byte) {
+            Ok(()) => CodingAuditOutcome::Passed,
+            Err(StorageError::ParityColumnMismatch { .. }) => CodingAuditOutcome::Failed,
+            Err(other) => return Err(other),
+        };
+        if outcome == CodingAuditOutcome::Failed {
+            self.begin_operator_cooldown(operator, now_secs);
+        }
+        if let Some(stored) = self.coding_audits.get_mut(&audit_id) {
+            stored.outcome = outcome;
+        }
+        Ok(outcome)
+    }
+
+    /// Close every `Open` coding audit whose deadline epoch is before
+    /// `epoch`. Each becomes `Missed` and its operator enters the six hour
+    /// cooldown. Deals and bonds are not touched (owner decision B2 A).
+    ///
+    /// Returns the ids closed, in id order.
+    ///
+    /// WIRING: called by ADIM 4c (the maintenance loop, once per epoch).
+    pub fn finalize_missed_coding_audits(&mut self, epoch: u64, now_secs: u64) -> Vec<u64> {
+        let due: Vec<(u64, Address)> = self
+            .coding_audits
+            .values()
+            .filter(|stored| {
+                stored.outcome == CodingAuditOutcome::Open && stored.deadline_epoch < epoch
+            })
+            .map(|stored| (stored.audit_id, stored.operator))
+            .collect();
+        for (audit_id, operator) in &due {
+            if let Some(stored) = self.coding_audits.get_mut(audit_id) {
+                stored.outcome = CodingAuditOutcome::Missed;
+            }
+            self.begin_operator_cooldown(*operator, now_secs);
+        }
+        due.into_iter().map(|(audit_id, _)| audit_id).collect()
     }
 
     pub fn derive_challenge_range(
@@ -6441,6 +6719,357 @@ mod tests {
             reg.open_challenge(deal_id, 0, 4096, 100, 110, Address::from([9u8; 32]), 0),
             Err(StorageError::ZeroOpenerBond)
         ));
+    }
+
+    /// Stored coding audits: who was asked, by when, and what happened.
+    mod coding_audit {
+        use super::*;
+        use crate::storage::{encode_object, EncodedObject, ErasureScheme};
+
+        const NOW: u64 = 1_000_000;
+        const OPEN_EPOCH: u64 = 120;
+        const DEADLINE: u64 = 130;
+
+        fn op(byte: u8) -> Address {
+            Address::from([byte; 32])
+        }
+
+        /// A (4,6) object with two parity shards. Parity shard 0 is held by
+        /// operators 10 and 11, parity shard 1 by operator 12 alone, so the
+        /// registry has a choice to make for one shard and none for the other.
+        fn coded() -> (StorageRegistry, EncodedObject, ContentManifest) {
+            // Not a repeating pattern: equal shards share a content id, and a
+            // deal-open refuses a code word that repeats one.
+            let data: Vec<u8> = (0..800u32)
+                .map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8)
+                .collect();
+            let encoded = encode_object(&data, ErasureScheme { k: 4, n: 6 }).expect("encodes");
+            let manifest = encoded.to_manifest().expect("manifest");
+            let mut reg = StorageRegistry::new();
+            reg.register_manifest(&manifest);
+            for (shard, holder, replica) in [(4usize, 10u8, 0u8), (4, 11, 1), (5, 12, 0)] {
+                reg.open_deal(
+                    42,
+                    &manifest,
+                    manifest.shards[shard].shard_id,
+                    op(holder),
+                    replica,
+                    100,
+                    200,
+                    good_econ(),
+                    &params(),
+                    Some(valid_merkle_proof()),
+                    Some([0x42u8; 32]),
+                )
+                .expect("a parity shard deal opens");
+            }
+            (reg, encoded, manifest)
+        }
+
+        fn open(reg: &mut StorageRegistry, manifest: &ContentManifest, seed: u8) -> u64 {
+            reg.open_coding_audit(&[seed; 32], manifest.manifest_id, OPEN_EPOCH, DEADLINE)
+                .expect("an erasure coded object with live parity deals can be audited")
+        }
+
+        /// What an operator holding honest parity would send back.
+        fn honest(encoded: &EncodedObject, audit: &CodingAudit) -> (Vec<u8>, u8) {
+            let column = (0..encoded.scheme.k as usize)
+                .map(|j| encoded.shards[j][audit.column as usize])
+                .collect();
+            let parity = encoded.shards[encoded.scheme.k as usize + audit.parity_index as usize]
+                [audit.column as usize];
+            (column, parity)
+        }
+
+        fn stored(reg: &StorageRegistry, id: u64) -> StoredCodingAudit {
+            reg.coding_audits.get(&id).expect("audit is stored").clone()
+        }
+
+        #[test]
+        fn open_stores_the_operator_the_deadline_and_the_audit() {
+            let (mut reg, _, manifest) = coded();
+            let before = reg.root();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            assert_eq!(rec.audit_id, id);
+            assert_eq!(rec.opened_epoch, OPEN_EPOCH);
+            assert_eq!(rec.deadline_epoch, DEADLINE);
+            assert_eq!(rec.outcome, CodingAuditOutcome::Open);
+            let deal = reg.deals.get(&rec.deal_id).expect("deal exists");
+            assert_eq!(deal.operator, rec.operator);
+            assert_eq!(
+                deal.shard_id,
+                manifest.shards[4 + rec.audit.parity_index as usize].shard_id,
+                "the audited deal must hold the parity shard the audit asks about"
+            );
+            assert_ne!(before, reg.root(), "opening an audit must change the root");
+        }
+
+        #[test]
+        fn a_replicated_object_has_nothing_to_audit() {
+            let mut reg = StorageRegistry::new();
+            let m = good_manifest();
+            open_one(&mut reg, &m);
+            let err = reg
+                .open_coding_audit(&[1u8; 32], m.manifest_id, OPEN_EPOCH, DEADLINE)
+                .expect_err("replicas have no parity");
+            assert!(matches!(err, StorageError::NoParityToAudit { .. }));
+            assert!(reg.coding_audits.is_empty());
+        }
+
+        #[test]
+        fn a_deadline_not_after_the_open_epoch_is_refused() {
+            let (mut reg, _, manifest) = coded();
+            let err = reg
+                .open_coding_audit(&[1u8; 32], manifest.manifest_id, OPEN_EPOCH, OPEN_EPOCH)
+                .expect_err("zero length window");
+            assert!(matches!(err, StorageError::InvalidEpochRange { .. }));
+        }
+
+        #[test]
+        fn a_parity_shard_with_no_active_deal_cannot_be_audited() {
+            let (mut reg, _, manifest) = coded();
+            for deal in reg.deals.values_mut() {
+                deal.status = DealStatus::Expired;
+            }
+            let err = reg
+                .open_coding_audit(&[1u8; 32], manifest.manifest_id, OPEN_EPOCH, DEADLINE)
+                .expect_err("nobody holds the shard");
+            assert!(matches!(err, StorageError::NoActiveParityDeal { .. }));
+        }
+
+        #[test]
+        fn a_forged_parity_index_is_refused_and_nothing_is_decided() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let mut forged = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &forged.audit);
+            forged.audit.parity_index = 99;
+            reg.coding_audits.insert(id, forged.clone());
+            let root = reg.root();
+            let err = reg
+                .answer_coding_audit(id, forged.operator, &column, parity, OPEN_EPOCH, NOW)
+                .expect_err("an index outside the scheme is not an operator failure");
+            assert!(matches!(err, StorageError::NoParityToAudit { .. }));
+            assert_eq!(stored(&reg, id).outcome, CodingAuditOutcome::Open);
+            assert_eq!(
+                root,
+                reg.root(),
+                "an unanswerable audit must change nothing"
+            );
+            assert!(reg.operator_cooldown_until(&forged.operator, NOW).is_none());
+        }
+
+        #[test]
+        fn a_correct_answer_passes_without_a_cooldown() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &rec.audit);
+            let opened_root = reg.root();
+            let out = reg
+                .answer_coding_audit(id, rec.operator, &column, parity, DEADLINE, NOW)
+                .expect("honest answer");
+            assert_eq!(out, CodingAuditOutcome::Passed);
+            assert_eq!(stored(&reg, id).outcome, CodingAuditOutcome::Passed);
+            assert!(reg.operator_cooldown_until(&rec.operator, NOW).is_none());
+            assert_ne!(opened_root, reg.root(), "the result must reach the root");
+        }
+
+        #[test]
+        fn a_wrong_parity_byte_fails_with_a_cooldown_and_no_slash() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &rec.audit);
+            let deal_before = reg.deals.get(&rec.deal_id).cloned().unwrap();
+            let opened_root = reg.root();
+            let out = reg
+                .answer_coding_audit(id, rec.operator, &column, parity ^ 0xFF, DEADLINE, NOW)
+                .expect("a wrong answer is a recorded outcome, not an error");
+            assert_eq!(out, CodingAuditOutcome::Failed);
+            assert_eq!(
+                reg.operator_cooldown_until(&rec.operator, NOW),
+                Some(NOW + MISSED_CHALLENGE_COOLDOWN_SECS)
+            );
+            assert_eq!(reg.deals.get(&rec.deal_id), Some(&deal_before));
+            assert!(reg.deals.get(&rec.deal_id).unwrap().is_active());
+            assert_ne!(opened_root, reg.root());
+        }
+
+        #[test]
+        fn a_wrong_data_column_fails_too() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 2);
+            let rec = stored(&reg, id);
+            let (mut column, parity) = honest(&encoded, &rec.audit);
+            column[0] ^= 0x01;
+            let out = reg
+                .answer_coding_audit(id, rec.operator, &column, parity, DEADLINE, NOW)
+                .unwrap();
+            assert_eq!(out, CodingAuditOutcome::Failed);
+        }
+
+        #[test]
+        fn a_missed_audit_starts_a_cooldown_and_leaves_the_collateral() {
+            let (mut reg, _, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let deals_before = reg.deals.clone();
+            let opened_root = reg.root();
+
+            assert!(
+                reg.finalize_missed_coding_audits(DEADLINE, NOW).is_empty(),
+                "the deadline epoch itself is still in time"
+            );
+            assert_eq!(reg.root(), opened_root);
+
+            let missed = reg.finalize_missed_coding_audits(DEADLINE + 1, NOW);
+            assert_eq!(missed, vec![id]);
+            assert_eq!(stored(&reg, id).outcome, CodingAuditOutcome::Missed);
+            assert_eq!(
+                reg.operator_cooldown_until(&rec.operator, NOW),
+                Some(NOW + MISSED_CHALLENGE_COOLDOWN_SECS)
+            );
+            assert_eq!(reg.deals, deals_before, "no slash and no status change");
+            assert_ne!(opened_root, reg.root());
+            assert!(
+                reg.finalize_missed_coding_audits(DEADLINE + 5, NOW)
+                    .is_empty(),
+                "a decided audit is not decided twice"
+            );
+        }
+
+        #[test]
+        fn the_three_outcomes_and_the_open_state_have_four_different_roots() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &rec.audit);
+
+            let mut passed = reg.clone();
+            passed
+                .answer_coding_audit(id, rec.operator, &column, parity, DEADLINE, NOW)
+                .unwrap();
+            let mut failed = reg.clone();
+            failed
+                .answer_coding_audit(id, rec.operator, &column, parity ^ 1, DEADLINE, NOW)
+                .unwrap();
+            let mut missed = reg.clone();
+            missed.finalize_missed_coding_audits(DEADLINE + 1, NOW);
+
+            let roots = [reg.root(), passed.root(), failed.root(), missed.root()];
+            for i in 0..roots.len() {
+                for j in (i + 1)..roots.len() {
+                    assert_ne!(roots[i], roots[j], "roots {i} and {j} collide");
+                }
+            }
+        }
+
+        #[test]
+        fn a_second_answer_is_refused_whatever_the_first_one_was() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &rec.audit);
+
+            // A failure cannot be repaired by answering again.
+            reg.answer_coding_audit(id, rec.operator, &column, parity ^ 1, DEADLINE, NOW)
+                .unwrap();
+            let err = reg
+                .answer_coding_audit(id, rec.operator, &column, parity, DEADLINE, NOW)
+                .expect_err("already decided");
+            assert!(matches!(err, StorageError::CodingAuditNotOpen(_)));
+            assert_eq!(stored(&reg, id).outcome, CodingAuditOutcome::Failed);
+
+            // A pass cannot be turned into a failure either.
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &rec.audit);
+            reg.answer_coding_audit(id, rec.operator, &column, parity, DEADLINE, NOW)
+                .unwrap();
+            let root = reg.root();
+            assert!(reg
+                .answer_coding_audit(id, rec.operator, &column, parity ^ 1, DEADLINE, NOW)
+                .is_err());
+            assert_eq!(root, reg.root());
+        }
+
+        #[test]
+        fn a_late_answer_is_refused_and_the_audit_is_then_missed() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &rec.audit);
+            let err = reg
+                .answer_coding_audit(id, rec.operator, &column, parity, DEADLINE + 1, NOW)
+                .expect_err("after the deadline");
+            assert!(matches!(err, StorageError::InvalidEpochRange { .. }));
+            assert_eq!(stored(&reg, id).outcome, CodingAuditOutcome::Open);
+            assert_eq!(
+                reg.finalize_missed_coding_audits(DEADLINE + 1, NOW),
+                vec![id]
+            );
+        }
+
+        #[test]
+        fn another_operator_cannot_answer_for_the_audited_one() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &rec.audit);
+            let root = reg.root();
+            let err = reg
+                .answer_coding_audit(id, op(99), &column, parity, DEADLINE, NOW)
+                .expect_err("not the audited operator");
+            assert!(matches!(
+                err,
+                StorageError::CodingAuditWrongResponder { .. }
+            ));
+            assert_eq!(root, reg.root());
+            assert!(reg.operator_cooldown_until(&op(99), NOW).is_none());
+        }
+
+        #[test]
+        fn an_unknown_audit_id_is_refused() {
+            let (mut reg, _, _) = coded();
+            let err = reg
+                .answer_coding_audit(7, op(10), &[0; 4], 0, DEADLINE, NOW)
+                .expect_err("no such audit");
+            assert!(matches!(err, StorageError::UnknownCodingAudit(7)));
+        }
+
+        #[test]
+        fn the_same_entropy_picks_the_same_holder_and_entropy_spreads_the_pick() {
+            let (reg, _, manifest) = coded();
+            let mut seen = std::collections::BTreeSet::new();
+            for seed in 0..64u8 {
+                let mut a = reg.clone();
+                let mut b = reg.clone();
+                let ia = open(&mut a, &manifest, seed);
+                let ib = open(&mut b, &manifest, seed);
+                assert_eq!(stored(&a, ia), stored(&b, ib), "selection must be pure");
+                let rec = stored(&a, ia);
+                if rec.audit.parity_index == 0 {
+                    seen.insert(rec.operator);
+                }
+            }
+            assert!(
+                seen.contains(&op(10)) && seen.contains(&op(11)),
+                "both holders of parity shard 0 must be reachable, got {seen:?}"
+            );
+        }
+
+        #[test]
+        fn stored_audits_survive_a_bincode_round_trip() {
+            let (mut reg, _, manifest) = coded();
+            open(&mut reg, &manifest, 1);
+            reg.finalize_missed_coding_audits(DEADLINE + 1, NOW);
+            let bytes = bincode::serialize(&reg).expect("serialize");
+            let back: StorageRegistry = bincode::deserialize(&bytes).expect("deserialize");
+            assert_eq!(reg.root(), back.root());
+        }
     }
 }
 
