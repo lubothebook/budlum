@@ -56,7 +56,7 @@ The decode path is: BDLV bytes -> `QrVideo::from_bytes` -> PNG -> `rqrr` -> opti
 
 ### 2.3 Data structures and frame format
 
-- A1 packed container "BDL3": magic 4, version 1, flags 1 (bit0 zlib), kind 1, orig_len 8, sha256 32. Header length 47. qr_payload.rs:39-46. Kinds: ContentBytes, PublicRecipeWire, EncryptedContent (qr_payload.rs:56-67). Zlib level 9 is kept only if it shrinks (qr_payload.rs:158-190).
+- A1 packed container "BDL3": magic 4, version 1, flags 1 (bit0 zlib, bit1 EMPTY), kind 1, orig_len 8, sha256 32. Header length 47. qr_payload.rs:39-46. Kinds: ContentBytes, PublicRecipeWire, EncryptedContent (qr_payload.rs:56-67). Zlib level 9 is kept only if it shrinks (qr_payload.rs:158-190).
 - A2 drop header "BDLD": 24 bytes. Magic 4, version 1, flags 1, seq 4, k 2, block_len 2, total_len 4, degree 1, pad 1, body hash 4. `DROP_HEADER_LEN` at qr_carousel.rs:66, and the test `assert_eq!(DROP_HEADER_LEN, 24)` at qr_carousel.rs:1045. Scout said 28. That is wrong.
 - A3 frame header: 18 bytes. Magic `BD 3A` 2, version 1, flags 1, seq 4, stream id prefix 4, drop_len 2, frame digest 4. `THREE_FRAME_HEADER_LEN` at qr_frame.rs:44. Parsing and checks at qr_frame.rs:130-170. The prefix is the first 4 bytes of the stream commitment (qr_frame.rs:180).
 - A4 container "BDLV": magic 4, version 1, flags 1, fps u16, frame_count u32, stream_commitment 32, recipe_commitment 32, then repeated (png_len u32, png). qr_video.rs:12-24 and 139-152. fps is a display hint only (qr_video.rs:36).
@@ -95,7 +95,7 @@ A0 has 11 classes: Generic, TextOrganic, EntropyMedia, EntropyArchive, Ciphertex
 
 Refused today:
 
-- Zero bytes. Refused at four pipe layers (plus two more checks below): `transform_content` (transformed.rs:311), `pack_payload_opts` (qr_payload.rs:163, `PayloadError::Empty`), `CarouselParams::from_payload` (qr_carousel.rs:165), `QrMatrix::encode_at` (qr_matrix.rs:107). `unpack_payload` also refuses `orig_len == 0` (qr_payload.rs:230). The emit layer has its own `EmitError::Empty` (emit.rs:240).
+- Zero bytes are no longer refused. They pass A0 (`transform_content` and `TransformedPayload::from_bytes`, class Generic), A1 (a 47 byte packet with the EMPTY flag, bit1, and `orig_len` 0), the emit plan, the seal layer and the sealed RPC feed path. A1 refuses an EMPTY flag that disagrees with `orig_len`, and EMPTY with zlib. A secret feed with no seal is still refused with `EmitError::UnsealedGated` (RPC code -32602), empty or not.
 - Anything above the effective ceiling in 2.5.
 
 Not covered by any code in src: real video files as input (mp4, webm) are just bytes to this pipe. They are class EntropyMedia and are carried opaque. That is lossless, but the pipe does not understand video.

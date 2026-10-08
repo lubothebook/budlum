@@ -235,14 +235,7 @@ pub fn unpack_payload(packed: &[u8]) -> Result<(PayloadKind, Vec<u8>), PayloadEr
     }
     let is_empty = flags & FLAG_EMPTY != 0;
     if is_empty != (orig_len == 0) {
-        return Err(if is_empty {
-            PayloadError::ZlibInconsistent
-        } else {
-            PayloadError::TooLarge {
-                len: orig_len,
-                max: MAX_PAYLOAD_CONTENT,
-            }
-        });
+        return Err(PayloadError::BadFlags(flags));
     }
     if orig_len > MAX_PAYLOAD_CONTENT {
         return Err(PayloadError::TooLarge {
@@ -425,7 +418,7 @@ mod tests {
         packed[5] |= FLAG_EMPTY;
         assert_eq!(
             unpack_payload(&packed).unwrap_err(),
-            PayloadError::ZlibInconsistent
+            PayloadError::BadFlags(FLAG_EMPTY)
         );
     }
 
@@ -433,10 +426,28 @@ mod tests {
     fn zero_len_without_the_empty_flag_is_refused() {
         let mut packed = pack_payload(PayloadKind::ContentBytes, b"").unwrap();
         packed[5] = 0;
-        assert!(matches!(
+        assert_eq!(
             unpack_payload(&packed).unwrap_err(),
-            PayloadError::TooLarge { .. }
-        ));
+            PayloadError::BadFlags(0)
+        );
+    }
+
+    /// Golden vector for the empty content packet (A1, bit1 EMPTY, 47 bytes).
+    #[test]
+    fn empty_wire_bytes_match_the_golden_vector() {
+        let packed = pack_payload(PayloadKind::ContentBytes, b"").unwrap();
+        assert_eq!(packed.len(), 47);
+        assert_eq!(hex(&packed), "42444c330102010000000000000000e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
+
+    #[test]
+    fn empty_packet_with_a_changed_sha_is_refused() {
+        let mut packed = pack_payload(PayloadKind::ContentBytes, b"").unwrap();
+        packed[15] ^= 0x01;
+        assert_eq!(
+            unpack_payload(&packed).unwrap_err(),
+            PayloadError::ContentHashMismatch
+        );
     }
 
     #[test]

@@ -680,7 +680,8 @@ const SEAL_OVERHEAD: usize = SEALED_HEADER_LEN + 16;
 
 /// Everything the ceilings say about a body before a single drop is built.
 ///
-/// The bound is computed on `len + THREE_PAYLOAD_HEADER_LEN`, not on `len`:
+/// The bound is computed on `len + THREE_PAYLOAD_HEADER_LEN + SEAL_OVERHEAD`
+/// (the seal part only for a sealed feed), not on `len`:
 /// A1 may shrink the body but never grows it, so the packed container is the
 /// larger of the two and the carousel locks `k` over it. Charging the request
 /// on the smaller number would let a caller walk up to a ceiling and be told it

@@ -1228,15 +1228,32 @@ mod rpc_tests {
     async fn rpc_tests_qr_feed_accepts_empty_content_when_sealed() {
         let (server, _chain) = setup().await;
         let seed = "ab".repeat(32);
-        server
+        let preview = server
             .storage_qr_feed_preview(String::new(), 64, None, Some(seed.clone()))
             .await
             .expect("sealed empty preview");
+        let key = crate::storage::payload_crypt::PayloadKey::derive(&[0xabu8; 32]);
+        let total = u32::try_from(preview["k"].as_u64().expect("k")).unwrap();
         let burst = server
-            .storage_qr_feed_frames(String::new(), 64, 0, 1, Some(seed))
+            .storage_qr_feed_frames(String::new(), 64, 0, total, Some(seed))
             .await
             .expect("sealed empty frames");
-        assert_eq!(burst["count"], 1);
+        assert_eq!(burst["count"], total);
+        let mut dec = crate::storage::qr_carousel::CarouselDecoder::new();
+        for f in burst["frames"].as_array().expect("frames array") {
+            let frame = hex::decode(f.as_str().expect("hex frame")).expect("frame hex");
+            let wire = &frame[crate::storage::qr_frame::THREE_FRAME_HEADER_LEN..];
+            let d = crate::storage::qr_carousel::Drop::from_bytes(wire).expect("drop");
+            dec.push(&d).expect("push");
+        }
+        let packed = dec.finish().expect("carousel finish");
+        let (kind, sealed) = crate::storage::qr_payload::unpack_payload(&packed).expect("unpack");
+        assert_eq!(
+            kind,
+            crate::storage::qr_payload::PayloadKind::EncryptedContent
+        );
+        let clear = crate::storage::payload_crypt::open_payload(&key, &sealed).expect("open");
+        assert!(clear.is_empty());
     }
 
     /// Without a seed the gated preview of empty content is still refused as a
@@ -1249,5 +1266,12 @@ mod rpc_tests {
             .await
             .expect_err("unsealed gated preview must be refused");
         assert_eq!(refused.code(), -32602);
+        assert!(
+            refused
+                .message()
+                .contains("neither sealed nor declared ciphertext"),
+            "unexpected message: {}",
+            refused.message()
+        );
     }
 }
