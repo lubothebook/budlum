@@ -110,14 +110,85 @@ Gates touched: air-selectors-are-opcode-bound (B1, B2), logup-multipliers-are-bo
 
 ## 6. Next step (do this first in a new session)
 
-State at the end of the last session: branch `claude/zkvm-bud-completion-84r6jc` is fully pushed and the working tree is clean. GitHub push works (credentials had to be reconnected once). A second branch `wip/zkvm-b1-reserve-0x1f` holds unfinished work (see 4.3 step 1); it is not part of PR #1.
+Written 2026-10-08. Work branch of this session: `ccr-9d3ed79c-9wpla0` (cut from `claude/zkvm-bud-completion-84r6jc` at 8bb1962; PR #1 still tracks the older branch name). Another branch `wip/zkvm-b1-reserve-0x1f` exists; its single commit was cherry-picked here (cf35384). Push only builds that pass their targeted tests.
 
-1. Read this file, run the environment check from MODEL_ROUTING.md section 10, compare with `git log` and `git status`. `.claude/settings.json` (model opusplan) and the seven agents load at session start. The main session writes no code; use the agents (scout, finder, architect, coder, coder-deep, coder-lite).
-2. Check GitHub Actions on PR #1 (the workflows are enabled now; some were `disabled_fork` and need the owner to enable them). Fix the red checks in one pass with coder agents. Earlier failures: Dependency Review, Typos, Repo Lint, Gates, Budlum Core, docker-smoke. Likely causes: a new proto message (buf lint), Turkish text and typos config, the tool ports, the Rust workspace tests. Read the logs before guessing.
-3. zkVM step B1 (make 0x1F fail closed): continue from the WIP branch. `git diff claude/zkvm-bud-completion-84r6jc..wip/zkvm-b1-reserve-0x1f` shows the VM change and the test edits; the AIR part (assert the VerifyInference selector and expansion flag to zero, remove it from the Poseidon gadget selector sum and gas table, keep columns 690 to 693 reserved) and the docs fixes are not done. Then continue with R1 to R8 as listed in 4.3.
-4. K1 (Priority Zero): the owner decisions are final (A A A A, section 5). The architect plan for K1 was cut off twice; re-run it (architect, Opus, read-only) from `docs/bud/BUD-KESIF-RAPORU.md` and the decisions in section 5, then run the steps with coder agents. Keep K1 inside those decisions. Do not ask the owner about a generated versus organic content split; the plan has none.
-5. B.U.D. in-block queue (4.2) can run in parallel with the zkVM queue when different files are touched.
-6. Rewrite sections 1 to 6 of this file before ending the session.
+### 6.1 Owner instructions of this session (binding)
+
+- Do not take economic decisions in this session. Do not ask economic questions. Steps that depend on one stay unstarted and are listed in 6.5.
+- Priority is a full audit and improvement of Budlum, module by module, then coded fixes. Plans alone are not progress: the branch had 4865 added product lines against main (about 4795 more in xtask tools) and 15 of 31 commits were status-only. Prefer code with tests.
+- CI is read at the end of the round, not between steps.
+- Ask the owner only in plain, short sentences with a recommendation.
+
+### 6.2 Live facts (evidence, read 2026-10-08)
+
+- PR #1 head 8bb1962, CI run number 12. Red: Budlum Core (steps "Feature matrix: pq-ml-dsa solo" and "Clippy"; Test, Format, doc pass), Typos and Repo Lint (typos: `flate` twice, `tru` at xtask/tools/src/json.rs:342), docker-smoke (step "Trivy IMAGE gate", fixable CRITICAL/HIGH), Dependency Review (fails in about 1 second; likely a repository setting, check before coding). Cancelled at the 6 hour limit: Gates, StorageProvider Gate, BNS Name Registry, Fork-Choice Invariants, Coverage. Green: determinism on 3 OS, fuzz quick, PoA isolation, B.U.D. E2E, economy, governance, network hardening, BudZero.
+- Branch against main: 96 files, +11868 -2307. Rust +9660 -415 (product code in src, budzero, crates, bud: +4865 -394; xtask: +4795 -21).
+- memanto is not installed in the cloud container; this file is the memory.
+
+### 6.3 Agents running at the end of this note (check git log before redoing anything)
+
+- coder-deep, zkVM B1: finish AIR part of 0x1F fail closed (4.3 step 1). Files: plonky3_air.rs, plonky3_prover.rs, bud-isa, docs/AI_VERIFICATION_STATUS.md, ai_verification_status_locks.rs.
+- coder, ADIM E4-a: GlobalBlockHeader.timestamp_ms taken from the chain tip block (blockchain.rs about line 1917) with a test.
+- coder-deep, ADIM 3a: `AccountState.current_block_entropy` (hash of previous_hash and vrf_output, tag BDLM_BLOCK_CONTEXT_ENTROPY_V1), not in state root, not persisted.
+- Each pushes its own commit. If the tree is dirty at start, read `git status` and `git diff --stat` before acting. Do not commit another agent's half work.
+
+### 6.4 Mainnet blocker matrix (architect, evidence-based, HEAD 8bb1962; classes only, no exploit detail)
+
+Wired, tested: tokenomics (100M fixed supply, burns), settlement flow, cross-domain nonce store, PoW and PoS engines, wallet-core, genesis validation, snapshot v2 write path.
+Not wired or closed:
+1. Mainnet default PoS validator exits at start (PKCS#11 VRF backend missing; main.rs about 726). Economic or architecture: owner.
+2. Three of four mainnet domains cannot finalize (validator_set_hash stays zero for PoS and BFT; PoA domain starts Frozen). BFT domain plugin branch never runs.
+3. Consensus state written outside blocks: external root anchoring and domain advance (RPC and gossip), message_registry insert, operator RPC stake bonding, bud_submitZkProof fee cut, storage maintenance (challenges, deadlines, audits).
+4. GlobalBlockHeader is sealed only by an operator RPC; timestamp_ms was the header count (E4-a fixes it); the GlobalHeader gossip receiver does not validate.
+5. Snapshot manifest signing has no production caller; mainnet remote snapshot sync is refused (safe close, missing feature; pruning is forbidden on mainnet v1 so restart is not affected).
+6. config/mainnet-genesis.json is a template (validators=0): operational.
+7. PQ anchor and cold wallet are gated off.
+8. DomainForkChoice has no production user.
+9. bridge_relayer, network egress privacy and identity resolver are not wired. Account abstraction registry, TEE attestation and private transfer auth are not wired.
+10. Validator reward pool is intentionally unwired; block_reward does not mint: economic, owner.
+Also: storage challenge proof check is a constant false (proof format needs zkVM queue item 15); coding audit is not bound to shard commitments (format change); VerifyMerkle and VerifyInference are closed by activation; privacy is closed on mainnet; AI inference structural path is open for non-proof models; crypto::mainnet_policy test names and a dedicated settlement and cross-domain CI gate were not verified (KANITSIZ).
+
+### 6.5 Handoffs ready (architect, B.U.D. in-block queue; order 3a, 3b, 3c, 3d, 3e; 4a parallel to 3a; 4b needs 3a and 4a; 4c needs 4a)
+
+- 3a block entropy: running (see 6.3).
+- 3b `StorageTx::OpenChallenge` (tag 4; opener is tx.from; bond debited after registry accepts; entropy from current_block_entropy, sender, nonce). Ready after 3a. coder-deep, Opus verify.
+- 3c `StorageTx::AnswerChallenge` (tag 5; refund opener bond on Answered or Mismatched; Mismatched starts operator cooldown). BLOCKED on owner decision S3 (is the penalty the bond only, or bond plus the same amount again). Do not start.
+- 3d finalize missed challenges inside apply_block_effects (replay equals live root). BLOCKED on S3 (same).
+- 3e protocol challenge issuance inside apply_block_effects. Depends on 3a and 3d. BLOCKED through 3d.
+- 4a stored coding audit state in the registry (StoredCodingAudit, outcome enum, open, answer, finalize; failure means cooldown only, no slash per owner B2 A; new fields serde default and in root()). Ready now. coder-deep, Opus verify.
+- 4b open and finalize audits in apply_block_effects on the first block of each epoch (replaces the discard loop in chain_actor.rs about 3141-3185). Needs 3a and 4a.
+- 4c `StorageTx::AnswerCodingAudit` (tag 6). Needs 4a. coder.
+- Findings from the architect to keep: maintenance work outside apply_block_effects makes replayed registry roots differ (F3); a failed operator is charged the bond at open and again at slash (F4, owner question S3); opener bond is never refunded on Answered, Mismatched or Missed (F5); auto challenges use the zero address as opener with an undebited bond of 1, so a refund rule must skip the zero address (F6).
+- Entropy and deadline choices made by Claude: entropy from the including block's previous_hash and vrf_output; coding audit deadline reuses the 10 epoch window.
+- Handoff E4-a done above. Not started (questions open, not economic): S1 mainnet snapshot sync need (recommend: not needed in v1; remove from blocker list as v2 feature), S2 automatic global header sealing policy (recommend: seal at finality checkpoints, deterministic; gossip validation later), S3b DomainForkChoice wiring versus deletion (recommend: wire it).
+
+### 6.6 Open owner questions (do not decide; ask later in plain words)
+
+S1 challenge proof check can follow in the zkVM queue (recommend A: move challenges into blocks now, mainnet gate stays closed). S2 parity audit fingerprints (recommend A: audit now, fingerprints later; changes manifest format). S3 penalty is bond only (recommend A). Plus items 1 and 10 of 6.4. All are economic or architecture and are parked by owner order.
+
+### 6.7 Audit plan (the main work of the next rounds)
+
+Rule set: MODEL_ROUTING sections 2, 4, 5. finder (Opus xhigh) hunts findings per module, read-only; it never runs in parallel with finder-max. Each finding gets its own handoff from architect, a coder or coder-deep fixes only that finding, a fresh architect call verifies the diff. The finder does not verify its own fix. At most 3 agents at once. Local checks: cargo check, fmt, filtered tests, clippy on touched crates; full tests only in CI.
+Order of finder scans (R3 first scan each; later scans use architect on `git diff` only):
+1. src/chain: blockchain.rs, snapshot, persistence, fork choice, chain_actor.
+2. src/consensus and src/crypto (signing, verification, key policy, PKCS#11).
+3. settlement, cross_domain, registry.
+4. network/node.rs (gossip validation, scoring, DoS limits, the unvalidated GlobalHeader receiver).
+5. tokenomics and execution/executor.rs (every TransactionType arm, fee and nonce on refusal).
+6. budzero/bud-proof (continue 4.3 queue R1 to R8; the AIR bus and ordering gaps).
+7. rpc and B.U.D. storage (all RPC mutation paths, mainnet gates).
+8. wallet-core against node verify (cross test missing), account_abstraction, ai_inference.
+Record each finding id, path:line, impact in a private note outside the repo; never in a public issue, PR or this file (MODEL_ROUTING section 12 item 10). Record only closed items here.
+Expected output per module: findings list, fixed items with commit SHA, remaining engine blockers, tests added per file.
+
+### 6.8 CI repair list (do at the end of a round, one pass with coders)
+
+1. Budlum Core: read the failing step logs for "Feature matrix: pq-ml-dsa solo" and "Clippy" (the Format step is green and `cargo fmt --all -- --check` passes locally).
+2. Typos: `flate` (crate name flate2 in comments) and `tru` (test string); fix by renaming where possible or a narrow typos config entry. No weakening.
+3. docker-smoke: Trivy gate; find the fixable CRITICAL or HIGH package and update the dependency.
+4. Dependency Review: check repository dependency graph setting first.
+5. Five cancelled jobs reached the 6 hour limit: find the hang (likely a test that waits forever) and fix it; do not raise timeouts.
+6. Then rewrite sections 1 to 6.
 
 ## Official Anthropic skills (github.com/anthropics/skills, looked at, none installed)
 
