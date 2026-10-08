@@ -41,6 +41,25 @@ fn ai_execution_backend_allowed(_chain_id: u64, backend: &str) -> bool {
     backend == AI_EXECUTION_BACKEND_PLONKY3
 }
 
+/// Checks registered `dims` against the MLP shape limits.
+/// It reads only the `dims` slice and allocates nothing.
+fn check_ai_exec_dims(dims: &[u16]) -> Result<(), String> {
+    use crate::ai::execution::{MAX_MLP_LAYERS, MAX_MLP_WIDTH};
+    if dims.len() < 2 || dims.len() > MAX_MLP_LAYERS + 1 {
+        return Err(format!(
+            "dims length must be 2..={} (got {})",
+            MAX_MLP_LAYERS + 1,
+            dims.len()
+        ));
+    }
+    for &d in dims {
+        if d == 0 || d as usize > MAX_MLP_WIDTH {
+            return Err(format!("layer dim {d} out of 1..={MAX_MLP_WIDTH}"));
+        }
+    }
+    Ok(())
+}
+
 fn privacy_transfers_enabled(chain_id: u64) -> bool {
     // Allowlist, not a denylist.
     //
@@ -2270,6 +2289,8 @@ impl Executor {
                     // hidden behind a default, so nobody reads this as a
                     // budget that was checked.
                     if let Some(ref dims) = model_spec.execution_dims {
+                        check_ai_exec_dims(dims)
+                            .map_err(|e| BudlumError::validation("ai_exec_dims", e))?;
                         let sizing = crate::ai::execution::FixedPointMlpSpec {
                             dims: dims.clone(),
                             weights: vec![
@@ -2619,7 +2640,22 @@ impl Executor {
 
 #[cfg(test)]
 mod tests {
-    use super::{ai_execution_backend_allowed, privacy_transfers_enabled};
+    use super::{ai_execution_backend_allowed, check_ai_exec_dims, privacy_transfers_enabled};
+
+    #[test]
+    fn ai_exec_dims_rejects_wide_layer() {
+        assert!(check_ai_exec_dims(&[65, 1]).is_err());
+    }
+
+    #[test]
+    fn ai_exec_dims_rejects_too_many_layers() {
+        assert!(check_ai_exec_dims(&[u16::MAX; 32]).is_err());
+    }
+
+    #[test]
+    fn ai_exec_dims_accepts_small_model() {
+        assert!(check_ai_exec_dims(&[2, 1]).is_ok());
+    }
 
     /// Audit 2026-09-09 E-1: the vesting spend gate must hold on every arm
     /// that moves value out of the account, not just Transfer/escrow. The
