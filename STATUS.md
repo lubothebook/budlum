@@ -118,6 +118,7 @@ Written 2026-10-08. Work branch of this session: `ccr-9d3ed79c-9wpla0` (cut from
 - Priority is a full audit and improvement of Budlum, module by module, then coded fixes. Plans alone are not progress: the branch had 4865 added product lines against main (about 4795 more in xtask tools) and 15 of 31 commits were status-only. Prefer code with tests.
 - CI is read at the end of the round, not between steps.
 - Ask the owner only in plain, short sentences with a recommendation.
+- BUD-AI-KAPSAMLI-DIREKTIF.md binds all B.U.D. work (the uploaded copy is byte-identical to the repo copy). Owner: nothing coded may stay unwired (every component needs a production call site, see directive 2.2.3 and gate definition 11); B.U.D. 3.0 (recipe NFT, two-way recipe and QR video conversion, owner-or-DAO burn) is a new design with no precedent, so do not judge or shape it by existing systems or habits. The directive wins over general working habits where they differ; report the conflict. Priority Zero (directive 1) outranks every other B.U.D. step: K1 must finish before K2 to K4 code is merged.
 
 ### 6.2 Live facts (evidence, read 2026-10-08)
 
