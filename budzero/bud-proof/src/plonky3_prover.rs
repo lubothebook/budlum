@@ -1246,10 +1246,7 @@ pub fn trace_matrix(
         values[row_start + COL_MEM_ACTIVE] = Goldilocks::new(1);
         values[row_start + COL_MEM_IS_INIT] = Goldilocks::new(u64::from(e.is_init));
 
-        if i < n_mem - 1
-            && mem_events[i + 1].tid == e.tid
-            && mem_events[i + 1].addr == e.addr
-        {
+        if i < n_mem - 1 && mem_events[i + 1].tid == e.tid && mem_events[i + 1].addr == e.addr {
             values[row_start + COL_MEM_SAME] = Goldilocks::new(1);
         }
 
@@ -1582,8 +1579,8 @@ fn aux_trace_generator(
             let is_any_mem_op = is_real_mem_op + is_stack_op + is_storage_op + is_merkle_mem_op;
 
             let stack_ptr = row[COL_STACK_PTR];
-            let stack_addr = (is_push + is_call) * stack_ptr
-                + (is_pop + is_ret) * (stack_ptr - Goldilocks::ONE);
+            let stack_addr =
+                (is_push + is_call) * stack_ptr + (is_pop + is_ret) * (stack_ptr - Goldilocks::ONE);
             let storage_addr = row[COL_IMM];
             let cpu_mem_tid = is_real_mem_op
                 + is_merkle_mem_op
@@ -1620,15 +1617,7 @@ fn aux_trace_generator(
                 cpu_mem_val,
                 is_write,
             );
-            let c_mem = register_term(
-                alpha,
-                beta,
-                m_tid,
-                m_clk,
-                m_addr,
-                m_val,
-                m_is_write,
-            );
+            let c_mem = register_term(alpha, beta, m_tid, m_clk, m_addr, m_val, m_is_write);
 
             if is_any_mem_op != Goldilocks::ZERO {
                 s_mem += (gamma - c_cpu_mem).inverse();
@@ -7655,7 +7644,8 @@ mod tests {
     fn set_mem_addr(values: &mut [Goldilocks], row: usize, addr: u64) {
         values[row * TRACE_WIDTH + COL_MEM_ADDR] = Goldilocks::new(addr);
         for b in 0..MEM_ADDR_BITS {
-            values[row * TRACE_WIDTH + COL_MEM_ADDR_BITS_BASE + b] = Goldilocks::new((addr >> b) & 1);
+            values[row * TRACE_WIDTH + COL_MEM_ADDR_BITS_BASE + b] =
+                Goldilocks::new((addr >> b) & 1);
         }
     }
 
@@ -8138,9 +8128,8 @@ mod tests {
                 values[at(write, COL_MEM_SAME_INV)] =
                     Goldilocks::new(bud_vm::field_inverse_goldilocks(11));
                 values[at(read, COL_MEM_SAME)] = zero;
-                values[at(read, COL_MEM_SAME_INV)] = Goldilocks::new(
-                    bud_vm::field_inverse_goldilocks(bud_vm::GOLDILOCKS_P - 11),
-                );
+                values[at(read, COL_MEM_SAME_INV)] =
+                    Goldilocks::new(bud_vm::field_inverse_goldilocks(bud_vm::GOLDILOCKS_P - 11));
                 values[at(other, COL_MEM_SAME)] = zero;
                 values[at(other, COL_MEM_SAME_INV)] = zero;
                 values[at(other, COL_MEM_VAL)] = zero;
