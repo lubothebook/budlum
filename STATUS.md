@@ -9,7 +9,7 @@ The main session rewrites sections 1 to 6 of this file at the end of every work 
 ## 1. Goal and branch
 
 - Goal: Budlum testnet ready, then mainnet. Every part works, is wired to a production call site and is tested. No dead or idle code.
-- Branch: `claude/zkvm-bud-completion-84r6jc`. PR #1 against `main` on `lubothebook/budlum`.
+- Branch of the latest session: `ccr-9d3ed79c-9wpla0` (cut from `claude/zkvm-bud-completion-84r6jc` at 8bb1962, about 55 commits on top). PR #1 against `main` tracks the older branch name; no PR exists for the new branch yet (do not open one unless the owner asks).
 - Directives: CLAUDE.md (purpose, invariants, loop), MODEL_ROUTING.md (agents, effort, reading rules), BUD-AI-KAPSAMLI-DIREKTIF.md (B.U.D. 1.0, 2.0, 3.0, gates K0 to K6). Setup steps are in MODEL_ROUTING_KURULUM.md.
 - Project settings: `.claude/settings.json` (model opusplan, read deny for target/ and Cargo.lock) and seven agents in `.claude/agents/` (scout Haiku; finder, architect, finder-max Opus; coder, coder-deep, coder-lite Sonnet).
 - Behaviour principles (Karpathy, also in CLAUDE.md): think before coding and state assumptions; minimum code that solves the problem; surgical changes where every changed line traces to the request; define a verifiable goal and loop until it is verified.
@@ -51,7 +51,7 @@ All Python and shell tooling was ported to Rust and the scripts deleted: `xtask/
 - Opus verification passed with fixes applied for: ADIM 1 (manifest signing), ADIM 5 (operator class and policy), ADIM 2b (deal open and reallocation).
 - zkVM commits b64163d and cf9a35f: Opus verification PASS with notes. New forgery tests verify on the parent AIR and are refused on the fixed AIR. Notes: VerifyInference expansion length is not enforced (superseded by queue step 7, which makes 0x1F fail closed); an honest VerifyMerkle with an out-of-bounds path address is unprovable (fix before activation); some callers (cross-domain adapter, ai_inference verify) use the default closed activation implicitly, which is correct.
 - Pending verification: ADIM 2c `OpenDeal` (e649082) has no separate Opus verification yet.
-- CI on GitHub (PR #1) was red when last looked at (before the latest commits) on: Dependency Review, Typos, Repo Lint, Gates, Budlum Core, docker-smoke. The owner enabled Actions; the latest runs were not read. See section 6, step 2.
+- CI was last read at run number 12 (head 8bb1962); nothing newer was read in the latest session (owner order: read CI at the end of the round). See 6.2 and 6.8. CI on GitHub (PR #1) was red when last looked at (before the latest commits) on: Dependency Review, Typos, Repo Lint, Gates, Budlum Core, docker-smoke. The owner enabled Actions; the latest runs were not read. See section 6, step 2.
 - Baseline edits approved by owner: four lines removed from `.github/idle-code-baseline.txt` (items gained production callers).
 
 ## 4. Work queues (in order)
@@ -109,6 +109,23 @@ Gates touched: air-selectors-are-opcode-bound (B1, B2), logup-multipliers-are-bo
 - Standing rule: ask the owner only for hard architecture changes; record decisions made by Claude here.
 
 ## 6. Next step (do this first in a new session)
+
+### 6.0 State at the end of the latest session (written 2026-10-08, read this first)
+
+Working directory note: the shell may be inside budzero/; run git from /home/user/budlum.
+
+Done, pushed, local targeted tests passed (SHA, subject): d903aa9 E4-a global header time from the tip; 5f2d909 ADIM 3a block entropy; 990fdcd B1 opcode 0x1F closed; 7bcff68 K1-VI-T tests; 3dcbe16, 574a6fa, a56d04a ADIM 4a audit state with its two fix rounds; 2babb74, 0fc7f90, 99ba45b R1; a59afac R2; 311bf03 R2b; ed5624e R3; dcb2efb R3b; 78212be R4a-1; f7618dd R4a-1b test; 1c3bd7f, 834607e, ede96dd, ff1d03f K1-01 series (empty content end to end); 170661e K1-02; c0ad763 K1-03; 4db95e8 K1-04; 5e64e53 K1-05; 48a8be4 K1-08a; 362e716 K1-08b; 1bac039 K1-09. Opus verification passed for: E4-a, 3a, B1, 4a-fix2 (conditional), R2, R3, R3b and R4a-1 (conditional, test added in f7618dd), K1-01 series, K1-04 (library only, see 6.5j), K1-05. Not yet Opus verified: R1 (not required by the plan), K1-02, K1-03, K1-08a, K1-08b, K1-09.
+
+Stopped mid-work at the owner's order (limit nearly out): zkVM R4a-2 (memory table order and 32 bit address range, design option B). The last commit labelled wip holds the partial edits in budzero/bud-proof (plonky3_air.rs, plonky3_prover.rs, trace_layout_tests.rs) and budzero/bud-vm/src/lib.rs. `cargo check -p bud-proof -p bud-vm --tests` passes, but its tests were never run and the agent stopped while editing test helpers. Next session: run `cd budzero && cargo test -p bud-proof --lib memory`, finish the step per the handoff in 6.5i (red forgery tests first, one mutation per rule, then a fresh Opus verification), or revert the wip commit if it is not close. Chain ADIM 1 and 2 (shared replay function and PoA stamp) were launched and stopped before any edit: nothing to clean up.
+
+Open owner questions, all parked (ask in plain words): (1) deleting a stored file while the network checks its keeper (G1-P, 6.5g); (2) bridge messages and bridge state change outside blocks yet sit in the state root, so nodes can disagree: remove them from the root, or turn each into a signed in-block transaction (recommended); (3) K1 reader wiring, sealed content bound to its plain text, where to keep verification records (6.5j); (4) F-DET-1 sealed frames differ per call (6.5e); (5) S1 to S3 challenge proof and penalty (6.6); (6) where unfixed security findings are kept between sessions (suggested: the private channel of docs/SECURITY.md).
+
+Security findings: a Haiku sweep and an Opus finder scan were started for the whole repository. The finder scan of src/chain is done: 19 findings (3 critical: slashing outside blocks driven by invalid votes and by gossiped proofs, and live versus replay state roots diverging after about 1010 blocks). The architect verified the replay-root cluster as true (CH-3, CH-5a, CH-5b, CH-6, CH-7) and wrote five handoffs (shared end-of-block state function pair; PoA stamp; unfreeze queue and AI pruning as an end-of-block hook; reorg must not overwrite state from disk). Details are NOT in this repository by rule (MODEL_ROUTING 12.10). They lived in the session scratchpad and are lost when the container goes away. To regenerate: run the finder (Opus xhigh) on src/chain again, then the architect verification for the replay-root cluster, with the mechanism choice already made: one shared function pair used by the live path and all five replay entries (option A); do not move end-of-block hooks to the start of a block. Haiku sweep: spec is summarized in 6.5k; group 1 (src/chain) is done, groups 2 to 9 are not.
+
+Next steps in order: (a) finish or revert R4a-2, Opus verify; (b) chain replay-root steps 1 to 5 (coder-deep, Opus verify each) after the owner answers question 2 only for the message and bridge part, steps 1 to 5 do not wait for it; (c) finder scans: consensus and crypto, settlement and cross_domain and registry, network, tokenomics and execution, bud-proof, rpc and storage; (d) K1: K1-07 segmentation, K1-06 transport simulation, a resource budget before decode (V4), K1-10 fuzz, K1-12 determinism goldens, K1-11 test suite; (e) B.U.D. 4b and 4c wiring after the owner answers question 1; 3b to 3e wait for S1 to S3; (f) end of round: read CI (6.8) and fix with coders.
+
+Rules that held this session: main session writes no code; at most 3 agents in parallel; every R3 change gets a fresh Opus verification; forgery test red first and one mutation per rule; scout output is a lead, not evidence; commit messages neutral for security fixes.
+
 
 Written 2026-10-08. Work branch of this session: `ccr-9d3ed79c-9wpla0` (cut from `claude/zkvm-bud-completion-84r6jc` at 8bb1962; PR #1 still tracks the older branch name). Another branch `wip/zkvm-b1-reserve-0x1f` exists; its single commit was cherry-picked here (cf35384). Push only builds that pass their targeted tests.
 
