@@ -202,6 +202,7 @@ Expected output per module: findings list, fixed items with commit SHA, remainin
 2. Typos: `flate` (crate name flate2 in comments) and `tru` (test string); fix by renaming where possible or a narrow typos config entry. No weakening.
 3. docker-smoke: Trivy gate; find the fixable CRITICAL or HIGH package and update the dependency.
 4. Dependency Review: check repository dependency graph setting first.
+4b. no-idle-code gate is red at HEAD 3dcbe16 on three items not from the latest steps: verify_canonical_program (budzero/bud-proof/src/plonky3_prover.rs), open_deal_consent_digest and StorageDealOpen (src/domain/storage_tx.rs). Wire them or remove them; do not touch the baseline file without the owner.
 5. Five cancelled jobs reached the 6 hour limit: find the hang (likely a test that waits forever) and fix it; do not raise timeouts.
 6. Then rewrite sections 1 to 6.
 
