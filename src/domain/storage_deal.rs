@@ -584,9 +584,11 @@ pub const REALLOCATION_ACCEPTANCE_EPOCHS: u64 = 4;
 /// the obligation itself, not a record of one.
 const REALLOCATION_RECORD_RETENTION_EPOCHS: u64 = 16 * REALLOCATION_ACCEPTANCE_EPOCHS;
 
-/// Default number of epochs a final coding audit stays in the registry.
+/// Number of epochs a final coding audit stays in the registry. The sweep
+/// uses this window and takes no other.
 ///
-/// WIRING: passed to `sweep_settled_coding_audits` by ADIM 4b at epoch start.
+/// WIRING: used by `sweep_settled_coding_audits`, called by ADIM 4b at epoch
+/// start.
 pub const CODING_AUDIT_RECORD_RETENTION_EPOCHS: u64 = REALLOCATION_RECORD_RETENTION_EPOCHS;
 
 /// How long before a deal matures its operator may renew it unopposed.
@@ -1286,6 +1288,9 @@ impl StorageRegistry {
         }
         for (epoch, audit_ids) in &self.settled_coding_audits {
             hasher.update(epoch.to_le_bytes());
+            // The length keeps the encoding injective: without it
+            // `{5: [7, 9, 11]}` and `{5: [7], 9: [11]}` hash the same bytes.
+            hasher.update((audit_ids.len() as u64).to_le_bytes());
             for audit_id in audit_ids {
                 hasher.update(audit_id.to_le_bytes());
             }
@@ -2338,8 +2343,9 @@ impl StorageRegistry {
     ///
     /// The registry derives the audit from `entropy` ([`Self::derive_coding_audit`]),
     /// finds the `Active` deals that hold the selected parity shard (shard
-    /// index `k + parity_index`) and, when several operators hold a copy,
-    /// picks one by the same entropy. The caller chooses neither the column
+    /// index `k + parity_index`), keeps those that run past `deadline_epoch`
+    /// and have no `Open` audit, and, when several remain, picks one by the
+    /// same entropy. The caller chooses neither the column
     /// nor the operator. The audit, its operator and `deadline_epoch` are
     /// stored, and only that stored copy is used to check the answer.
     ///
@@ -2358,9 +2364,9 @@ impl StorageRegistry {
     /// [`StorageError::UnknownManifest`], [`StorageError::NoParityToAudit`]
     /// for a replicated object, [`StorageError::InvalidEpochRange`] when the
     /// deadline is not after `epoch`, [`StorageError::NoActiveParityDeal`]
-    /// when no active deal holds the selected parity shard, and
-    /// [`StorageError::CodingAuditAlreadyOpen`] when the selected deal
-    /// already has an `Open` audit.
+    /// when no active deal that runs past `deadline_epoch` holds the
+    /// selected parity shard, and [`StorageError::CodingAuditAlreadyOpen`]
+    /// when every such deal already has an `Open` audit.
     pub fn open_coding_audit(
         &mut self,
         entropy: &Hash32,
@@ -2389,21 +2395,42 @@ impl StorageRegistry {
                     && u64::from(shard.index) == parity_position
             })
             .ok_or(StorageError::NoParityToAudit { manifest_id })?;
-        let holders: Vec<u64> = self
+        // A holder qualifies when its deal is `Active`, still runs past the
+        // deadline (a deal that ends inside the window would let the audit
+        // end as `Void` with no cooldown), and has no `Open` audit. Filter
+        // first, then pick, so a busy holder never blocks a free one.
+        let eligible: Vec<u64> = self
             .deals_by_shard
             .get(&(manifest_id, parity_shard.shard_id))
             .map(|ids| {
                 ids.iter()
                     .copied()
-                    .filter(|id| self.deals.get(id).is_some_and(StorageDeal::is_active))
+                    .filter(|id| {
+                        self.deals.get(id).is_some_and(|deal| {
+                            deal.is_active() && deal.deal_end_epoch > deadline_epoch
+                        })
+                    })
                     .collect()
             })
             .unwrap_or_default();
-        if holders.is_empty() {
+        let Some(&first) = eligible.first() else {
             return Err(StorageError::NoActiveParityDeal {
                 manifest_id,
                 parity_index: audit.parity_index,
             });
+        };
+        // One open audit per deal bounds the map by the number of deals, and
+        // the root scan with it. A closed audit frees the deal.
+        let holders: Vec<u64> = eligible
+            .into_iter()
+            .filter(|id| {
+                !self.coding_audits.values().any(|stored| {
+                    stored.deal_id == *id && stored.outcome == CodingAuditOutcome::Open
+                })
+            })
+            .collect();
+        if holders.is_empty() {
+            return Err(StorageError::CodingAuditAlreadyOpen { deal_id: first });
         }
         let pick = hash_fields_bytes(&[
             b"BDLM_STORAGE_CODING_AUDIT_HOLDER_V1",
@@ -2414,15 +2441,6 @@ impl StorageRegistry {
         let mut pick_bytes = [0u8; 8];
         pick_bytes.copy_from_slice(&pick[..8]);
         let chosen = holders[(u64::from_le_bytes(pick_bytes) % holders.len() as u64) as usize];
-        // One open audit per deal bounds the map by the number of deals, and
-        // the root scan with it. A closed audit frees the deal.
-        if self
-            .coding_audits
-            .values()
-            .any(|stored| stored.deal_id == chosen && stored.outcome == CodingAuditOutcome::Open)
-        {
-            return Err(StorageError::CodingAuditAlreadyOpen { deal_id: chosen });
-        }
         let operator = self
             .deals
             .get(&chosen)
@@ -2571,9 +2589,10 @@ impl StorageRegistry {
         due.into_iter().map(|(audit_id, _, _)| audit_id).collect()
     }
 
-    /// Drop the final coding audits settled `retention_epochs` or more
-    /// epochs ago. `CODING_AUDIT_RECORD_RETENTION_EPOCHS` is the default
-    /// window.
+    /// Drop the final coding audits settled
+    /// `CODING_AUDIT_RECORD_RETENTION_EPOCHS` or more epochs ago. The window
+    /// is fixed: it decides which rows reach the root, so no caller may
+    /// choose it.
     ///
     /// Runs from the same epoch step as the other sweeps, so every node drops
     /// the same rows at the same epoch. The queue is a hint and the outcome
@@ -2582,7 +2601,11 @@ impl StorageRegistry {
     /// Returns how many audits were dropped.
     ///
     /// WIRING: called by ADIM 4b at the start of each epoch.
-    pub fn sweep_settled_coding_audits(&mut self, now_epoch: u64, retention_epochs: u64) -> usize {
+    pub fn sweep_settled_coding_audits(&mut self, now_epoch: u64) -> usize {
+        self.sweep_coding_audits_older_than(now_epoch, CODING_AUDIT_RECORD_RETENTION_EPOCHS)
+    }
+
+    fn sweep_coding_audits_older_than(&mut self, now_epoch: u64, retention_epochs: u64) -> usize {
         let Some(cutoff) = now_epoch.checked_sub(retention_epochs) else {
             return 0;
         };
@@ -6008,9 +6031,11 @@ mod tests {
         assert!(reg.settled_tickets.is_empty());
 
         let current = bincode::serialize(&reg).unwrap();
-        let empty_map = 0u64.to_le_bytes();
-        assert!(current.ends_with(&empty_map));
-        let older = &current[..current.len() - empty_map.len()];
+        // The row ends with `settled_tickets`, then the three coding audit
+        // fields, all empty here: four zero u64 values.
+        let empty_tail = [0u8; 32];
+        assert!(current.ends_with(&empty_tail));
+        let older = &current[..current.len() - empty_tail.len()];
         assert!(
             bincode::deserialize::<StorageRegistry>(older).is_err(),
             "the shorter row must be refused, not padded"
@@ -7357,35 +7382,26 @@ mod tests {
             let window = CODING_AUDIT_RECORD_RETENTION_EPOCHS;
 
             assert_eq!(
-                reg.sweep_settled_coding_audits(DEADLINE + window - 1, window),
+                reg.sweep_settled_coding_audits(DEADLINE + window - 1),
                 0,
                 "one epoch early keeps the record"
             );
             assert_eq!(settled_root, reg.root());
-            assert_eq!(
-                reg.sweep_settled_coding_audits(DEADLINE + window, window),
-                1
-            );
+            assert_eq!(reg.sweep_settled_coding_audits(DEADLINE + window), 1);
             assert!(reg.coding_audits.is_empty());
             assert!(reg.settled_coding_audits.is_empty());
             assert_ne!(settled_root, reg.root(), "the root follows the deletion");
             assert_eq!(counter_only.root(), reg.root());
-            assert_eq!(
-                reg.sweep_settled_coding_audits(DEADLINE + 10 * window, window),
-                0
-            );
+            assert_eq!(reg.sweep_settled_coding_audits(DEADLINE + 10 * window), 0);
         }
 
         #[test]
-        fn the_sweep_never_drops_an_open_audit_and_honours_a_shorter_window() {
+        fn the_sweep_helper_honours_a_shorter_window() {
             let (mut reg, _, manifest) = coded();
-            let id = open(&mut reg, &manifest, 1);
-            assert_eq!(reg.sweep_settled_coding_audits(u64::MAX, 1), 0);
-            assert!(reg.coding_audits.contains_key(&id));
-
+            open(&mut reg, &manifest, 1);
             reg.finalize_missed_coding_audits(DEADLINE + 1, NOW);
-            assert_eq!(reg.sweep_settled_coding_audits(DEADLINE + 2, 2), 0);
-            assert_eq!(reg.sweep_settled_coding_audits(DEADLINE + 3, 2), 1);
+            assert_eq!(reg.sweep_coding_audits_older_than(DEADLINE + 2, 2), 0);
+            assert_eq!(reg.sweep_coding_audits_older_than(DEADLINE + 3, 2), 1);
             assert!(reg.coding_audits.is_empty());
         }
 
@@ -7402,6 +7418,144 @@ mod tests {
             let mut no_queue = reg.clone();
             no_queue.settled_coding_audits.clear();
             assert_ne!(reg.root(), no_queue.root());
+        }
+
+        #[test]
+        fn queues_that_differ_only_in_grouping_have_different_roots() {
+            let (base, _, _) = coded();
+            let mut one = base.clone();
+            one.settled_coding_audits.insert(5, vec![7, 9, 11]);
+            let mut two = base.clone();
+            two.settled_coding_audits.insert(5, vec![7]);
+            two.settled_coding_audits.insert(9, vec![11]);
+            assert_ne!(one.root(), two.root());
+            let mut three = base;
+            three.settled_coding_audits.insert(5, vec![7, 9]);
+            assert_ne!(one.root(), three.root());
+        }
+
+        #[test]
+        fn a_queued_open_audit_survives_the_sweep() {
+            let (mut reg, _, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            reg.settled_coding_audits
+                .entry(DEADLINE)
+                .or_default()
+                .push(id);
+            let window = CODING_AUDIT_RECORD_RETENTION_EPOCHS;
+            assert_eq!(reg.sweep_settled_coding_audits(DEADLINE + window), 0);
+            assert_eq!(stored(&reg, id).outcome, CodingAuditOutcome::Open);
+            assert!(reg.settled_coding_audits.is_empty(), "the hint is consumed");
+        }
+
+        #[test]
+        fn a_deleted_manifest_alone_voids_the_audit() {
+            let (mut reg, encoded, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let (column, parity) = honest(&encoded, &rec.audit);
+            reg.manifests.remove(&manifest.manifest_id);
+            assert!(reg.deals.get(&rec.deal_id).unwrap().is_active());
+
+            let mut answered = reg.clone();
+            let out = answered
+                .answer_coding_audit(id, rec.operator, &column, parity, DEADLINE, NOW)
+                .expect("nothing to check against is not the operator's failure");
+            assert_eq!(out, CodingAuditOutcome::Void);
+
+            assert_eq!(
+                reg.finalize_missed_coding_audits(DEADLINE + 1, NOW),
+                vec![id]
+            );
+            assert_eq!(stored(&reg, id).outcome, CodingAuditOutcome::Void);
+            assert!(reg.operator_cooldowns.is_empty());
+        }
+
+        fn deal_of(reg: &StorageRegistry, holder: u8) -> u64 {
+            reg.deals
+                .values()
+                .find(|deal| deal.operator == op(holder))
+                .expect("holder has a deal")
+                .deal_id
+        }
+
+        #[test]
+        fn a_deal_that_ends_by_the_deadline_is_never_selected() {
+            let (mut reg, _, manifest) = coded();
+            let early = deal_of(&reg, 10);
+            let late = deal_of(&reg, 11);
+            reg.deals.get_mut(&early).unwrap().deal_end_epoch = DEADLINE;
+            reg.deals.get_mut(&late).unwrap().deal_end_epoch = DEADLINE + 1;
+            let mut picked_shard_zero = 0;
+            for seed in 0..=255u8 {
+                let mut trial = reg.clone();
+                if let Ok(id) =
+                    trial.open_coding_audit(&[seed; 32], manifest.manifest_id, OPEN_EPOCH, DEADLINE)
+                {
+                    let rec = stored(&trial, id);
+                    assert_ne!(
+                        rec.deal_id, early,
+                        "seed {seed} chose a deal that ends early"
+                    );
+                    if rec.audit.parity_index == 0 {
+                        assert_eq!(rec.deal_id, late);
+                        picked_shard_zero += 1;
+                    }
+                }
+            }
+            assert!(
+                picked_shard_zero > 0,
+                "the late holder must stay selectable"
+            );
+
+            // No holder outlives the deadline: nothing to audit.
+            reg.deals.get_mut(&late).unwrap().deal_end_epoch = DEADLINE;
+            let mut shard_zero_refused = 0;
+            for seed in 0..=255u8 {
+                let mut trial = reg.clone();
+                if let Err(StorageError::NoActiveParityDeal {
+                    parity_index: 0, ..
+                }) =
+                    trial.open_coding_audit(&[seed; 32], manifest.manifest_id, OPEN_EPOCH, DEADLINE)
+                {
+                    shard_zero_refused += 1;
+                }
+            }
+            assert!(shard_zero_refused > 0);
+        }
+
+        #[test]
+        fn a_busy_holder_does_not_block_a_free_one() {
+            let (mut reg, _, manifest) = coded();
+            let busy = deal_of(&reg, 10);
+            let free = deal_of(&reg, 11);
+            // Mark the first holder of parity shard 0 as already audited.
+            let mut template_reg = coded().0;
+            let template_id = open(&mut template_reg, &manifest, 1);
+            let mut forged = stored(&template_reg, template_id);
+            forged.audit_id = 0;
+            forged.deal_id = busy;
+            forged.operator = op(10);
+            reg.coding_audits.insert(0, forged);
+            reg.next_coding_audit_id = 1;
+
+            let mut picked_shard_zero = 0;
+            for seed in 0..=255u8 {
+                let mut trial = reg.clone();
+                let id = trial
+                    .open_coding_audit(&[seed; 32], manifest.manifest_id, OPEN_EPOCH, DEADLINE)
+                    .unwrap_or_else(|err| panic!("seed {seed} refused: {err:?}"));
+                let rec = stored(&trial, id);
+                assert_ne!(rec.deal_id, busy);
+                if rec.audit.parity_index == 0 {
+                    assert_eq!(rec.deal_id, free);
+                    picked_shard_zero += 1;
+                }
+            }
+            assert!(
+                picked_shard_zero > 0,
+                "parity shard 0 must still be auditable"
+            );
         }
 
         #[test]
