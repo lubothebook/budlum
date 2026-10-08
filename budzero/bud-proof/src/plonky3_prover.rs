@@ -2170,6 +2170,26 @@ mod tests {
         gas_used: u64,
         edit: impl FnOnce(&mut [Goldilocks]),
     ) -> Result<(), VerifyError> {
+        verify_forged_matrix_with_aux(program, trace, gas_limit, gas_used, edit, |_, _, _| {})
+    }
+
+    /// Same as [`verify_forged_matrix`], with a second hook that edits the
+    /// finished bus columns. The honest bus builder counts a memory row as
+    /// one if its flag is nonzero. The AIR counts it as the flag itself. A
+    /// matrix whose flag is not 0 or 1 needs this hook, or the bus is wrong
+    /// for a reason other than the rule under test.
+    fn verify_forged_matrix_with_aux(
+        program: &[u64],
+        trace: &[Step],
+        gas_limit: u64,
+        gas_used: u64,
+        edit: impl FnOnce(&mut [Goldilocks]),
+        fix_aux: impl FnOnce(
+                &RowMajorMatrix<Goldilocks>,
+                &[MyExtensionField],
+                &mut RowMajorMatrix<Goldilocks>,
+            ) + 'static,
+    ) -> Result<(), VerifyError> {
         let program_bytes: Vec<u8> = program
             .iter()
             .flat_map(|&i| i.to_le_bytes().to_vec())
@@ -2215,11 +2235,19 @@ mod tests {
             &config,
             &air,
             matrix.clone(),
-            Some(crate::plonky3_prover::aux_trace_generator(
-                matrix.clone(),
-                n_cpu,
-                program.to_vec(),
-            )),
+            Some({
+                let main = matrix.clone();
+                let honest = crate::plonky3_prover::aux_trace_generator(
+                    matrix.clone(),
+                    n_cpu,
+                    program.to_vec(),
+                );
+                Box::new(move |challenges: &[MyExtensionField]| {
+                    let mut aux = honest(challenges);
+                    fix_aux(&main, challenges, &mut aux);
+                    aux
+                })
+            }),
             &public_values,
             preprocessed_ref,
         );
@@ -7860,6 +7888,97 @@ mod tests {
             verdict.is_err(),
             "a memory read after an inactive gap returned a value nothing \
              wrote and the proof verified. verdict={verdict:?}"
+        );
+    }
+
+    /// The memory flag is the multiplicity of the row on the memory bus, so
+    /// it must be 0 or 1. The prefix rule does not say so: it only forces the
+    /// flag to 1 on a row whose successor is active. The last active row is
+    /// free of it.
+    ///
+    /// The forged matrix copies the last read of address 5 into two more
+    /// rows. The first two copies continue the block with the same flag, and
+    /// the third carries `-1` as its flag. The third row cancels the second
+    /// on the bus, so the bus stays in balance. The ordering rules and the
+    /// same-address rules hold, and nothing but the booleanity of the flag
+    /// is left to refuse the table.
+    ///
+    /// The bus columns are rebuilt from the edited matrix, and then the
+    /// third row is counted with its flag, as the AIR counts it. Nothing
+    /// else is touched.
+    #[test]
+    fn rejects_memory_active_flag_not_boolean() {
+        let program = memory_round_trip_program();
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[3].instruction.opcode, Opcode::Load);
+
+        let verdict = verify_forged_matrix_with_aux(
+            &program,
+            &vm.trace,
+            vm.gas_limit,
+            vm.gas_used,
+            |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let rows = values.len() / TRACE_WIDTH;
+                let read = find_mem_row(values, 5, 3);
+                assert!(read + 3 < rows, "two padding rows must follow the table");
+                assert_eq!(values[at(read + 1, COL_MEM_ACTIVE)].as_canonical_u64(), 0);
+                assert_eq!(values[at(read + 2, COL_MEM_ACTIVE)].as_canonical_u64(), 0);
+                for col in MEM_TABLE_COLS {
+                    values[at(read + 1, col)] = values[at(read, col)];
+                    values[at(read + 2, col)] = values[at(read, col)];
+                }
+                let zero = Goldilocks::new(0);
+                let one = Goldilocks::new(1);
+                // The first two rows of the run continue into the next row.
+                // The third one ends it, and carries the flag -1.
+                values[at(read, COL_MEM_SAME)] = one;
+                values[at(read, COL_MEM_SAME_INV)] = zero;
+                values[at(read + 1, COL_MEM_SAME)] = one;
+                values[at(read + 1, COL_MEM_SAME_INV)] = zero;
+                values[at(read + 2, COL_MEM_SAME)] = zero;
+                values[at(read + 2, COL_MEM_SAME_INV)] = zero;
+                values[at(read + 2, COL_MEM_ACTIVE)] = zero - one;
+            },
+            |main, challenges, aux| {
+                let (alpha, beta, gamma) = (challenges[0], challenges[1], challenges[2]);
+                let width = aux.width;
+                let rows = main.height();
+                for row in 0..rows - 1 {
+                    let at = |col: usize| main.values[row * TRACE_WIDTH + col];
+                    let flag = at(COL_MEM_ACTIVE);
+                    if flag.as_canonical_u64() <= 1 {
+                        continue;
+                    }
+                    let term = register_term(
+                        alpha,
+                        beta,
+                        Goldilocks::ONE,
+                        at(COL_MEM_CLK),
+                        at(COL_MEM_ADDR),
+                        at(COL_MEM_VAL),
+                        at(COL_MEM_IS_WRITE),
+                    );
+                    // The builder took 1 for this row, the AIR takes the flag.
+                    let delta =
+                        (gamma - term).inverse() * MyExtensionField::from(Goldilocks::ONE - flag);
+                    let coeffs: Vec<Goldilocks> =
+                        p3_field::BasedVectorSpace::as_basis_coefficients_slice(&delta).to_vec();
+                    for later in row + 1..rows {
+                        for (k, c) in coeffs.iter().enumerate() {
+                            // The memory bus is the second extension column.
+                            aux.values[later * width + 2 + k] += *c;
+                        }
+                    }
+                }
+            },
+        );
+        assert!(
+            verdict.is_err(),
+            "a memory row with flag -1 was accepted and the proof verified. \
+             verdict={verdict:?}"
         );
     }
 
