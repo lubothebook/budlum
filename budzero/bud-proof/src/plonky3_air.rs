@@ -1,7 +1,7 @@
 use p3_air::{Air, AirBuilder, BaseAir, ExtensionBuilder, PermutationAirBuilder, WindowAccess};
 use p3_field::PrimeCharacteristicRing;
 
-pub const TRACE_WIDTH: usize = 787;
+pub const TRACE_WIDTH: usize = 854;
 
 /// Columns in the preprocessed (program ROM) trace: pc, raw instruction word,
 /// active flag, then the four decoded fields (opcode, rd, rs1, rs2).
@@ -632,6 +632,35 @@ pub const REG_ORD_BITS: usize = 32;
 /// `m_same` on two rows of one address, turning off the value continuity
 /// between them. The first read of the next block then only had to be zero.
 pub const COL_MEM_SAME_INV: usize = 786;
+
+/// The table a memory row belongs to: 1 memory, 2 stack, 3 storage.
+///
+/// The three regions used to share table id 1 and sit apart only by address
+/// bases (`1 << 60` and `2 << 60`). Nothing bounded a `Load` address, so a
+/// pointer of `1 << 60` named a stack cell. The id is now a column of its own
+/// and a part of the sort key, and the address below it is 32 bit.
+pub const COL_MEM_TID: usize = 787;
+
+/// The 32 bits of `COL_MEM_ADDR`. The address is a number inside its table, so
+/// it is below `2^32`. The VM refuses a memory larger than that, and the stack
+/// and storage addresses are far below it.
+///
+/// The bound is what keeps the sort key `tid * 2^32 + addr` a 34 bit number.
+/// Without it a field element near `p` is an address, and a step between two
+/// keys can wrap into the 34 bit range in the wrong direction.
+pub const COL_MEM_ADDR_BITS_BASE: usize = 788;
+pub const MEM_ADDR_BITS: usize = 32;
+
+/// The memory table order witness: 34 bits of the step from this row to the
+/// next one.
+///
+/// Rows are sorted by `(key, clk)` with `key = tid * 2^32 + addr`. For a pair
+/// of active rows the step is `clk' - clk - 1` when both rows name one cell and
+/// `key' - key - 1` when they do not. A step that goes backward is a field
+/// element near `2^64` and has no 34 bit form. This holds because `clk` is
+/// below `2^28` and `key` is below `2^34`.
+pub const COL_MEM_ORD_BITS_BASE: usize = 820;
+pub const MEM_ORD_BITS: usize = 34;
 
 /// Fold constants for [`COL_REG_INIT_ACC`].
 ///
@@ -2266,12 +2295,21 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         // boolean outright means they do not have to.
         builder.assert_bool(m_same.clone());
 
-        // `m_same` is pinned to the address equality it claims, with the
+        // A cell is a table id and an address inside it. The sort key joins
+        // them: `tid * 2^32 + addr`. The address is below `2^32` (bits below),
+        // so two cells have one key only if they are one cell.
+        let two_pow_32 = AB::Expr::from(AB::F::from_u64(1u64 << 32));
+        let m_tid: AB::Expr = cur[COL_MEM_TID].into();
+        let nm_tid: AB::Expr = nxt[COL_MEM_TID].into();
+        let m_key = m_tid.clone() * two_pow_32.clone() + m_addr.clone();
+        let nm_key = nm_tid * two_pow_32 + nm_addr.clone();
+
+        // `m_same` is pinned to the cell equality it claims, with the
         // inverse witness pattern the register table uses above. The zero rule
         // below made a cleared flag cost the prover a value, but it still let
-        // a read return zero after a write of the same address.
+        // a read return zero after a write of the same cell.
         let mem_pair_live = m_active.clone() * nm_active.clone();
-        let mem_addr_diff = nm_addr.clone() - m_addr.clone();
+        let mem_addr_diff = nm_key.clone() - m_key.clone();
         let mem_same_inv: AB::Expr = cur[COL_MEM_SAME_INV].into();
         let mem_diff_z = mem_addr_diff.clone() * mem_same_inv;
         builder
@@ -2284,7 +2322,7 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
             .assert_zero(mem_addr_diff * (one.clone() - mem_diff_z.clone()));
         builder
             .when_transition()
-            .when(mem_pair_live)
+            .when(mem_pair_live.clone())
             .assert_eq(m_same.clone(), one.clone() - mem_diff_z);
 
         // The table is a prefix: active rows first, padding after. Every rule
@@ -2294,6 +2332,47 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         builder
             .when_transition()
             .assert_zero((one.clone() - m_active.clone()) * nm_active.clone());
+
+        // An active row sits in one of the three tables: 1 memory, 2 stack,
+        // 3 storage. Padding rows keep a zero.
+        builder.assert_zero(
+            m_active.clone()
+                * (m_tid.clone() - one.clone())
+                * (m_tid.clone() - AB::Expr::from(AB::F::from_u64(2)))
+                * (m_tid.clone() - AB::Expr::from(AB::F::from_u64(3))),
+        );
+
+        // The address is a 32 bit number. Every row, padding included: a
+        // padding row holds zero and its bits are zero.
+        {
+            let mut bits_sum = AB::Expr::from(AB::F::ZERO);
+            for i in 0..MEM_ADDR_BITS {
+                let bit: AB::Expr = cur[COL_MEM_ADDR_BITS_BASE + i].into();
+                builder.assert_bool(bit.clone());
+                bits_sum += bit * AB::Expr::from(AB::F::from_u64(1u64 << i));
+            }
+            builder.assert_eq(m_addr.clone(), bits_sum);
+        }
+
+        // Sorted by `(key, clk)`, strictly. LogUp compares multisets and
+        // cannot see the order, so without this a write could be moved to
+        // another time, and the events of one cell could be split in two
+        // blocks with a zero read at the start of the second.
+        {
+            let nclk: AB::Expr = nxt[COL_MEM_CLK].into();
+            let step = m_same.clone() * (nclk - m_clk.clone() - one.clone())
+                + (one.clone() - m_same.clone()) * (nm_key - m_key - one.clone());
+            let mut bits_sum = AB::Expr::from(AB::F::ZERO);
+            for i in 0..MEM_ORD_BITS {
+                let bit: AB::Expr = cur[COL_MEM_ORD_BITS_BASE + i].into();
+                builder.assert_bool(bit.clone());
+                bits_sum += bit * AB::Expr::from(AB::F::from_u64(1u64 << i));
+            }
+            builder
+                .when_transition()
+                .when(mem_pair_live)
+                .assert_eq(step, bits_sum);
+        }
 
         builder.when_transition().assert_zero(
             m_active.clone()
@@ -2586,12 +2665,17 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
                 + is_storage_op.clone()
                 + is_merkle_mem_op.clone();
 
-            let stack_base = AB::Expr::from(AB::F::from_u64(1 << 60));
-            let storage_base = AB::Expr::from(AB::F::from_u64(2 << 60));
-            let stack_addr = stack_base.clone()
-                + (is_push.clone() + is_call.clone()) * cur_stack_ptr.clone()
+            // The region is the table id on the bus, so the address is the
+            // address inside the table: the stack slot, or the storage slot.
+            let stack_addr = (is_push.clone() + is_call.clone()) * cur_stack_ptr.clone()
                 + (is_pop.clone() + is_ret.clone()) * (cur_stack_ptr.clone() - one.clone());
-            let storage_addr = storage_base + cur[COL_IMM].into();
+            let storage_addr: AB::Expr = cur[COL_IMM].into();
+            let two_val_tid = AB::Expr::from(AB::F::from_u64(2));
+            let three_val_tid = AB::Expr::from(AB::F::from_u64(3));
+            let cpu_mem_tid = is_real_mem_op.clone()
+                + is_merkle_mem_op.clone()
+                + two_val_tid * is_stack_op.clone()
+                + three_val_tid * is_storage_op.clone();
 
             // The path buffer starts at the instruction's immediate. The key
             // is the word at `path_addr`; expansion round `r` reads the
@@ -2623,14 +2707,14 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
                 + is_merkle_key_read * cur[COL_VM_MERKLE_KEY].into();
 
             let c_cpu_mem = term(
-                one.clone(),
+                cpu_mem_tid,
                 clk.clone(),
                 final_mem_addr.clone(),
                 cpu_mem_val.clone(),
                 is_write.clone(),
             );
             let c_mem = term(
-                one.clone(),
+                m_tid.clone(),
                 m_clk.clone(),
                 m_addr.clone(),
                 m_val.clone(),

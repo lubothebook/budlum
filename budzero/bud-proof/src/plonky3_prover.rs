@@ -49,6 +49,9 @@ struct RegEvent {
 #[derive(Clone, Copy)]
 struct MemEvent {
     clk: u64,
+    /// The table: `TID_MEMORY`, `TID_STACK` or `TID_STORAGE`.
+    tid: u64,
+    /// The address inside the table.
     addr: u64,
     val: u64,
     is_write: bool,
@@ -57,8 +60,15 @@ struct MemEvent {
     is_init: bool,
 }
 
-const STACK_BASE: u64 = 1 << 60;
-const STORAGE_BASE: u64 = 2 << 60;
+const TID_MEMORY: u64 = 1;
+const TID_STACK: u64 = 2;
+const TID_STORAGE: u64 = 3;
+
+/// The sort key of a memory event. The AIR computes the same number from the
+/// table id and the address columns.
+fn mem_key(tid: u64, addr: u64) -> u64 {
+    (tid << 32).wrapping_add(addr)
+}
 
 pub struct Plonky3Adapter;
 
@@ -233,6 +243,7 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
         if let Some(addr) = step.memory_addr {
             events.push(MemEvent {
                 clk,
+                tid: TID_MEMORY,
                 addr: addr as u64,
                 val: step.memory_val.unwrap_or(0),
                 is_write: step.is_memory_write,
@@ -245,7 +256,8 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
             bud_isa::Opcode::Push => {
                 events.push(MemEvent {
                     clk,
-                    addr: STACK_BASE + step.stack_pointer as u64 - 1,
+                    tid: TID_STACK,
+                    addr: (step.stack_pointer as u64).wrapping_sub(1),
                     val: step.src1_val,
                     is_write: true,
                     is_init: false,
@@ -254,7 +266,8 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
             bud_isa::Opcode::Pop => {
                 events.push(MemEvent {
                     clk,
-                    addr: STACK_BASE + step.stack_pointer as u64,
+                    tid: TID_STACK,
+                    addr: step.stack_pointer as u64,
                     val: step.dst_val,
                     is_write: false,
                     is_init: false,
@@ -263,7 +276,8 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
             bud_isa::Opcode::Call => {
                 events.push(MemEvent {
                     clk,
-                    addr: STACK_BASE + step.stack_pointer as u64 - 1,
+                    tid: TID_STACK,
+                    addr: (step.stack_pointer as u64).wrapping_sub(1),
                     val: step.pc as u64 + 1,
                     is_write: true,
                     is_init: false,
@@ -272,7 +286,8 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
             bud_isa::Opcode::Ret => {
                 events.push(MemEvent {
                     clk,
-                    addr: STACK_BASE + step.stack_pointer as u64,
+                    tid: TID_STACK,
+                    addr: step.stack_pointer as u64,
                     val: step.dst_val,
                     is_write: false,
                     is_init: false,
@@ -286,7 +301,8 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
                 };
                 events.push(MemEvent {
                     clk,
-                    addr: STORAGE_BASE + slot as u64,
+                    tid: TID_STORAGE,
+                    addr: slot as u64,
                     val: step.dst_val,
                     is_write: false,
                     is_init: false,
@@ -300,7 +316,8 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
                 };
                 events.push(MemEvent {
                     clk,
-                    addr: STORAGE_BASE + slot as u64,
+                    tid: TID_STORAGE,
+                    addr: slot as u64,
                     val: step.src1_val,
                     is_write: true,
                     is_init: false,
@@ -309,13 +326,13 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
             _ => {}
         }
     }
-    events.sort_by_key(|e| (e.addr, e.clk));
+    events.sort_by_key(|e| (e.tid, e.addr, e.clk));
     // Mark the pre-execution rows now that the events are grouped by address.
-    let mut prev_addr: Option<u64> = None;
+    let mut prev_cell: Option<(u64, u64)> = None;
     for e in events.iter_mut() {
-        let first_at_addr = prev_addr != Some(e.addr);
-        prev_addr = Some(e.addr);
-        e.is_init = first_at_addr && !e.is_write && e.val != 0;
+        let first_at_cell = prev_cell != Some((e.tid, e.addr));
+        prev_cell = Some((e.tid, e.addr));
+        e.is_init = first_at_cell && !e.is_write && e.val != 0;
     }
     events
 }
@@ -759,8 +776,8 @@ pub fn trace_matrix(
             }
             bud_isa::Opcode::SWrite => {
                 // HIGH CWE-345: SWrite feeds the state-write chain.
-                // slot = imm (matching the AIR's storage_addr = STORAGE_BASE +
-                // COL_IMM and the memory-event slot resolution), val = rs1.
+                // slot = imm (matching the AIR's storage_addr = COL_IMM and
+                // the memory-event slot resolution), val = rs1.
                 // prev accumulator lanes come from the trace's current
                 // COL_STATE_WRITES_0..7 (zero on the first row, carried
                 // otherwise).
@@ -1213,7 +1230,13 @@ pub fn trace_matrix(
     for (i, e) in mem_events.iter().enumerate() {
         let row_start = i * TRACE_WIDTH;
         values[row_start + COL_MEM_CLK] = Goldilocks::new(e.clk);
+        values[row_start + COL_MEM_TID] = Goldilocks::new(e.tid);
         values[row_start + COL_MEM_ADDR] = Goldilocks::new(e.addr);
+        // An address past 32 bits has no bit form. Its bits stay the low 32,
+        // and the AIR refuses the row.
+        for b in 0..MEM_ADDR_BITS {
+            values[row_start + COL_MEM_ADDR_BITS_BASE + b] = Goldilocks::new((e.addr >> b) & 1);
+        }
         values[row_start + COL_MEM_VAL] = Goldilocks::new(e.val);
         values[row_start + COL_MEM_IS_WRITE] = if e.is_write {
             Goldilocks::new(1)
@@ -1223,20 +1246,37 @@ pub fn trace_matrix(
         values[row_start + COL_MEM_ACTIVE] = Goldilocks::new(1);
         values[row_start + COL_MEM_IS_INIT] = Goldilocks::new(u64::from(e.is_init));
 
-        if i < n_mem - 1 && mem_events[i + 1].addr == e.addr {
+        if i < n_mem - 1
+            && mem_events[i + 1].tid == e.tid
+            && mem_events[i + 1].addr == e.addr
+        {
             values[row_start + COL_MEM_SAME] = Goldilocks::new(1);
         }
 
         // Inverse witness for `COL_MEM_SAME`, only read where this row and the
-        // next one both hold a memory event.
+        // next one both hold a memory event. It inverts the step between the
+        // two sort keys.
         if i < n_mem - 1 {
-            let diff = mem_events[i + 1].addr.wrapping_sub(e.addr);
+            let next = &mem_events[i + 1];
+            let diff = mem_key(next.tid, next.addr).wrapping_sub(mem_key(e.tid, e.addr));
             let inv = if diff != 0 {
                 bud_vm::field_inverse_goldilocks(diff)
             } else {
                 0
             };
             values[row_start + COL_MEM_SAME_INV] = Goldilocks::new(inv);
+
+            // The step to the next row, in bits. The events are sorted by
+            // `(tid, addr, clk)` and no two are equal, so the step is never
+            // negative on an honest trace.
+            let step = if next.tid == e.tid && next.addr == e.addr {
+                next.clk.wrapping_sub(e.clk).wrapping_sub(1)
+            } else {
+                diff.wrapping_sub(1)
+            };
+            for b in 0..MEM_ORD_BITS {
+                values[row_start + COL_MEM_ORD_BITS_BASE + b] = Goldilocks::new((step >> b) & 1);
+            }
         }
     }
 
@@ -1513,8 +1553,9 @@ fn aux_trace_generator(
                 s_reg -= (gamma - c_reg).inverse();
             }
 
-            // Memory LogUp (includes SRead/SWrite via STORAGE_BASE)
+            // Memory LogUp (includes SRead/SWrite as table id 3)
             let m_active = row[COL_MEM_ACTIVE];
+            let m_tid = row[COL_MEM_TID];
             let m_clk = row[COL_MEM_CLK];
             let m_addr = row[COL_MEM_ADDR];
             let m_val = row[COL_MEM_VAL];
@@ -1541,12 +1582,13 @@ fn aux_trace_generator(
             let is_any_mem_op = is_real_mem_op + is_stack_op + is_storage_op + is_merkle_mem_op;
 
             let stack_ptr = row[COL_STACK_PTR];
-            let stack_base = Goldilocks::from_u64(STACK_BASE);
-            let storage_base = Goldilocks::from_u64(STORAGE_BASE);
-            let stack_addr = stack_base
-                + (is_push + is_call) * stack_ptr
+            let stack_addr = (is_push + is_call) * stack_ptr
                 + (is_pop + is_ret) * (stack_ptr - Goldilocks::ONE);
-            let storage_addr = storage_base + row[COL_IMM];
+            let storage_addr = row[COL_IMM];
+            let cpu_mem_tid = is_real_mem_op
+                + is_merkle_mem_op
+                + Goldilocks::from_u64(TID_STACK) * is_stack_op
+                + Goldilocks::from_u64(TID_STORAGE) * is_storage_op;
 
             let merkle_path_addr = row[COL_IMM];
             let eight = Goldilocks::from_u64(8);
@@ -1572,7 +1614,7 @@ fn aux_trace_generator(
             let c_cpu_mem = register_term(
                 alpha,
                 beta,
-                Goldilocks::ONE,
+                cpu_mem_tid,
                 clk,
                 final_mem_addr,
                 cpu_mem_val,
@@ -1581,7 +1623,7 @@ fn aux_trace_generator(
             let c_mem = register_term(
                 alpha,
                 beta,
-                Goldilocks::ONE,
+                m_tid,
                 m_clk,
                 m_addr,
                 m_val,
@@ -6802,7 +6844,7 @@ mod tests {
         let honest_word = matrix.values[sw_start + COL_RAW_INST].as_canonical_u64();
 
         // The forgery: the same value, written to a slot the contract never
-        // named. The memory argument places storage at `storage_base + imm`,
+        // named. The memory argument places storage at address `imm` of table 3,
         // so the storage row has to move with the immediate or the proof
         // fails on the bus instead of on the decode binding.
         matrix.values[sw_start + COL_IMM] = Goldilocks::new(9);
@@ -6816,9 +6858,10 @@ mod tests {
         for i in 0..rows {
             let row_start = i * TRACE_WIDTH;
             if matrix.values[row_start + COL_MEM_ACTIVE].as_canonical_u64() == 1
-                && matrix.values[row_start + COL_MEM_ADDR].as_canonical_u64() == STORAGE_BASE + 7
+                && matrix.values[row_start + COL_MEM_TID].as_canonical_u64() == TID_STORAGE
+                && matrix.values[row_start + COL_MEM_ADDR].as_canonical_u64() == 7
             {
-                matrix.values[row_start + COL_MEM_ADDR] = Goldilocks::new(STORAGE_BASE + 9);
+                set_mem_addr(&mut matrix.values, i, 9);
             }
         }
 
@@ -7578,18 +7621,43 @@ mod tests {
             .expect("the register event must be in the table")
     }
 
-    /// The memory table columns that describe one event. Moving a row means
-    /// moving all of them. `COL_MEM_INIT_ACC` is a running sum, so it stays.
-    const MEM_TABLE_COLS: [usize; 8] = [
-        COL_MEM_CLK,
-        COL_MEM_ADDR,
-        COL_MEM_VAL,
-        COL_MEM_IS_WRITE,
-        COL_MEM_ACTIVE,
-        COL_MEM_SAME,
-        COL_MEM_SAME_INV,
-        COL_MEM_IS_INIT,
-    ];
+    /// The memory table columns that describe one event, with the bits of its
+    /// address. Moving a row means moving all of them. `COL_MEM_INIT_ACC` is a
+    /// running sum, so it stays. The order witness describes the step to the
+    /// next row, not the event, so it stays too.
+    const MEM_TABLE_COLS: [usize; 9 + MEM_ADDR_BITS] = {
+        let head = [
+            COL_MEM_CLK,
+            COL_MEM_TID,
+            COL_MEM_ADDR,
+            COL_MEM_VAL,
+            COL_MEM_IS_WRITE,
+            COL_MEM_ACTIVE,
+            COL_MEM_SAME,
+            COL_MEM_SAME_INV,
+            COL_MEM_IS_INIT,
+        ];
+        let mut cols = [0usize; 9 + MEM_ADDR_BITS];
+        let mut i = 0;
+        while i < head.len() {
+            cols[i] = head[i];
+            i += 1;
+        }
+        let mut b = 0;
+        while b < MEM_ADDR_BITS {
+            cols[head.len() + b] = COL_MEM_ADDR_BITS_BASE + b;
+            b += 1;
+        }
+        cols
+    };
+
+    /// Set the address of a memory row together with its bits.
+    fn set_mem_addr(values: &mut [Goldilocks], row: usize, addr: u64) {
+        values[row * TRACE_WIDTH + COL_MEM_ADDR] = Goldilocks::new(addr);
+        for b in 0..MEM_ADDR_BITS {
+            values[row * TRACE_WIDTH + COL_MEM_ADDR_BITS_BASE + b] = Goldilocks::new((addr >> b) & 1);
+        }
+    }
 
     /// The memory table row that holds the event `(addr, clk)`.
     fn find_mem_row(values: &[Goldilocks], addr: u64, clk: u64) -> usize {
@@ -7978,6 +8046,162 @@ mod tests {
         assert!(
             verdict.is_err(),
             "a memory row with flag -1 was accepted and the proof verified. \
+             verdict={verdict:?}"
+        );
+    }
+
+    /// Swap two memory table rows. All columns of an event move together.
+    fn swap_mem_rows(values: &mut [Goldilocks], a: usize, b: usize) {
+        for col in MEM_TABLE_COLS {
+            values.swap(a * TRACE_WIDTH + col, b * TRACE_WIDTH + col);
+        }
+    }
+
+    /// The memory table is sorted by address and then by time. The bus only
+    /// compares the set of events, so it cannot see the order.
+    ///
+    /// Address 5 gets two writes and a read. The forged table lists the
+    /// later write first, so the read follows the earlier write and returns
+    /// its value. The set of events is the same.
+    #[test]
+    fn rejects_reordered_memory_writes() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 5),
+            inst(Opcode::Load, 2, 0, 0, 7),
+            inst(Opcode::Store, 0, 1, 2, 0),
+            inst(Opcode::Load, 4, 0, 0, 9),
+            inst(Opcode::Store, 0, 1, 4, 0),
+            inst(Opcode::Load, 3, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[5].instruction.opcode, Opcode::Load);
+        assert_eq!(vm.trace[5].dst_val, 9);
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let early = find_mem_row(values, 5, 2);
+                let late = find_mem_row(values, 5, 4);
+                let read = find_mem_row(values, 5, 5);
+                assert_eq!(late, early + 1);
+                assert_eq!(read, late + 1);
+                swap_mem_rows(values, early, late);
+                values[at(read, COL_MEM_VAL)] = Goldilocks::new(7);
+                let reg = find_reg_row(values, 3, 5, 3);
+                values[at(reg, COL_REG_VAL)] = Goldilocks::new(7);
+                values[at(5, COL_RD_VAL_NEW)] = Goldilocks::new(7);
+            });
+        assert!(
+            verdict.is_err(),
+            "a memory table out of time order was accepted. verdict={verdict:?}"
+        );
+    }
+
+    /// All events of one address sit in one block of the memory table.
+    ///
+    /// Address 5 gets a write and a read, and address 6 gets a write in
+    /// between. The forged table puts the read of address 5 after the block of
+    /// address 6. A block start may read zero, so the read returns 0.
+    #[test]
+    fn rejects_memory_events_split_into_two_blocks() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 5),
+            inst(Opcode::Load, 2, 0, 0, 7),
+            inst(Opcode::Store, 0, 1, 2, 0),
+            inst(Opcode::Load, 4, 0, 0, 16),
+            inst(Opcode::Store, 0, 4, 2, 0),
+            inst(Opcode::Load, 3, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[5].instruction.opcode, Opcode::Load);
+        assert_eq!(vm.trace[5].dst_val, 7);
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let zero = Goldilocks::new(0);
+                let write = find_mem_row(values, 5, 2);
+                let read = find_mem_row(values, 5, 5);
+                let other = find_mem_row(values, 16, 4);
+                assert_eq!(read, write + 1);
+                assert_eq!(other, read + 1);
+                swap_mem_rows(values, read, other);
+                // Three blocks of one row each. The inverse witness is the
+                // inverse of the address step to the next row.
+                values[at(write, COL_MEM_SAME)] = zero;
+                values[at(write, COL_MEM_SAME_INV)] =
+                    Goldilocks::new(bud_vm::field_inverse_goldilocks(11));
+                values[at(read, COL_MEM_SAME)] = zero;
+                values[at(read, COL_MEM_SAME_INV)] = Goldilocks::new(
+                    bud_vm::field_inverse_goldilocks(bud_vm::GOLDILOCKS_P - 11),
+                );
+                values[at(other, COL_MEM_SAME)] = zero;
+                values[at(other, COL_MEM_SAME_INV)] = zero;
+                values[at(other, COL_MEM_VAL)] = zero;
+                let reg = find_reg_row(values, 3, 5, 3);
+                values[at(reg, COL_REG_VAL)] = zero;
+                values[at(5, COL_RD_VAL_NEW)] = zero;
+            });
+        assert!(
+            verdict.is_err(),
+            "the events of one address were accepted in two blocks. \
+             verdict={verdict:?}"
+        );
+    }
+
+    /// A `Load` address is a number inside the memory table. The honest VM
+    /// refuses an address outside its memory, but the AIR did not, and a
+    /// `Load` at `1 << 60` named the first cell of the stack region.
+    ///
+    /// The program pushes 7. The forged trace turns its last step into a
+    /// `Load` through a pointer that holds `1 << 60` and reads 7 back.
+    #[test]
+    fn rejects_cross_table_address_alias() {
+        let program = vec![
+            inst(Opcode::Load, 5, 0, 0, 7),
+            inst(Opcode::Push, 0, 5, 0, 0),
+            inst(Opcode::Load, 1, 0, 0, 1 << 30),
+            inst(Opcode::Mul, 1, 1, 1, 0),
+            inst(Opcode::Load, 3, 0, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[3].dst_val, 1 << 60);
+        assert_eq!(vm.trace[4].instruction.opcode, Opcode::Load);
+
+        // The load-immediate at pc 4 becomes a load through r1. Both Loads
+        // cost the same gas, so the gas figures stay.
+        let mut forged_program = program.clone();
+        forged_program[4] = inst(Opcode::Load, 3, 1, 0, 0);
+        let mut trace = vm.trace.clone();
+        let step = &mut trace[4];
+        step.instruction = Instruction {
+            opcode: Opcode::Load,
+            rd: 3,
+            rs1: 1,
+            rs2: 0,
+            imm: 0,
+        };
+        step.src1_idx = 1;
+        step.src1_val = 1 << 60;
+        step.dst_val = 7;
+        step.registers[3] = 7;
+        step.memory_addr = Some(1usize << 60);
+        step.memory_val = Some(7);
+        step.is_memory_write = false;
+
+        let verdict = verify_forged_trace(&forged_program, &trace, vm.gas_limit, vm.gas_used);
+        assert!(
+            verdict.is_err(),
+            "a load at the base of the stack region was accepted. \
              verdict={verdict:?}"
         );
     }

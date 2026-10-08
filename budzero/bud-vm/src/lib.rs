@@ -187,12 +187,23 @@ pub fn field_mul_goldilocks(a: u64, b: u64) -> u64 {
     ((a as u128 * b as u128) % GOLDILOCKS_P as u128) as u64
 }
 
+/// The most memory a VM may hold, in bytes. The memory table of the proof
+/// names an address with 32 bits, so a larger memory could run but not be
+/// proved.
+pub const MAX_MEMORY_BYTES: u64 = 1 << 32;
+
 impl Vm {
     pub fn new(memory_size: usize) -> Self {
         Self::with_gas_limit(memory_size, 1_000_000)
     }
 
+    /// Panics if `memory_size` is above [`MAX_MEMORY_BYTES`]. The size comes
+    /// from the host that builds the VM, never from a program.
     pub fn with_gas_limit(memory_size: usize, gas_limit: u64) -> Self {
+        assert!(
+            memory_size as u64 <= MAX_MEMORY_BYTES,
+            "memory size {memory_size} is above the 2^32 byte address space of the proof"
+        );
         Self {
             registers: [0; 32],
             pc: 0,
@@ -1645,6 +1656,15 @@ mod tests {
             imm,
         }
         .encode()
+    }
+
+    /// The memory table of the proof names an address with 32 bits, so a
+    /// memory above `2^32` bytes cannot be proved. The constructor refuses it.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    #[should_panic(expected = "memory size")]
+    fn rejects_memory_larger_than_the_proof_address_space() {
+        let _ = Vm::new((1usize << 32) + 1);
     }
 
     /// `Load rd, r0, imm` copies the immediate as a field element. A negative
