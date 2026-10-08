@@ -24,13 +24,17 @@ use std::sync::{Arc, RwLock};
 pub struct ContentId(pub [u8; 32]);
 
 impl ContentId {
-    /// Compute the `ContentId` of a chunk using the same domain-separated
-    /// SHA-256 as `budlum-core` (`BDLM_CONTENT_V1` tag).
+    /// Compute the `ContentId` of a chunk. Same definition as
+    /// `budlum-core`: SHA-256 over length-prefixed fields. Each field is
+    /// a u64 little-endian length, then the bytes. Fields: the
+    /// `BDLM_CONTENT_V1` tag, then the chunk.
     pub fn of(chunk: &[u8]) -> Self {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::default();
-        hasher.update(b"BDLM_CONTENT_V1");
-        hasher.update(chunk);
+        for field in [&b"BDLM_CONTENT_V1"[..], chunk] {
+            hasher.update((field.len() as u64).to_le_bytes());
+            hasher.update(field);
+        }
         let result = hasher.finalize();
         let mut id = [0u8; 32];
         id.copy_from_slice(&result);
@@ -287,5 +291,38 @@ mod tests {
         assert_eq!(cids.len(), 2);
         assert!(cids.contains(&id1));
         assert!(cids.contains(&id2));
+    }
+
+    fn seeded_bytes(len: usize) -> Vec<u8> {
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        (0..len)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x >> 24) as u8
+            })
+            .collect()
+    }
+
+    #[test]
+    fn content_id_golden_vectors_match_core() {
+        let cases: [(Vec<u8>, &str); 3] = [
+            (
+                vec![],
+                "b9c2e41839278bfe0711bbdfb660ed31087513891bc2fa80c84f2bb6fa160104",
+            ),
+            (
+                vec![0u8],
+                "ae6ac769b38f211a1ee7d8c3bf7b17ea2e905d99a5ae515e46b55192a22b7ed1",
+            ),
+            (
+                seeded_bytes(65_536),
+                "09dd6421a5383e6d54fde97f523c6ad9ca6b33ffa8838801818f2992fbb7ab94",
+            ),
+        ];
+        for (data, want) in &cases {
+            assert_eq!(ContentId::of(data).to_hex(), *want, "len {}", data.len());
+        }
     }
 }
