@@ -177,6 +177,13 @@ Waves (steps in one wave touch different files and may run in parallel; W3 steps
 - Deviations to report: (a) directive 1.3.5, validator does not check bytes (owner decision K1-4); (b) directive 1.3.4, symbol layer stays shared (rqrr), the verifier is independent only at A1 to A3, a second QR reader would be a new decoder (forbidden by 1.1.3); (c) no production client call site yet, today the client point is the bud_storageQrFeedPreview library path, wiring into wallet-core is an architecture question; (d) audit records are node-local (open question 6 unanswered); (e) RPC body cap 1 MiB stays, segmentation is reached above 819,200 bytes; (f) if an xtask gate needs every domain tag in domain_tags.rs, K1-07 must stop and ask.
 - Status at time of writing: K1-01 started (coder). Others not started.
 
+### 6.5d B.U.D. audit state (4a verified by Opus, conditional pass)
+
+- 4a done (3dcbe16): StoredCodingAudit, outcomes, open, answer, finalize in storage_deal.rs; 16 tests. Persistence note: new registry fields change the bincode row; an old sled row makes the node exit at start with a CRITICAL log (fail closed, blockchain.rs about 817-826). Nothing is released, so accepted; release notes must say resync.
+- 4a-fix started (coder-deep): at most one open audit per deal; new outcome Void (deal not Active or manifest gone: closed without cooldown); finalized audits pruned by an epoch queue after a retention window; WIRING labels aligned (4b = open and finalize in apply_block_effects at epoch start; 4c = StorageTx::AnswerCodingAudit); golden root test for an empty audit set and a wrong-length column test.
+- Binding rules for 4b and 4c (F5): now_secs comes from the block timestamp, the responder is the transaction signer, the entropy must not be choosable by the block proposer (grind), and 4c removes the old ChainCommand::AnswerCodingAudit that takes a caller built audit. Open risk: audits are not bound to column commitments (S2, owner parked).
+- no-idle-code gate items remain (see 6.8 item 4b). dead_pub_api accepts a `WIRING:` doc line within 14 lines above an item; use it only for a step that really lands next.
+
 ### 6.5c zkVM queue state (architect verified claims at 7bcff68 by reading code)
 
 - Done and Opus verified: B1 (990fdcd), K1-VI-T tests (7bcff68; mutation shows the IS_EXPAND constraint hides a Halt row from Program CTL if removed, so it is a real security constraint).
