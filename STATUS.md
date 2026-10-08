@@ -80,3 +80,24 @@ Answers of 2026-10-08:
 ## EFFORT LOG
 
 (no finder-max calls)
+
+## 7. Round log 2026-10-08 (PR #3, branch claude/branch-change-pra-check-j01l81)
+
+Pushed on this branch (CI on PR #3 is the proof, Z4; local cargo test and clippy were skipped by owner decision, only cargo check --lib --tests ran clean at e39f37c plus 2 commits):
+- CI repair: 17da29d fmt, b153418 and 3f473fe typos allowlist, bafbd7a domain tag inventory (Opus PASS), 5842780 and bd64b50 README badges and perl-base in ops/Dockerfile, 8f26b1e ops/scripts/.gitkeep, 9a358af WIRING and exposed-for notes.
+- zkVM R4a-2: 992d639 (memory table key fold with table id, 32 bit address, order tests). Fresh Opus check was started; read its result before building on it. Mutation checks were NOT run. R4a-2 is done unless the check fails.
+- AI execution dims bound: c5459d4 (Opus PASS conditional: boundary tests are weak).
+- Chain replay roots step 1: e39f37c (shared end of block function, 1005 block test). NOT Opus verified, tests NOT run locally. Verify before steps 2 to 5.
+- RPC operator Host and Origin check: dcf748a. Tests not run locally. R-2 (socket cap in the accept loop) was not started.
+- repair_index fails on gaps: 2b88bb3. Tests not run locally.
+
+Still red on PR #3 and why: dead-public-api-is-ratcheted (remove the line src/chain/chain_actor.rs:answer_coding_audit from .github/dead-pub-api-baseline.txt; the tool permission layer blocks this edit, the owner must do it or allow it), Dependency Review (turn on Dependency graph in repository settings), no-idle-code (3 items left: verify_canonical_program, MAX_MEMORY_BYTES, decode_qr_video).
+
+Next round, in this order:
+1. Read CI of PR #3 and fix what is red (clippy large_enum_variant at core/transaction.rs:262, domain/storage_tx.rs:33, network/protocol.rs:35: Box the variants, no allow).
+2. CI-5a: delete verify_canonical_program (budzero/bud-proof/src/plonky3_prover.rs about 1973-1999), fix the doc names in adapter.rs and relayer.rs. Then MAX_MEMORY_BYTES and decode_qr_video get their own steps.
+3. Opus check of e39f37c, then replay steps 2 to 5 (section 4.3).
+4. Q1 step (delete waits for an open audit): architect handoff exists in the session notes only; ask the architect to write it again.
+5. Handoffs for two small consensus fixes and one sibling bound check were written in this session (neutral titles: slashing evidence chain id binding; keep evidence queue when not leader; guest program dims check before allocation). They are not in the repo. Ask the architect to write them again from the finder report in the private channel.
+6. Owner decisions pending (architecture, section 5 of CLAUDE.md): proposer liveness design for PoS and PoA, PoS checkpoint and reorg rule. The private finder report is not in the repo (12.10); file it through docs/SECURITY.md first.
+7. R-2 socket cap, then the remaining finder scans: settlement, cross_domain, registry; network/node.rs; tokenomics; bud-proof.
