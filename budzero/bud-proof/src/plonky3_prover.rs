@@ -3032,6 +3032,20 @@ mod tests {
         );
     }
 
+    /// A negative immediate is the field element `P - |imm|` in the VM, the
+    /// trace and the AIR alike. `Load rd, r0, imm` copies it to `rd`.
+    #[test]
+    fn proves_load_imm_negative() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, -1),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(64);
+        assert!(vm.run_receipt(&program).success);
+        assert_eq!(vm.registers[1], bud_vm::GOLDILOCKS_P - 1);
+        prove_and_verify(program, |_| {});
+    }
+
     /// `Assert` had no prover coverage either, and BudL's `constrain(...)`
     /// lowers straight to it.
     #[test]

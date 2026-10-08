@@ -340,7 +340,12 @@ impl Vm {
             }
             Opcode::Load => {
                 let result = if src1_idx == 0 {
-                    inst.imm as u64
+                    // Canonical field element, as in the trace and the AIR.
+                    if inst.imm < 0 {
+                        GOLDILOCKS_P.wrapping_sub(inst.imm.unsigned_abs() as u64)
+                    } else {
+                        inst.imm as u64
+                    }
                 } else if let Some(addr) =
                     Self::memory_word_addr(src1_val, inst.imm, self.memory.len())
                 {
@@ -1640,6 +1645,22 @@ mod tests {
             imm,
         }
         .encode()
+    }
+
+    /// `Load rd, r0, imm` copies the immediate as a field element. A negative
+    /// immediate is `P - |imm|`, the value the trace and the AIR use, and not
+    /// the two's complement `2^64 - |imm|`, which is not below `P`.
+    #[test]
+    fn load_imm_negative_is_canonical() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, -1),
+            inst(Opcode::Load, 2, 0, 0, i32::MIN),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(64);
+        assert!(vm.run_receipt(&program).success);
+        assert_eq!(vm.registers[1], GOLDILOCKS_P - 1);
+        assert_eq!(vm.registers[2], GOLDILOCKS_P - (1u64 << 31));
     }
 
     /// The address whose window wraps must be refused, not indexed.
