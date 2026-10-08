@@ -163,6 +163,20 @@ Also: storage challenge proof check is a constant false (proof format needs zkVM
 - Entropy and deadline choices made by Claude: entropy from the including block's previous_hash and vrf_output; coding audit deadline reuses the 10 epoch window.
 - Handoff E4-a done above. Not started (questions open, not economic): S1 mainnet snapshot sync need (recommend: not needed in v1; remove from blocker list as v2 feature), S2 automatic global header sealing policy (recommend: seal at finality checkpoints, deterministic; gossip validation later), S3b DomainForkChoice wiring versus deletion (recommend: wire it).
 
+### 6.5b K1 Priority Zero plan (architect, evidence read at HEAD 5f2d909; src/storage is R2, src/gateway is R1, so agent is coder, not coder-deep)
+
+Waves (steps in one wave touch different files and may run in parallel; W3 steps both edit storage/mod.rs, use stacked branches):
+- W1: K1-01 explicit empty marker (A0, A1, emit; flag bit1 EMPTY; golden vectors of non-empty content unchanged) | K1-02 PNG deflate fails closed (qr_png.rs:140-145 silent stored fallback removed) | K1-03 tolerant PNG reader (qr_video.rs:319-321 filters 1 to 4, colour types 0/2/4/6 at 8 bit, chunk CRC) | K1-08a reveal checks stream id at open (three_reveal.rs:75-90) | K1-08b gateway stored paths rehash against ContentId (gateway/service.rs) | K1-09 bud-node ContentId parity with hash_fields_bytes (budzero/bud-node/src/store.rs; do not touch bud/ SHA3, owner question).
+- W2: K1-04 verify_qr_video with ExpectedCommitments, VerifyError, VerificationRecord (new storage/qr_verify.rs; emit.rs:909 calls it; record is node-local, emitted via tracing). Needs 01.
+- W3: K1-05 independent verifier decoder, verifier only (new qr_verify_indep.rs; header layouts from spec; no imports of qr_frame, qr_carousel, qr_receive, qr_payload parsers) | K1-07 segmentation (new qr_segment.rs, local tag BDLM_THREE_SEGMENTS_V1; emit plan segments instead of refusing). Both need 04.
+- W4: K1-06 transport simulation inside verify (new qr_transport.rs: resize, 8x8 quantization, bounded noise, frame drop, duplicate, reorder, grey re-encode; integer math; SHA-256 counter PRNG). Needs 02, 03, 04.
+- W5: K1-10 fuzz targets (fuzz/fuzz_targets/qr_*.rs) | K1-12 cross-platform determinism goldens (tests named qr_determinism_* so determinism.yml:129 runs them).
+- W6: K1-11 Priority Zero test suite (new src/tests/qr_priority_zero.rs: class matrix, boundaries 0/1/block multiples/MAX_K/max/max+1, proptest roundtrip, lossy transport, differential, negative).
+- Opus verify: K1-01, 04, 05, 06, 07, 11. Not needed: 02, 03, 08a, 08b, 09, 10, 12.
+- Consensus surface, no handoff, separate design note and separate PR each: DN-1 docs/bud/K1-DN1-validator-recipe-binding.md; DN-2 docs/bud/K1-DN2-operator-challenge-third-point.md (touches storage_deal.rs).
+- Deviations to report: (a) directive 1.3.5, validator does not check bytes (owner decision K1-4); (b) directive 1.3.4, symbol layer stays shared (rqrr), the verifier is independent only at A1 to A3, a second QR reader would be a new decoder (forbidden by 1.1.3); (c) no production client call site yet, today the client point is the bud_storageQrFeedPreview library path, wiring into wallet-core is an architecture question; (d) audit records are node-local (open question 6 unanswered); (e) RPC body cap 1 MiB stays, segmentation is reached above 819,200 bytes; (f) if an xtask gate needs every domain tag in domain_tags.rs, K1-07 must stop and ask.
+- Status at time of writing: K1-01 started (coder). Others not started.
+
 ### 6.6 Open owner questions (do not decide; ask later in plain words)
 
 S1 challenge proof check can follow in the zkVM queue (recommend A: move challenges into blocks now, mainnet gate stays closed). S2 parity audit fingerprints (recommend A: audit now, fingerprints later; changes manifest format). S3 penalty is bond only (recommend A). Plus items 1 and 10 of 6.4. All are economic or architecture and are parked by owner order.
