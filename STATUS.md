@@ -193,6 +193,12 @@ Waves (steps in one wave touch different files and may run in parallel; W3 steps
 - Observation for R6: VM Syscall sender and nonce values may be >= P (bud-vm lib.rs about 517-519).
 - Known leftover from B1 review: stale comments about VerifyInference expansion in plonky3_air.rs (about 223, 2391-2398, 2617-2621) and plonky3_prover.rs (about 108-112, 1543), dead filler code in the prover (about 685-700, 850-866, 1042-1066, 1335), docs/ARCHITECTURE.md line about 714, VM gas_cost still 10 for VerifyInference, columns 691-693 unconstrained (harmless). Do as a mechanical coder-lite step after R3. locks test (ai_verification_status_locks.rs) only pins the VM arm text; add an AIR assert lock (T3).
 
+### 6.5e K1 state
+
+- K1-01 (1c3bd7f): A0, A1, plan and emit accept empty content (flag bit1 EMPTY). Not yet complete: the sealed RPC path still refuses empty plaintext (payload_crypt.rs SealError::Empty). K1-01b started (coder-deep): seal accepts empty plaintext through the AEAD (Claude decision: option A, because skipping the seal would open a bypass in the UnsealedGated visibility gate). Opus verify needed after. Mechanical follow-ups: update docs/bud/BUD-KESIF-RAPORU.md line about 98 (coder-lite); transformed.rs from_bytes still refuses empty and has only test callers (small separate step, coder).
+- F-DET-1 (owner decision parked, crypto architecture): on the sealed path, the same content with the same seal seed gives a different nonce, recipe commit and frames on every call (payload_crypt.rs about 141-144, three_pipe.rs about 171). Directive 1.3.6 says the same content gives the same recipe and frame set. Options: (a) deterministic misuse-resistant nonce (for example AES-GCM-SIV, or an XChaCha nonce derived from key and plaintext); (b) 1.3.6 excludes sealed feeds. Existed before; not empty-specific.
+- Tier note: payload_crypt.rs is under src/storage (R2 in MODEL_ROUTING section 3) but handled as R3 because of its crypto meaning; propose the tier change to the owner.
+
 ### 6.6 Open owner questions (do not decide; ask later in plain words)
 
 S1 challenge proof check can follow in the zkVM queue (recommend A: move challenges into blocks now, mainnet gate stays closed). S2 parity audit fingerprints (recommend A: audit now, fingerprints later; changes manifest format). S3 penalty is bond only (recommend A). Plus items 1 and 10 of 6.4. All are economic or architecture and are parked by owner order.
