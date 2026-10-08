@@ -55,6 +55,7 @@ use crate::storage::qr_png::{frame_to_qr_png, matrix_to_png, QrPngError};
 use crate::storage::qr_receive::{ProgressiveReceiver, ReceiveError};
 use crate::storage::qr_recipe::{three_sealed_recipe_commitment, ThreeRecipe, ThreeRecipeSealed};
 use crate::storage::qr_reemit::{RecipeEmitter, ReemitError};
+use crate::storage::qr_verify::{verify_qr_video, ExpectedCommitments, VerifyError};
 use crate::storage::qr_video::{
     png_to_optical_frame, QrVideo, QrVideoError, DEFAULT_FPS, VIDEO_VERSION,
 };
@@ -64,8 +65,7 @@ use crate::storage::three_nft::{
     meta_tracks_public_recipe, MetadataVisibility, PreviewMode, ThreeNftMeta,
 };
 use crate::storage::three_pipe::{
-    concat_round_trip, decode_frames, decode_qr_video, encode_qr_video, recipe_commitment,
-    PipeError,
+    concat_round_trip, decode_frames, encode_qr_video, recipe_commitment, PipeError,
 };
 use crate::storage::three_recipe::{
     recipe_class, RecipeTransform, VideoFrameStream, VideoRecipe, VideoRecipeError,
@@ -77,6 +77,7 @@ use crate::storage::three_visibility::{
 };
 use crate::storage::transformed::{transform_content, CodecFlags, TransformError, TransformOpts};
 use crate::storage::{ContentId, ContentManifest, ShardRef};
+use std::time::Duration;
 
 /// Largest body this path will encode in one call.
 ///
@@ -233,6 +234,9 @@ pub struct FeedPreview {
     pub rotate_key_on_delete: bool,
 }
 
+/// Time allowed for the check of the video this emit has just encoded.
+const VIDEO_VERIFY_DEADLINE: Duration = Duration::from_secs(60);
+
 /// Errors from the emit path.
 #[derive(Debug)]
 pub enum EmitError {
@@ -361,6 +365,8 @@ pub enum EmitError {
     Payload(PayloadError),
     /// A stage refused.
     Pipe(PipeError),
+    /// The encoded video did not match the commitments of its own encode.
+    Verify(VerifyError),
     /// A stage refused.
     Receive(ReceiveError),
     /// A stage refused.
@@ -506,6 +512,7 @@ impl std::fmt::Display for EmitError {
             Self::Carousel(e) => write!(f, "carousel: {e}"),
             Self::Payload(e) => write!(f, "payload: {e}"),
             Self::Pipe(e) => write!(f, "pipe: {e}"),
+            Self::Verify(e) => write!(f, "verify: {e}"),
             Self::Receive(e) => write!(f, "receive: {e}"),
             Self::Reemit(e) => write!(f, "reemit: {e}"),
             Self::Codec(e) => write!(f, "codec: {e}"),
@@ -570,6 +577,12 @@ impl From<CarouselError> for EmitError {
 impl From<PipeError> for EmitError {
     fn from(e: PipeError) -> Self {
         Self::Pipe(e)
+    }
+}
+
+impl From<VerifyError> for EmitError {
+    fn from(e: VerifyError) -> Self {
+        Self::Verify(e)
     }
 }
 
@@ -914,14 +927,18 @@ pub fn qr_feed_preview(
     if kind2 != kind || body2 != body_len_bytes {
         return Err(EmitError::DecodePathMismatch);
     }
-    let (kind3, video_body, video3) = decode_qr_video(&encoded.video_blob)?;
+    // The expectations come from the encode step, not from the video. A sealed
+    // feed has a random nonce, so its expected body is the one the pipe packed.
+    let expected_body = if key.is_some() {
+        unpack_payload(&pipe.packed)?.1
+    } else {
+        content.to_vec()
+    };
+    let expected = ExpectedCommitments::from_encode(&expected_body, pipe);
+    let (kind3, video_body, video3, _record) =
+        verify_qr_video(&encoded.video_blob, &expected, VIDEO_VERIFY_DEADLINE)?;
     let video_frames = u32::try_from(video3.png_frames.len()).unwrap_or(u32::MAX);
     if kind3 != kind || video_body != body_len_bytes || video_frames != actual {
-        return Err(EmitError::DecodePathMismatch);
-    }
-    if video3.stream_commitment != pipe.stream_commitment
-        || video3.recipe_commitment != recipe_commitment(&pipe.recipe)
-    {
         return Err(EmitError::DecodePathMismatch);
     }
     let decoded_body_len = body_len_bytes.len();
