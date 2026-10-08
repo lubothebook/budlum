@@ -426,7 +426,7 @@ pub const COL_REG_INIT_ACC: usize = 736;
 /// and the AIR was doing it with
 ///
 /// ```text
-/// is_real_mem_op = (is_load + is_store) * rs1_idx
+/// is_real_mem_op = (is_load + is_store) * rs1_idx  (before the fix below)
 /// ```
 ///
 /// which is not a flag but a register number. On `Store r0, r7, r2` the
@@ -444,10 +444,12 @@ pub const COL_REG_INIT_ACC: usize = 736;
 /// ```text
 /// z            = rs1_idx * rs1_idx_inv     (boolean)
 /// rs1_idx * (1 - z) == 0                   (rs1_idx != 0 forces z = 1)
-/// is_real_mem_op = (is_load + is_store) * z
+/// is_real_mem_op = is_load * z + is_store
 /// ```
 ///
-/// so the multiplier is one or zero and never a register index.
+/// so the multiplier is one or zero and never a register index. A `Store`
+/// always writes memory, so it is not scaled by `z`; only `Load` with base r0
+/// is load-immediate.
 pub const COL_RS1_IDX_INV: usize = 737;
 
 /// Inverse witnesses proving a bit decomposition is the canonical one.
@@ -2422,7 +2424,7 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
             let rs1_idx_z = rs1_idx.clone() * rs1_idx_inv;
             builder.assert_bool(rs1_idx_z.clone());
             builder.assert_zero(rs1_idx.clone() * (one.clone() - rs1_idx_z.clone()));
-            let is_real_mem_op = (is_load.clone() + is_store.clone()) * rs1_idx_z;
+            let is_real_mem_op = is_load.clone() * rs1_idx_z + is_store.clone();
             let is_stack_op = is_push.clone() + is_pop.clone() + is_call.clone() + is_ret.clone();
             let is_storage_op = is_sread.clone() + is_swrite.clone();
             // A `VerifyMerkle` expansion row reads one sibling word from the

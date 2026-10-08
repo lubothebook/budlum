@@ -1419,7 +1419,7 @@ fn aux_trace_generator(
             // multiplied by `rs1_idx` itself while this side produced a
             // boolean.
             let rs1_idx_z = rs1_idx * row[COL_RS1_IDX_INV];
-            let is_real_mem_op = (is_load + is_store) * rs1_idx_z;
+            let is_real_mem_op = is_load * rs1_idx_z + is_store;
             let is_stack_op = is_push + is_pop + is_call + is_ret;
             let is_storage_op = is_sread + is_swrite;
             // Merkle path reads join the demand side: an expansion row reads
@@ -2914,6 +2914,121 @@ mod tests {
             Plonky3Adapter::verify(&envelope, &pi, &program).is_err(),
             "a Load denied addressing memory and the proof verified; the \
              destination register can then take a value memory never held"
+        );
+    }
+
+    fn store_through_r0_program() -> Vec<u64> {
+        vec![
+            inst(Opcode::Load, 2, 0, 0, 99),  // r2 = 99
+            inst(Opcode::Store, 0, 0, 2, 16), // mem[0 + 16] = r2, base is r0
+            inst(Opcode::Load, 1, 0, 0, 16),  // r1 = 16
+            inst(Opcode::Load, 3, 1, 0, 0),   // r3 = mem[16]
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ]
+    }
+
+    /// An honest `Store` whose base register is r0 writes memory, so it must
+    /// put a demand on the memory bus like every other `Store`.
+    #[test]
+    fn proves_store_through_r0() {
+        let program = store_through_r0_program();
+        let mut vm = Vm::new(64);
+        assert!(vm.run_receipt(&program).success);
+        assert_eq!(vm.registers[3], 99);
+        prove_and_verify(program, |_| {});
+    }
+
+    /// `Store rs1=r0` is not load-immediate: only `Load` has that meaning. A
+    /// prover that drops the write from the memory argument could let a later
+    /// `Load` read a value no write ever put there.
+    #[test]
+    fn rejects_a_store_through_r0_that_skips_memory() {
+        let program = store_through_r0_program();
+        let mut vm = Vm::new(64);
+        assert!(vm.run_receipt(&program).success);
+        assert_eq!(vm.registers[3], 99);
+
+        // The forgery: the Store claims it touched no memory, and the Load
+        // that read the word back claims memory held zero.
+        assert_eq!(vm.trace[1].instruction.opcode, Opcode::Store);
+        assert_eq!(vm.trace[3].instruction.opcode, Opcode::Load);
+        vm.trace[1].memory_addr = None;
+        vm.trace[1].memory_val = None;
+        vm.trace[3].memory_val = Some(0);
+        vm.trace[3].dst_val = 0;
+        for step in vm.trace.iter_mut().skip(3) {
+            step.registers[3] = 0;
+        }
+
+        let program_bytes: Vec<u8> = program
+            .iter()
+            .flat_map(|&i| i.to_le_bytes().to_vec())
+            .collect();
+        let mut hasher = Keccak::v256();
+        hasher.update(&program_bytes);
+        let mut program_hash = [0u8; 32];
+        hasher.finalize(&mut program_hash);
+
+        let pi = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash,
+            initial_state_root: crate::adapter::initial_state_root_of(
+                crate::adapter::memory_image_commitment_of_reads(&initial_memory_reads(&vm.trace)),
+                crate::adapter::register_image_commitment_of_reads(&initial_register_reads(
+                    &vm.trace,
+                )),
+            ),
+            final_state_root: [0u8; 32],
+            sender: 0,
+            nonce: 0,
+            block_height: 0,
+            gas_limit: vm.gas_limit,
+            gas_used: vm.gas_used,
+            exit_code: 0,
+            trace_len: vm.trace.len() as u64,
+            event_digest: [0u8; 32],
+            state_writes_digest: [0u8; 32],
+        };
+
+        let (matrix, n_cpu) = trace_matrix(&vm.trace, &program, &pi);
+        let matrix = RowMajorMatrix::new(matrix.values, TRACE_WIDTH);
+        let air = BudAir {
+            num_steps: vm.trace.len(),
+            program: program.clone(),
+        };
+        let config = build_config();
+        let public_values = to_public_values(&pi);
+        let degree_bits = p3_util::log2_strict_usize(matrix.height());
+        let preprocessed = setup_preprocessed(&config, &air, degree_bits);
+        let preprocessed_ref = preprocessed.as_ref().map(|(p, _)| p);
+
+        let p3_proof = prove_with_preprocessed(
+            &config,
+            &air,
+            matrix.clone(),
+            Some(crate::plonky3_prover::aux_trace_generator(
+                matrix.clone(),
+                n_cpu,
+                program.clone(),
+            )),
+            &public_values,
+            preprocessed_ref,
+        );
+        let proof_bytes = postcard::to_allocvec(&p3_proof).unwrap();
+        let envelope = ProofEnvelope {
+            proof_format_version: PROOF_FORMAT_VERSION,
+            backend: "Plonky3-Keccak-Goldilocks".to_string(),
+            p3_version: "0.5.2".to_string(),
+            fri_params_id: "test_fri_params".to_string(),
+            public_inputs_hash: pi.hash(),
+            proof_bytes,
+            degree_bits: degree_bits as u32,
+        };
+
+        assert!(
+            Plonky3Adapter::verify(&envelope, &pi, &program).is_err(),
+            "a Store through r0 skipped the memory argument and the proof \
+             verified; a later Load can then read a word nothing wrote"
         );
     }
 
