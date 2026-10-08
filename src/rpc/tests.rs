@@ -1222,4 +1222,32 @@ mod rpc_tests {
             .expect_err("empty peer id must fail format validation");
         assert_eq!(empty.code(), -32602);
     }
+
+    /// Zero bytes are content too: the sealed RPC path emits a feed for them.
+    #[tokio::test]
+    async fn rpc_tests_qr_feed_accepts_empty_content_when_sealed() {
+        let (server, _chain) = setup().await;
+        let seed = "ab".repeat(32);
+        server
+            .storage_qr_feed_preview(String::new(), 200, None, Some(seed.clone()))
+            .await
+            .expect("sealed empty preview");
+        let burst = server
+            .storage_qr_feed_frames(String::new(), 200, 0, 1, Some(seed))
+            .await
+            .expect("sealed empty frames");
+        assert_eq!(burst["count"], 1);
+    }
+
+    /// Without a seed the gated preview of empty content is still refused as a
+    /// bad request, as it is for any other body.
+    #[tokio::test]
+    async fn rpc_tests_qr_feed_empty_content_without_seed_is_refused() {
+        let (server, _chain) = setup().await;
+        let refused = server
+            .storage_qr_feed_preview(String::new(), 200, None, None)
+            .await
+            .expect_err("unsealed gated preview must be refused");
+        assert_eq!(refused.code(), -32602);
+    }
 }

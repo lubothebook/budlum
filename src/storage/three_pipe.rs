@@ -469,6 +469,21 @@ mod tests {
         assert_eq!(open_payload(&key, &body).unwrap(), content);
     }
 
+    #[test]
+    fn sealed_empty_qr_video_round_trip() {
+        let key = PayloadKey::derive(b"facade-key");
+        let a = encode_qr_video(b"", 64, Some(&key)).unwrap();
+        let b = encode_qr_video(b"", 64, Some(&key)).unwrap();
+        let (kind, body, _v) = decode_qr_video(&a.video_blob).unwrap();
+        assert_eq!(kind, PayloadKind::EncryptedContent);
+        assert!(open_payload(&key, &body).unwrap().is_empty());
+        assert_ne!(
+            sealed_nonce_of(&a.pipe),
+            sealed_nonce_of(&b.pipe),
+            "two empty seals under one key reused a nonce"
+        );
+    }
+
     /// The A0 class drives the A1 compression attempt: entropy-coded content
     /// reaches the container with zlib skipped, and sealed content never
     /// attempts zlib over ciphertext.

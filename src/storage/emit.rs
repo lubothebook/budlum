@@ -1519,6 +1519,34 @@ mod tests {
         assert!(p.a4_agreement);
     }
 
+    #[test]
+    fn empty_body_with_a_seal_previews_as_a_gated_feed() {
+        let policy = EmitPolicy {
+            seal_seed: Some([5u8; 32]),
+            ..EmitPolicy::default()
+        };
+        let p = qr_feed_preview(&[], &policy, None).expect("sealed empty preview");
+        assert!(!p.publicly_reemitable);
+    }
+
+    #[test]
+    fn empty_body_burst_is_ok_sealed_and_plain() {
+        let sealed = EmitPolicy {
+            seal_seed: Some([5u8; 32]),
+            ..EmitPolicy::default()
+        };
+        qr_feed_frames_burst(&[], &sealed, 0, 1).expect("sealed empty burst");
+        qr_feed_frames_burst(&[], &EmitPolicy::default(), 0, 1).expect("plain empty burst");
+    }
+
+    #[test]
+    fn empty_body_without_seal_or_manifest_stays_gated() {
+        assert!(matches!(
+            qr_feed_preview(&[], &EmitPolicy::default(), None),
+            Err(EmitError::UnsealedGated)
+        ));
+    }
+
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
     }
