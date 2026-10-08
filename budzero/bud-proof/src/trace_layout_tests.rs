@@ -11,8 +11,8 @@ use crate::plonky3_air::{
     COL_ASSERT_INV, COL_CMP_RS1_HI_INV, COL_CMP_RS2_HI_INV, COL_MEM_INIT_ACC, COL_MEM_IS_INIT,
     COL_MERKLE_KEY_REM, COL_POSEIDON_END, COL_POSEIDON_STATE_BASE, COL_POSEIDON_X2_BASE,
     COL_POSEIDON_X4_BASE, COL_PROG_MULT, COL_RD_IDX_INV, COL_REG_INIT_ACC, COL_REG_IS_INIT,
-    COL_REG_SAME_INV, COL_RS1_IDX_INV, COL_STATE_WRITES_0, COL_SYSCALL_IS_1, COL_SYSCALL_IS_2,
-    COL_SYSCALL_IS_3, COL_SYSCALL_IS_6, TRACE_WIDTH,
+    COL_REG_ORD_BITS_BASE, COL_REG_SAME_INV, COL_RS1_IDX_INV, COL_STATE_WRITES_0, COL_SYSCALL_IS_1,
+    COL_SYSCALL_IS_2, COL_SYSCALL_IS_3, COL_SYSCALL_IS_6, REG_ORD_BITS, TRACE_WIDTH,
 };
 
 struct ColRange {
@@ -299,6 +299,12 @@ fn all_ranges() -> Vec<ColRange> {
             name: "prog_mult",
             start: COL_PROG_MULT,
             end: COL_PROG_MULT + 1,
+        },
+        // The register table order witness: 32 bits of the step to the next row.
+        ColRange {
+            name: "reg_ord_bits",
+            start: COL_REG_ORD_BITS_BASE,
+            end: COL_REG_ORD_BITS_BASE + REG_ORD_BITS,
         },
     ]
 }

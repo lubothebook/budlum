@@ -1,7 +1,7 @@
 use p3_air::{Air, AirBuilder, BaseAir, ExtensionBuilder, PermutationAirBuilder, WindowAccess};
 use p3_field::PrimeCharacteristicRing;
 
-pub const TRACE_WIDTH: usize = 754;
+pub const TRACE_WIDTH: usize = 786;
 
 /// Columns in the preprocessed (program ROM) trace: pc, raw instruction word,
 /// active flag, then the four decoded fields (opcode, rd, rs1, rs2).
@@ -602,6 +602,19 @@ pub const COL_SYSCALL_IS_3: usize = 744;
 /// the fixed weight `pre_active` is used, an honest prover produces an
 /// unbalanced LogUp sum and gets `InvalidProof`.
 pub const COL_PROG_MULT: usize = 753;
+
+/// The register table order witness: 32 bits of the step from this register
+/// row to the next one.
+///
+/// The table must be sorted by `(idx, time)` with `time = clk * 4 + sub_clk`,
+/// and every step must be strictly forward. For a pair of active rows the step
+/// is `time' - time - 1` when both rows name one register, and
+/// `idx' - idx - 1` when they do not. The bits sum to that step, so the step
+/// is a 32 bit number. A step that goes backward is a field element near
+/// 2^64 and has no 32 bit form. This is sound because `idx` is below 32 and
+/// `time` is below 2^32, so no honest or forged step wraps into range.
+pub const COL_REG_ORD_BITS_BASE: usize = 754;
+pub const REG_ORD_BITS: usize = 32;
 
 /// Fold constants for [`COL_REG_INIT_ACC`].
 ///
@@ -2087,6 +2100,39 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         // silently the moment that constraint is edited. This is cheap and the
         // column is load bearing.
         builder.assert_bool(r_same.clone());
+
+        // The table is a prefix: active rows first, padding after. Every rule
+        // of the table is gated by `r_active * nr_active`, so an inactive row
+        // between two active ones would switch all of them off at once.
+        builder.assert_bool(r_active.clone());
+        builder
+            .when_transition()
+            .assert_zero((one.clone() - r_active.clone()) * nr_active.clone());
+
+        // Sorted by `(idx, time)`, strictly. LogUp compares multisets and
+        // cannot see the order, so without this a write could be moved to
+        // another time and a read paired with it.
+        {
+            let four = AB::Expr::from(AB::F::from_u64(4));
+            let clk: AB::Expr = cur[COL_REG_CLK].into();
+            let sub: AB::Expr = cur[COL_REG_SUB_CLK].into();
+            let nclk: AB::Expr = nxt[COL_REG_CLK].into();
+            let nsub: AB::Expr = nxt[COL_REG_SUB_CLK].into();
+            let time = clk * four.clone() + sub;
+            let ntime = nclk * four + nsub;
+            let step = r_same.clone() * (ntime - time - one.clone())
+                + (one.clone() - r_same.clone()) * (nr_idx.clone() - r_idx.clone() - one.clone());
+            let mut bits_sum = AB::Expr::from(AB::F::ZERO);
+            for i in 0..REG_ORD_BITS {
+                let bit: AB::Expr = cur[COL_REG_ORD_BITS_BASE + i].into();
+                builder.assert_bool(bit.clone());
+                bits_sum += bit * AB::Expr::from(AB::F::from_u64(1u64 << i));
+            }
+            builder
+                .when_transition()
+                .when(r_active.clone() * nr_active.clone())
+                .assert_eq(step, bits_sum);
+        }
 
         builder.when_transition().assert_zero(
             r_active.clone()

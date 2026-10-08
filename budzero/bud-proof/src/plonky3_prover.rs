@@ -1193,6 +1193,20 @@ pub fn trace_matrix(
                 0
             };
             values[row_start + COL_REG_SAME_INV] = Goldilocks::new(inv);
+
+            // The step to the next row, in bits. The events are sorted by
+            // `(idx, clk, sub_clk)` and no two are equal, so the step is
+            // never negative.
+            let next = &events[i + 1];
+            let step = if next.idx == e.idx {
+                (next.clk * 4 + next.sub_clk as u64) - (e.clk * 4 + e.sub_clk as u64) - 1
+            } else {
+                next.idx - e.idx - 1
+            };
+            debug_assert!(step < (1u64 << REG_ORD_BITS));
+            for b in 0..REG_ORD_BITS {
+                values[row_start + COL_REG_ORD_BITS_BASE + b] = Goldilocks::new((step >> b) & 1);
+            }
         }
     }
 
@@ -7495,6 +7509,132 @@ mod tests {
             );
         }
         assert_eq!(seen, 33, "the opcode set changed; extend this test");
+    }
+
+    /// The register table columns that describe one event. Moving a row means
+    /// moving all of them. `COL_REG_INIT_ACC` is a running sum, so it stays.
+    const REG_TABLE_COLS: [usize; 9] = [
+        COL_REG_CLK,
+        COL_REG_IDX,
+        COL_REG_VAL,
+        COL_REG_IS_WRITE,
+        COL_REG_ACTIVE,
+        COL_REG_SAME,
+        COL_REG_SUB_CLK,
+        COL_REG_SAME_INV,
+        COL_REG_IS_INIT,
+    ];
+
+    /// The register table row that holds the event `(idx, clk, sub_clk)`.
+    fn find_reg_row(values: &[Goldilocks], idx: u64, clk: u64, sub: u64) -> usize {
+        (0..values.len() / TRACE_WIDTH)
+            .find(|&row| {
+                let at = |col: usize| values[row * TRACE_WIDTH + col].as_canonical_u64();
+                at(COL_REG_ACTIVE) == 1
+                    && at(COL_REG_IDX) == idx
+                    && at(COL_REG_CLK) == clk
+                    && at(COL_REG_SUB_CLK) == sub
+            })
+            .expect("the register event must be in the table")
+    }
+
+    /// The register table is a sorted list with no gaps, and nothing used to
+    /// say so.
+    ///
+    /// Every transition rule of the table is gated by `r_active * nr_active`.
+    /// A row of padding in the middle closes all of them at once: the read
+    /// after the gap does not have to continue the write before it, and the
+    /// first read of a register is only asked to be zero when the row before it
+    /// is active. The forged matrix below moves the read of r9 one row down,
+    /// leaves an inactive row behind it, and makes the read 1000. The write
+    /// before the gap stays 7, the `Add` reads 1000, and the bus still
+    /// balances because every event is still there once.
+    #[test]
+    fn rejects_register_read_after_inactive_gap() {
+        const FORGED: u64 = 1000;
+        // r9 is the highest register used, so its rows are the last active
+        // rows and the row below them is padding.
+        let program = vec![
+            inst(Opcode::Load, 9, 0, 0, 7),
+            inst(Opcode::Add, 2, 9, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[1].instruction.opcode, Opcode::Add);
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let rows = values.len() / TRACE_WIDTH;
+                let read = find_reg_row(values, 9, 1, 1);
+                let write2 = find_reg_row(values, 2, 1, 3);
+                assert!(read + 1 < rows, "a padding row must follow the table");
+                assert_eq!(values[at(read + 1, COL_REG_ACTIVE)].as_canonical_u64(), 0);
+                for col in REG_TABLE_COLS {
+                    values[at(read + 1, col)] = values[at(read, col)];
+                    values[at(read, col)] = Goldilocks::new(0);
+                }
+                // The write before the gap no longer continues into a read.
+                values[at(read - 1, COL_REG_SAME)] = Goldilocks::new(0);
+                values[at(read + 1, COL_REG_VAL)] = Goldilocks::new(FORGED);
+                values[at(write2, COL_REG_VAL)] = Goldilocks::new(FORGED);
+                values[at(1, COL_RS1_VAL)] = Goldilocks::new(FORGED);
+                values[at(1, COL_RD_VAL_NEW)] = Goldilocks::new(FORGED);
+            });
+        assert!(
+            verdict.is_err(),
+            "a read after an inactive gap returned a value nothing wrote and \
+             the proof verified. verdict={verdict:?}"
+        );
+    }
+
+    /// The LogUp argument compares multisets, so it cannot tell that two
+    /// writes of one register swapped places. Only the order constraint can.
+    ///
+    /// The forged matrix swaps the two r1 writes (7 then 9 becomes 9 then 7),
+    /// so the read that follows sees 7 and the `Add` is made to use it. Every
+    /// continuity rule holds on the swapped rows.
+    #[test]
+    fn rejects_reordered_register_writes() {
+        const FORGED: u64 = 7;
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 7),
+            inst(Opcode::Load, 1, 0, 0, 9),
+            inst(Opcode::Add, 2, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[2].instruction.opcode, Opcode::Add);
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let first = find_reg_row(values, 1, 0, 3);
+                let second = find_reg_row(values, 1, 1, 3);
+                let read = find_reg_row(values, 1, 2, 1);
+                let write2 = find_reg_row(values, 2, 2, 3);
+                assert_eq!((second, read), (first + 1, first + 2));
+                for col in REG_TABLE_COLS {
+                    let a = values[at(first, col)];
+                    values[at(first, col)] = values[at(second, col)];
+                    values[at(second, col)] = a;
+                }
+                // Both writes and the read belong to r1, so the same flags
+                // are right for the new positions.
+                values[at(read, COL_REG_VAL)] = Goldilocks::new(FORGED);
+                values[at(write2, COL_REG_VAL)] = Goldilocks::new(FORGED);
+                values[at(2, COL_RS1_VAL)] = Goldilocks::new(FORGED);
+                values[at(2, COL_RD_VAL_NEW)] = Goldilocks::new(FORGED);
+            });
+        assert!(
+            verdict.is_err(),
+            "two writes of one register swapped places and the proof verified. \
+             verdict={verdict:?}"
+        );
     }
 
     /// A prover must not relabel an instruction as a different one.
