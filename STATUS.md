@@ -193,6 +193,12 @@ Waves (steps in one wave touch different files and may run in parallel; W3 steps
 - Observation for R6: VM Syscall sender and nonce values may be >= P (bud-vm lib.rs about 517-519).
 - Known leftover from B1 review: stale comments about VerifyInference expansion in plonky3_air.rs (about 223, 2391-2398, 2617-2621) and plonky3_prover.rs (about 108-112, 1543), dead filler code in the prover (about 685-700, 850-866, 1042-1066, 1335), docs/ARCHITECTURE.md line about 714, VM gas_cost still 10 for VerifyInference, columns 691-693 unconstrained (harmless). Do as a mechanical coder-lite step after R3. locks test (ai_verification_status_locks.rs) only pins the VM arm text; add an AIR assert lock (T3).
 
+### 6.5f Audit binding rules (Opus verification of 574a6fa, FAIL with small fixes; fix step 4a-fix2 started)
+
+- Findings being fixed in 4a-fix2: G1 predictable or collusive Void (deal expiring inside the audit window, or prune_content) escapes the cooldown; G2 busy selected deal rejects the whole open instead of picking another holder; G3 queue root encoding is not injective (add a length prefix); G4 weak tests.
+- G5 (existing, out of scope): ChainCommand::StoragePrune mutates consensus state outside a block (chain_actor.rs about 3443-3451) and now also influences Void or Missed. Needs its own step (ADIM 6 family).
+- Binding rules for 4b and 4c: (1) sweep uses the constant CODING_AUDIT_RECORD_RETENTION_EPOCHS, never a config or RPC value; (2) open, finalize and sweep run only inside apply_block_effects, at epoch start, in fixed order: finalize audits, then expire, prune and slash, then open, then sweep; (3) the number of audits opened per epoch is bounded by a constant; (4) in 4c the epoch and now_secs come from the block context, never from the transaction payload; the responder is the transaction signer; an unknown audit id is a refusal; (5) 4c removes the old ChainCommand::AnswerCodingAudit path (chain_actor.rs about 1291).
+
 ### 6.5e K1 state
 
 - K1-01 (1c3bd7f): A0, A1, plan and emit accept empty content (flag bit1 EMPTY). Not yet complete: the sealed RPC path still refuses empty plaintext (payload_crypt.rs SealError::Empty). K1-01b started (coder-deep): seal accepts empty plaintext through the AEAD (Claude decision: option A, because skipping the seal would open a bypass in the UnsealedGated visibility gate). Opus verify needed after. Mechanical follow-ups: update docs/bud/BUD-KESIF-RAPORU.md line about 98 (coder-lite); transformed.rs from_bytes still refuses empty and has only test callers (small separate step, coder).
