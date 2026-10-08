@@ -177,6 +177,15 @@ Waves (steps in one wave touch different files and may run in parallel; W3 steps
 - Deviations to report: (a) directive 1.3.5, validator does not check bytes (owner decision K1-4); (b) directive 1.3.4, symbol layer stays shared (rqrr), the verifier is independent only at A1 to A3, a second QR reader would be a new decoder (forbidden by 1.1.3); (c) no production client call site yet, today the client point is the bud_storageQrFeedPreview library path, wiring into wallet-core is an architecture question; (d) audit records are node-local (open question 6 unanswered); (e) RPC body cap 1 MiB stays, segmentation is reached above 819,200 bytes; (f) if an xtask gate needs every domain tag in domain_tags.rs, K1-07 must stop and ask.
 - Status at time of writing: K1-01 started (coder). Others not started.
 
+### 6.5c zkVM queue state (architect verified claims at 7bcff68 by reading code)
+
+- Done and Opus verified: B1 (990fdcd), K1-VI-T tests (7bcff68; mutation shows the IS_EXPAND constraint hides a Halt row from Program CTL if removed, so it is a real security constraint).
+- R1 started (coder): Store through r0 makes a memory demand (`is_real_mem_op = is_load * rs1_idx_z + is_store`), VM immediates canonical (P-|imm|), Eq/Neq/SumConservation inverse computed in the field. No Opus.
+- R2 next (coder, Opus verify): register bus write only for the 23 opcodes that write rd; others read rd at its current value; prover register_events fixed for Push/Call/Ret (the VM does not write there). Forgery tests: Store with rd=5 and Push with rd=5 writing a free value. Mutation: replace writes_rd with constant one, both forgery tests must go red.
+- R3 after R2 (coder-deep, Opus verify): r_active boolean and prefix ((1-r_active)*nr_active = 0), strict (idx, clk*4+sub_clk) order with 32 bit decomposition columns 754..786 (TRACE_WIDTH 786). Tests: rejects_register_read_after_inactive_gap, rejects_reordered_register_writes. Two mutation checks so the tests do not mask each other.
+- Observation for R6: VM Syscall sender and nonce values may be >= P (bud-vm lib.rs about 517-519).
+- Known leftover from B1 review: stale comments about VerifyInference expansion in plonky3_air.rs (about 223, 2391-2398, 2617-2621) and plonky3_prover.rs (about 108-112, 1543), dead filler code in the prover (about 685-700, 850-866, 1042-1066, 1335), docs/ARCHITECTURE.md line about 714, VM gas_cost still 10 for VerifyInference, columns 691-693 unconstrained (harmless). Do as a mechanical coder-lite step after R3. locks test (ai_verification_status_locks.rs) only pins the VM arm text; add an AIR assert lock (T3).
+
 ### 6.6 Open owner questions (do not decide; ask later in plain words)
 
 S1 challenge proof check can follow in the zkVM queue (recommend A: move challenges into blocks now, mainnet gate stays closed). S2 parity audit fingerprints (recommend A: audit now, fingerprints later; changes manifest format). S3 penalty is bond only (recommend A). Plus items 1 and 10 of 6.4. All are economic or architecture and are parked by owner order.
