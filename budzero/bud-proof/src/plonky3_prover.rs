@@ -342,11 +342,15 @@ fn memory_events(trace: &[Step]) -> Vec<MemEvent> {
 /// Callers need this to compute `initial_state_root`: the commitment covers
 /// exactly the pre-written words the program read, and getting the set or the
 /// order wrong produces a proof the AIR rejects.
+///
+/// Each read is `(key, value)` with `key = table id * 2^32 + address`, the
+/// number the AIR folds. A memory cell and a storage slot with one address
+/// have two keys.
 pub fn initial_memory_reads(trace: &[Step]) -> Vec<(u64, u64)> {
     memory_events(trace)
         .into_iter()
         .filter(|e| e.is_init)
-        .map(|e| (e.addr, e.val))
+        .map(|e| (mem_key(e.tid, e.addr), e.val))
         .collect()
 }
 
@@ -1285,7 +1289,7 @@ pub fn trace_matrix(
         let mut acc = Goldilocks::ZERO;
         for (i, e) in mem_events.iter().enumerate() {
             if e.is_init {
-                let term = Goldilocks::new(e.addr) * gamma + Goldilocks::new(e.val);
+                let term = Goldilocks::new(mem_key(e.tid, e.addr)) * gamma + Goldilocks::new(e.val);
                 acc = if i == 0 { term } else { acc * beta + term };
             }
             values[i * TRACE_WIDTH + COL_MEM_INIT_ACC] = acc;
@@ -2221,6 +2225,46 @@ mod tests {
                 &mut RowMajorMatrix<Goldilocks>,
             ) + 'static,
     ) -> Result<(), VerifyError> {
+        verify_forged_matrix_full(program, trace, gas_limit, gas_used, None, edit, fix_aux)
+    }
+
+    /// Same as [`verify_forged_matrix`], with the starting memory reads the
+    /// public root commits to stated by the caller, not derived from the
+    /// trace. For forgeries whose only rule left to refuse them is the one
+    /// under test, because the root the honest derivation gives would refuse
+    /// them first.
+    fn verify_forged_matrix_with_reads(
+        program: &[u64],
+        trace: &[Step],
+        gas_limit: u64,
+        gas_used: u64,
+        memory_reads: Vec<(u64, u64)>,
+        edit: impl FnOnce(&mut [Goldilocks]),
+    ) -> Result<(), VerifyError> {
+        verify_forged_matrix_full(
+            program,
+            trace,
+            gas_limit,
+            gas_used,
+            Some(memory_reads),
+            edit,
+            |_, _, _| {},
+        )
+    }
+
+    fn verify_forged_matrix_full(
+        program: &[u64],
+        trace: &[Step],
+        gas_limit: u64,
+        gas_used: u64,
+        memory_reads: Option<Vec<(u64, u64)>>,
+        edit: impl FnOnce(&mut [Goldilocks]),
+        fix_aux: impl FnOnce(
+                &RowMajorMatrix<Goldilocks>,
+                &[MyExtensionField],
+                &mut RowMajorMatrix<Goldilocks>,
+            ) + 'static,
+    ) -> Result<(), VerifyError> {
         let program_bytes: Vec<u8> = program
             .iter()
             .flat_map(|&i| i.to_le_bytes().to_vec())
@@ -2234,7 +2278,9 @@ mod tests {
             chain_id: 1,
             program_hash,
             initial_state_root: crate::adapter::initial_state_root_of(
-                crate::adapter::memory_image_commitment_of_reads(&initial_memory_reads(trace)),
+                crate::adapter::memory_image_commitment_of_reads(
+                    &memory_reads.unwrap_or_else(|| initial_memory_reads(trace)),
+                ),
                 crate::adapter::register_image_commitment_of_reads(&initial_register_reads(trace)),
             ),
             final_state_root: [0u8; 32],
@@ -2748,9 +2794,9 @@ mod tests {
     ///
     /// Carried as an open finding for a long time: `COL_STACK_PTR` is
     /// constrained only in transition (`+1` on push and call, `-1` on pop and
-    /// ret, `0` otherwise) with no range check. The stack sits at `1 << 60` in
-    /// a 64-bit address space, so the question is whether a prover can drive
-    /// the pointer up until it collides with other memory.
+    /// ret, `0` otherwise) with no range check. The stack is table 2 of the
+    /// memory argument, with 32 bit slots, so the question is whether a prover
+    /// can drive the pointer up until it leaves that range.
     ///
     /// It cannot, through three constraints that already exist and were never
     /// read together:
@@ -3581,7 +3627,7 @@ mod tests {
     /// the destination register.
     ///
     /// The memory argument carries it. `Pop` demands a read at
-    /// `STACK_BASE + stack_ptr - 1` whose value is `COL_RD_VAL_NEW`, and the
+    /// stack slot `stack_ptr - 1` whose value is `COL_RD_VAL_NEW`, and the
     /// matching `Push` supplied a write there carrying its `rs1`. Changing the
     /// popped value unbalances the argument against what was pushed.
     ///
@@ -3841,7 +3887,7 @@ mod tests {
     /// rules ties `next_pc` to anything, which is what made it worth testing.
     ///
     /// What holds it is the memory argument, one step removed. `Ret` demands a
-    /// read at `STACK_BASE + stack_ptr - 1` whose value is `COL_NEXT_PC`, and
+    /// read at stack slot `stack_ptr - 1` whose value is `COL_NEXT_PC`, and
     /// `Call` supplies a write at the same address whose value is `pc + 1`.
     /// Redirecting the return means either changing the value read, which
     /// unbalances the argument against what `Call` wrote, or changing the
@@ -7649,12 +7695,15 @@ mod tests {
         }
     }
 
-    /// The memory table row that holds the event `(addr, clk)`.
-    fn find_mem_row(values: &[Goldilocks], addr: u64, clk: u64) -> usize {
+    /// The memory table row that holds the event `(tid, addr, clk)`.
+    fn find_mem_row(values: &[Goldilocks], tid: u64, addr: u64, clk: u64) -> usize {
         (0..values.len() / TRACE_WIDTH)
             .find(|&row| {
                 let at = |col: usize| values[row * TRACE_WIDTH + col].as_canonical_u64();
-                at(COL_MEM_ACTIVE) == 1 && at(COL_MEM_ADDR) == addr && at(COL_MEM_CLK) == clk
+                at(COL_MEM_ACTIVE) == 1
+                    && at(COL_MEM_TID) == tid
+                    && at(COL_MEM_ADDR) == addr
+                    && at(COL_MEM_CLK) == clk
             })
             .expect("the memory event must be in the table")
     }
@@ -7927,8 +7976,8 @@ mod tests {
             verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
                 let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
                 let rows = values.len() / TRACE_WIDTH;
-                let write = find_mem_row(values, 5, 2);
-                let read = find_mem_row(values, 5, 3);
+                let write = find_mem_row(values, TID_MEMORY, 5, 2);
+                let read = find_mem_row(values, TID_MEMORY, 5, 3);
                 assert_eq!(read, write + 1);
                 assert!(read + 1 < rows, "a padding row must follow the table");
                 assert_eq!(values[at(read + 1, COL_MEM_ACTIVE)].as_canonical_u64(), 0);
@@ -7964,6 +8013,13 @@ mod tests {
     /// The bus columns are rebuilt from the edited matrix, and then the
     /// third row is counted with its flag, as the AIR counts it. Nothing
     /// else is touched.
+    ///
+    /// Since the order rule of R4a-2, the two copies of one cell and one time
+    /// also fail the strict clock step, so this table is refused twice. No
+    /// table keeps the cancelling pair and passes the order rule, because the
+    /// two rows would need one term, which means one cell and one time. This
+    /// is an argument, not a mutation result: the check that removes the flag
+    /// rule was not run. The rule stays.
     #[test]
     fn rejects_memory_active_flag_not_boolean() {
         let program = memory_round_trip_program();
@@ -7980,7 +8036,7 @@ mod tests {
             |values| {
                 let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
                 let rows = values.len() / TRACE_WIDTH;
-                let read = find_mem_row(values, 5, 3);
+                let read = find_mem_row(values, TID_MEMORY, 5, 3);
                 assert!(read + 3 < rows, "two padding rows must follow the table");
                 assert_eq!(values[at(read + 1, COL_MEM_ACTIVE)].as_canonical_u64(), 0);
                 assert_eq!(values[at(read + 2, COL_MEM_ACTIVE)].as_canonical_u64(), 0);
@@ -8013,7 +8069,7 @@ mod tests {
                     let term = register_term(
                         alpha,
                         beta,
-                        Goldilocks::ONE,
+                        at(COL_MEM_TID),
                         at(COL_MEM_CLK),
                         at(COL_MEM_ADDR),
                         at(COL_MEM_VAL),
@@ -8047,14 +8103,9 @@ mod tests {
         }
     }
 
-    /// The memory table is sorted by address and then by time. The bus only
-    /// compares the set of events, so it cannot see the order.
-    ///
-    /// Address 5 gets two writes and a read. The forged table lists the
-    /// later write first, so the read follows the earlier write and returns
-    /// its value. The set of events is the same.
-    #[test]
-    fn rejects_reordered_memory_writes() {
+    /// Address 5 gets two writes and a read. Returns the program and the
+    /// honest run.
+    fn memory_reordered_writes_run() -> (Vec<u64>, Vm) {
         let program = vec![
             inst(Opcode::Load, 1, 0, 0, 5),
             inst(Opcode::Load, 2, 0, 0, 7),
@@ -8069,24 +8120,70 @@ mod tests {
         assert!(receipt.success, "the honest run must succeed");
         assert_eq!(vm.trace[5].instruction.opcode, Opcode::Load);
         assert_eq!(vm.trace[5].dst_val, 9);
+        (program, vm)
+    }
 
+    /// Swap the two writes of address 5 and let the read return the earlier
+    /// one. Returns the first row of the three. The order witness stays as the
+    /// honest run left it.
+    fn forge_memory_reordered_writes(values: &mut [Goldilocks]) -> usize {
+        let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+        let early = find_mem_row(values, TID_MEMORY, 5, 2);
+        let late = find_mem_row(values, TID_MEMORY, 5, 4);
+        let read = find_mem_row(values, TID_MEMORY, 5, 5);
+        assert_eq!(late, early + 1);
+        assert_eq!(read, late + 1);
+        swap_mem_rows(values, early, late);
+        values[at(read, COL_MEM_VAL)] = Goldilocks::new(7);
+        let reg = find_reg_row(values, 3, 5, 3);
+        values[at(reg, COL_REG_VAL)] = Goldilocks::new(7);
+        values[at(5, COL_RD_VAL_NEW)] = Goldilocks::new(7);
+        early
+    }
+
+    /// The memory table is sorted by table id, address and then time. The bus
+    /// only compares the set of events, so it cannot see the order.
+    ///
+    /// Address 5 gets two writes and a read. The forged table lists the
+    /// later write first, so the read follows the earlier write and returns
+    /// its value. The set of events is the same.
+    #[test]
+    fn rejects_reordered_memory_writes() {
+        let (program, vm) = memory_reordered_writes_run();
         let verdict =
             verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
-                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
-                let early = find_mem_row(values, 5, 2);
-                let late = find_mem_row(values, 5, 4);
-                let read = find_mem_row(values, 5, 5);
-                assert_eq!(late, early + 1);
-                assert_eq!(read, late + 1);
-                swap_mem_rows(values, early, late);
-                values[at(read, COL_MEM_VAL)] = Goldilocks::new(7);
-                let reg = find_reg_row(values, 3, 5, 3);
-                values[at(reg, COL_REG_VAL)] = Goldilocks::new(7);
-                values[at(5, COL_RD_VAL_NEW)] = Goldilocks::new(7);
+                forge_memory_reordered_writes(values);
             });
         assert!(
             verdict.is_err(),
             "a memory table out of time order was accepted. verdict={verdict:?}"
+        );
+    }
+
+    /// The order witness is a list of bits. The reordered table above has a
+    /// backward step of `-3` from its first row to its second. Here the first
+    /// bit of that row holds `-3` as a field element, so the sum of the bits
+    /// is the step, and only the booleanity of the bit refuses the row. The
+    /// second row gets the honest bits of its forward step, 2.
+    #[test]
+    fn rejects_memory_order_bit_not_boolean() {
+        let (program, vm) = memory_reordered_writes_run();
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let first = forge_memory_reordered_writes(values);
+                let zero = Goldilocks::new(0);
+                for b in 0..MEM_ORD_BITS {
+                    values[(first) * TRACE_WIDTH + COL_MEM_ORD_BITS_BASE + b] = zero;
+                    values[(first + 1) * TRACE_WIDTH + COL_MEM_ORD_BITS_BASE + b] =
+                        Goldilocks::new(u64::from(b == 1));
+                }
+                values[first * TRACE_WIDTH + COL_MEM_ORD_BITS_BASE] =
+                    Goldilocks::new(bud_vm::GOLDILOCKS_P - 3);
+            });
+        assert!(
+            verdict.is_err(),
+            "a backward step with a non-boolean order bit was accepted. \
+             verdict={verdict:?}"
         );
     }
 
@@ -8116,9 +8213,9 @@ mod tests {
             verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
                 let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
                 let zero = Goldilocks::new(0);
-                let write = find_mem_row(values, 5, 2);
-                let read = find_mem_row(values, 5, 5);
-                let other = find_mem_row(values, 16, 4);
+                let write = find_mem_row(values, TID_MEMORY, 5, 2);
+                let read = find_mem_row(values, TID_MEMORY, 5, 5);
+                let other = find_mem_row(values, TID_MEMORY, 16, 4);
                 assert_eq!(read, write + 1);
                 assert_eq!(other, read + 1);
                 swap_mem_rows(values, read, other);
@@ -8144,18 +8241,17 @@ mod tests {
         );
     }
 
-    /// A `Load` address is a number inside the memory table. The honest VM
-    /// refuses an address outside its memory, but the AIR did not, and a
-    /// `Load` at `1 << 60` named the first cell of the stack region.
+    /// A forged run whose last `Load` reads memory at exactly `2^32`.
     ///
-    /// The program pushes 7. The forged trace turns its last step into a
-    /// `Load` through a pointer that holds `1 << 60` and reads 7 back.
-    #[test]
-    fn rejects_cross_table_address_alias() {
+    /// The program builds `2^32` in r1 and then loads an immediate into r3.
+    /// The forged trace turns that last step into a `Load` through r1 that
+    /// reads 0. The address is the first one past the 32 bit range, so the sort
+    /// key `tid * 2^32 + addr` is still below `2^34`, and only the address bits
+    /// can refuse the row. Returns the forged program, the forged trace and
+    /// the two gas figures.
+    fn memory_load_at_2_pow_32() -> (Vec<u64>, Vec<Step>, u64, u64) {
         let program = vec![
-            inst(Opcode::Load, 5, 0, 0, 7),
-            inst(Opcode::Push, 0, 5, 0, 0),
-            inst(Opcode::Load, 1, 0, 0, 1 << 30),
+            inst(Opcode::Load, 1, 0, 0, 1 << 16),
             inst(Opcode::Mul, 1, 1, 1, 0),
             inst(Opcode::Load, 3, 0, 0, 0),
             inst(Opcode::Halt, 0, 0, 0, 0),
@@ -8163,15 +8259,15 @@ mod tests {
         let mut vm = Vm::new(1024);
         let receipt = vm.run_receipt(&program);
         assert!(receipt.success, "the honest run must succeed");
-        assert_eq!(vm.trace[3].dst_val, 1 << 60);
-        assert_eq!(vm.trace[4].instruction.opcode, Opcode::Load);
+        assert_eq!(vm.trace[1].dst_val, 1 << 32);
+        assert_eq!(vm.trace[2].instruction.opcode, Opcode::Load);
 
-        // The load-immediate at pc 4 becomes a load through r1. Both Loads
+        // The load-immediate at pc 2 becomes a load through r1. Both Loads
         // cost the same gas, so the gas figures stay.
         let mut forged_program = program.clone();
-        forged_program[4] = inst(Opcode::Load, 3, 1, 0, 0);
+        forged_program[2] = inst(Opcode::Load, 3, 1, 0, 0);
         let mut trace = vm.trace.clone();
-        let step = &mut trace[4];
+        let step = &mut trace[2];
         step.instruction = Instruction {
             opcode: Opcode::Load,
             rd: 3,
@@ -8180,18 +8276,174 @@ mod tests {
             imm: 0,
         };
         step.src1_idx = 1;
-        step.src1_val = 1 << 60;
-        step.dst_val = 7;
-        step.registers[3] = 7;
-        step.memory_addr = Some(1usize << 60);
-        step.memory_val = Some(7);
+        step.src1_val = 1 << 32;
+        step.dst_val = 0;
+        step.memory_addr = Some(1usize << 32);
+        step.memory_val = Some(0);
         step.is_memory_write = false;
+        (forged_program, trace, vm.gas_limit, vm.gas_used)
+    }
 
-        let verdict = verify_forged_trace(&forged_program, &trace, vm.gas_limit, vm.gas_used);
+    /// A `Load` address is a number inside the memory table, below `2^32`. The
+    /// honest VM refuses an address outside its memory, but the AIR is what a
+    /// verifier trusts, and nothing else bounded the address.
+    ///
+    /// The row keeps the low 32 bits of the address as its bits, which are
+    /// zero here, so the bits do not add up to the address.
+    #[test]
+    fn rejects_memory_load_address_above_32_bits() {
+        let (program, trace, gas_limit, gas_used) = memory_load_at_2_pow_32();
+        let verdict = verify_forged_trace(&program, &trace, gas_limit, gas_used);
         assert!(
             verdict.is_err(),
-            "a load at the base of the stack region was accepted. \
-             verdict={verdict:?}"
+            "a load at address 2^32 was accepted. verdict={verdict:?}"
+        );
+    }
+
+    /// The address bits are bits. Here the first one holds `2^32`, so the
+    /// sum of the bits is the address and only the booleanity of the bit
+    /// refuses the row.
+    #[test]
+    fn rejects_memory_address_bit_not_boolean() {
+        let (program, trace, gas_limit, gas_used) = memory_load_at_2_pow_32();
+        let verdict = verify_forged_matrix(&program, &trace, gas_limit, gas_used, |values| {
+            let row = find_mem_row(values, TID_MEMORY, 1 << 32, 2);
+            values[row * TRACE_WIDTH + COL_MEM_ADDR_BITS_BASE] = Goldilocks::new(1 << 32);
+        });
+        assert!(
+            verdict.is_err(),
+            "an address bit of 2^32 was accepted. verdict={verdict:?}"
+        );
+    }
+
+    /// The table id is part of the cell, and the bus carries it.
+    ///
+    /// The program pushes 7 and then loads memory cell 0, which holds 0. The
+    /// forged table calls the stack write a write to memory cell 0 and moves it
+    /// in front of the load. The load then reads 7 from a block that has no
+    /// starting-image flag, so the public root stays the root of an empty
+    /// image. The CPU side of the bus still names the push as table 2, so only
+    /// the table id on the bus refuses the table.
+    #[test]
+    fn rejects_memory_stack_row_relabelled_as_memory_cell() {
+        let program = vec![
+            inst(Opcode::Load, 5, 0, 0, 7),
+            inst(Opcode::Push, 0, 5, 0, 0),
+            inst(Opcode::Load, 1, 0, 0, 0),
+            inst(Opcode::Load, 3, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[3].instruction.opcode, Opcode::Load);
+        assert_eq!(vm.trace[3].dst_val, 0);
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let load = find_mem_row(values, TID_MEMORY, 0, 3);
+                let push = find_mem_row(values, TID_STACK, 0, 1);
+                assert_eq!(push, load + 1);
+                swap_mem_rows(values, load, push);
+                // The first row is now the push, called a memory write. The
+                // two rows are one cell, so the first one continues into the
+                // second and the step is the clock step minus one.
+                values[at(load, COL_MEM_TID)] = Goldilocks::new(TID_MEMORY);
+                values[at(load, COL_MEM_SAME)] = Goldilocks::new(1);
+                values[at(load, COL_MEM_SAME_INV)] = Goldilocks::new(0);
+                for b in 0..MEM_ORD_BITS {
+                    values[at(load, COL_MEM_ORD_BITS_BASE + b)] =
+                        Goldilocks::new(u64::from(b == 0));
+                }
+                values[at(push, COL_MEM_VAL)] = Goldilocks::new(7);
+                let reg = find_reg_row(values, 3, 3, 3);
+                values[at(reg, COL_REG_VAL)] = Goldilocks::new(7);
+                values[at(3, COL_RD_VAL_NEW)] = Goldilocks::new(7);
+            });
+        assert!(
+            verdict.is_err(),
+            "a stack write was read back as memory cell 0 and the proof \
+             verified. verdict={verdict:?}"
+        );
+    }
+
+    /// An active memory row names table 1, 2 or 3. Here both rows of a cell
+    /// name table 0 or table 4.
+    ///
+    /// The CPU side of the bus names table 1 for these events, so the bus
+    /// refuses the table too. The range rule is a second wall: the sort key
+    /// is a 34 bit number only while the table id is small.
+    #[test]
+    fn rejects_memory_row_with_table_id_outside_one_to_three() {
+        let program = memory_round_trip_program();
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+
+        for forged_tid in [0u64, 4] {
+            let verdict =
+                verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                    let write = find_mem_row(values, TID_MEMORY, 5, 2);
+                    let read = find_mem_row(values, TID_MEMORY, 5, 3);
+                    for row in [write, read] {
+                        values[row * TRACE_WIDTH + COL_MEM_TID] = Goldilocks::new(forged_tid);
+                    }
+                });
+            assert!(
+                verdict.is_err(),
+                "a memory row with table id {forged_tid} was accepted. verdict={verdict:?}"
+            );
+        }
+    }
+
+    /// The root names the table of a starting read.
+    ///
+    /// The host seeds memory cell 5 with 7 and a program reads it. A second
+    /// program reads storage slot 5, which holds 7 too. Before the table id
+    /// was part of the fold, both reads gave one term, so the root of the
+    /// first run was the root of the second. The forged proof is the storage
+    /// run, stated with the root of the memory run.
+    #[test]
+    fn rejects_memory_image_root_that_names_a_storage_slot() {
+        let memory_program = vec![
+            inst(Opcode::Load, 2, 0, 0, 5),
+            inst(Opcode::Load, 1, 2, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut memory_vm = Vm::new(1024);
+        memory_vm.memory[5..13].copy_from_slice(&7u64.to_le_bytes());
+        let receipt = memory_vm.run_receipt(&memory_program);
+        assert!(receipt.success, "the memory run must succeed");
+        let memory_reads = initial_memory_reads(&memory_vm.trace);
+        assert_eq!(
+            memory_reads.len(),
+            1,
+            "the memory run reads one seeded cell"
+        );
+
+        let storage_program = vec![
+            inst(Opcode::SRead, 1, 0, 0, 5),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        vm.storage.insert(5, 7);
+        let receipt = vm.run_receipt(&storage_program);
+        assert!(receipt.success, "the storage run must succeed");
+        assert_eq!(initial_memory_reads(&vm.trace).len(), 1);
+
+        let verdict = verify_forged_matrix_with_reads(
+            &storage_program,
+            &vm.trace,
+            vm.gas_limit,
+            vm.gas_used,
+            memory_reads,
+            |_| {},
+        );
+        assert!(
+            verdict.is_err(),
+            "the root of a seeded memory cell was accepted for a seeded \
+             storage slot. verdict={verdict:?}"
         );
     }
 
@@ -8199,6 +8451,12 @@ mod tests {
     /// Here it is cleared on the write of address 5, so the read after it only
     /// has to be zero, and it is. Its value is 0 and it is not flagged as
     /// starting state.
+    ///
+    /// Since the order rule of R4a-2, a cleared flag on two rows of one cell
+    /// also makes the step `-1`, which has no 34 bit form, so this table is
+    /// refused by the order rule as well as by the inverse witness. A cleared
+    /// flag cannot pass the order rule at all. This is an argument, not a
+    /// mutation result: the check that removes the inverse rule was not run.
     #[test]
     fn rejects_memory_same_flag_cleared_on_same_address() {
         let program = memory_round_trip_program();
@@ -8210,8 +8468,8 @@ mod tests {
         let verdict =
             verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
                 let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
-                let write = find_mem_row(values, 5, 2);
-                let read = find_mem_row(values, 5, 3);
+                let write = find_mem_row(values, TID_MEMORY, 5, 2);
+                let read = find_mem_row(values, TID_MEMORY, 5, 3);
                 assert_eq!(read, write + 1);
                 assert_eq!(values[at(write, COL_MEM_SAME)].as_canonical_u64(), 1);
                 values[at(write, COL_MEM_SAME)] = Goldilocks::new(0);
@@ -8245,7 +8503,7 @@ mod tests {
             verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
                 let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
                 let rows = values.len() / TRACE_WIDTH;
-                let read = find_mem_row(values, 0, 2);
+                let read = find_mem_row(values, TID_MEMORY, 0, 2);
                 assert!(read + 1 < rows, "a padding row must follow the table");
                 assert_eq!(values[at(read + 1, COL_MEM_ACTIVE)].as_canonical_u64(), 0);
                 values[at(read + 1, COL_MEM_IS_INIT)] = Goldilocks::new(1);
@@ -8257,10 +8515,13 @@ mod tests {
         );
     }
 
-    /// The starting-image flag marks the first row of an address block and
-    /// nothing else. Here the read after the write of address 0 carries it.
-    /// Address and value are zero, so the fold does not move and the public
-    /// root still matches.
+    /// The starting-image flag marks the first row of a cell block and nothing
+    /// else. Here the read after the write of memory cell 0 carries it.
+    ///
+    /// The flag moves the fold, so the forged matrix carries the new
+    /// accumulator on the rows after the read, and the public root is the root
+    /// of that one starting read. The fold, the root and the cell rules hold.
+    /// Only the rule on the flag inside a block is left to refuse the table.
     #[test]
     fn rejects_memory_init_flag_inside_a_block() {
         let program = memory_zero_round_trip_program();
@@ -8272,15 +8533,28 @@ mod tests {
             "the program must start from an empty memory image"
         );
 
-        let verdict =
-            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+        let key = mem_key(TID_MEMORY, 0);
+        let verdict = verify_forged_matrix_with_reads(
+            &program,
+            &vm.trace,
+            vm.gas_limit,
+            vm.gas_used,
+            vec![(key, 0)],
+            |values| {
                 let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
-                let write = find_mem_row(values, 0, 1);
-                let read = find_mem_row(values, 0, 2);
+                let rows = values.len() / TRACE_WIDTH;
+                let write = find_mem_row(values, TID_MEMORY, 0, 1);
+                let read = find_mem_row(values, TID_MEMORY, 0, 2);
                 assert_eq!(read, write + 1);
                 assert_eq!(values[at(write, COL_MEM_SAME)].as_canonical_u64(), 1);
                 values[at(read, COL_MEM_IS_INIT)] = Goldilocks::new(1);
-            });
+                // The fold of one starting read with value 0: key * gamma.
+                let acc = Goldilocks::new(key) * Goldilocks::new(MEM_INIT_GAMMA);
+                for row in read..rows {
+                    values[at(row, COL_MEM_INIT_ACC)] = acc;
+                }
+            },
+        );
         assert!(
             verdict.is_err(),
             "the starting-image flag was accepted inside a memory block. \

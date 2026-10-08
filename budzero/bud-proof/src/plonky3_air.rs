@@ -624,9 +624,9 @@ pub const COL_PROG_MULT: usize = 753;
 pub const COL_REG_ORD_BITS_BASE: usize = 754;
 pub const REG_ORD_BITS: usize = 32;
 
-/// Inverse witness pinning `COL_MEM_SAME` to the address equality it claims.
+/// Inverse witness pinning `COL_MEM_SAME` to the cell equality it claims.
 ///
-/// Same shape as [`COL_REG_SAME_INV`], over `diff = next_addr - addr`:
+/// Same shape as [`COL_REG_SAME_INV`], over `diff = next_key - key`:
 /// `diff * inv` is boolean, `diff * (1 - diff * inv) == 0`, and `m_same` equals
 /// `1 - diff * inv`. Before this column a prover could write zero for
 /// `m_same` on two rows of one address, turning off the value continuity
@@ -658,7 +658,7 @@ pub const MEM_ADDR_BITS: usize = 32;
 /// of active rows the step is `clk' - clk - 1` when both rows name one cell and
 /// `key' - key - 1` when they do not. A step that goes backward is a field
 /// element near `2^64` and has no 34 bit form. This holds because `clk` is
-/// below `2^28` and `key` is below `2^34`.
+/// below `MAX_TRACE_LEN` (`2^20`, see `adapter.rs`) and `key` is below `2^34`.
 pub const COL_MEM_ORD_BITS_BASE: usize = 820;
 pub const MEM_ORD_BITS: usize = 34;
 
@@ -2361,7 +2361,7 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         {
             let nclk: AB::Expr = nxt[COL_MEM_CLK].into();
             let step = m_same.clone() * (nclk - m_clk.clone() - one.clone())
-                + (one.clone() - m_same.clone()) * (nm_key - m_key - one.clone());
+                + (one.clone() - m_same.clone()) * (nm_key.clone() - m_key.clone() - one.clone());
             let mut bits_sum = AB::Expr::from(AB::F::ZERO);
             for i in 0..MEM_ORD_BITS {
                 let bit: AB::Expr = cur[COL_MEM_ORD_BITS_BASE + i].into();
@@ -2425,8 +2425,11 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         // Fold every initial-image row into the accumulator.
         //
         //   acc' = acc                       when the next row is not seeded
-        //   acc' = acc*BETA + addr*GAMMA + val   when it is
+        //   acc' = acc*BETA + key*GAMMA + val    when it is
         //
+        // The key is the sort key `tid * 2^32 + addr`, not the bare address.
+        // Memory cell 5 and storage slot 5 share an address, and a bare
+        // address would give them one term, so one root would stand for both.
         // The first row starts the fold from zero, so an empty image gives a
         // zero accumulator and matches an all-zero `initial_state_root` - the
         // behaviour every existing program relies on.
@@ -2436,15 +2439,14 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
             let acc: AB::Expr = cur[COL_MEM_INIT_ACC].into();
             let nacc: AB::Expr = nxt[COL_MEM_INIT_ACC].into();
             let nm_val_e: AB::Expr = nxt[COL_MEM_VAL].into();
-            let nm_addr_e: AB::Expr = nxt[COL_MEM_ADDR].into();
 
             // First row: acc is the fold of that row alone, or zero.
             builder.when_first_row().assert_eq(
                 acc.clone(),
-                m_is_init.clone() * (m_addr.clone() * gamma.clone() + m_val.clone()),
+                m_is_init.clone() * (m_key * gamma.clone() + m_val.clone()),
             );
 
-            let folded = acc.clone() * beta + nm_addr_e * gamma + nm_val_e;
+            let folded = acc.clone() * beta + nm_key * gamma + nm_val_e;
             builder
                 .when_transition()
                 .assert_eq(nacc, acc.clone() + nm_is_init.clone() * (folded - acc));
