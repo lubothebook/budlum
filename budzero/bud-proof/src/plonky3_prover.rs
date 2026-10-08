@@ -96,6 +96,49 @@ fn build_config() -> MyConfig {
     MyConfig::new_with_security(pcs, challenger, security)
 }
 
+/// Whether the VM writes `rd` for this opcode. The same 23 opcodes the AIR sums
+/// into `writes_rd`.
+fn opcode_writes_rd(op: bud_isa::Opcode) -> bool {
+    use bud_isa::Opcode as O;
+    matches!(
+        op,
+        O::Add
+            | O::Sub
+            | O::Mul
+            | O::Div
+            | O::Inv
+            | O::And
+            | O::Not
+            | O::Load
+            | O::Pop
+            | O::Eq
+            | O::Neq
+            | O::Lt
+            | O::Gt
+            | O::Lte
+            | O::Gte
+            | O::SRead
+            | O::Poseidon
+            | O::Syscall
+            | O::VerifyMerkle
+            | O::VerifyInference
+            | O::PrivacyCommit
+            | O::NullifierCheck
+            | O::SumConservation
+    )
+}
+
+/// The value `rd` holds while this step runs. An opcode that writes no
+/// register leaves it alone, so the register file after the step is the same
+/// file the step started from.
+fn rd_value_kept(step: &Step) -> u64 {
+    if step.dst_idx == 0 {
+        0
+    } else {
+        step.registers[step.dst_idx as usize]
+    }
+}
+
 fn register_events(trace: &[Step]) -> Vec<RegEvent> {
     let mut events = Vec::new();
 
@@ -129,11 +172,18 @@ fn register_events(trace: &[Step]) -> Vec<RegEvent> {
             sub_clk: 2,
             is_init: false,
         });
+        let writes_rd = opcode_writes_rd(step.instruction.opcode);
         events.push(RegEvent {
             clk,
             idx: step.dst_idx as u64,
-            val: if step.dst_idx == 0 { 0 } else { step.dst_val },
-            is_write: true,
+            val: if step.dst_idx == 0 {
+                0
+            } else if writes_rd {
+                step.dst_val
+            } else {
+                rd_value_kept(step)
+            },
+            is_write: writes_rd,
             sub_clk: 3,
             is_init: false,
         });
@@ -432,7 +482,14 @@ pub fn trace_matrix(
         // r1, r2` then asked the AIR for `0 == rs1 + rs2`, so any program
         // writing to r0 could run and never be proved. The zeroing now happens
         // where it belongs, on the register bus, gated by COL_RD_IDX_INV.
-        values[row_start + COL_RD_VAL_NEW] = Goldilocks::new(step.dst_val);
+        // An opcode that writes no register reads `rd` at its current value,
+        // which is what the register bus expects of it.
+        values[row_start + COL_RD_VAL_NEW] =
+            Goldilocks::new(if opcode_writes_rd(step.instruction.opcode) {
+                step.dst_val
+            } else {
+                rd_value_kept(step)
+            });
         // Inverse witness deciding, in circuit, whether this row writes to r0.
         values[row_start + COL_RD_IDX_INV] = Goldilocks::new(if step.dst_idx == 0 {
             0
@@ -1378,6 +1435,29 @@ fn aux_trace_generator(
             // honest side any other way leaves the argument unbalanced on
             // every program that writes to r0.
             let rd_idx_z = rd_idx * row[COL_RD_IDX_INV];
+            let writes_rd = is_add
+                + is_sub
+                + is_mul
+                + is_div
+                + is_inv
+                + is_and
+                + is_not
+                + is_load
+                + is_pop
+                + is_eq
+                + is_neq
+                + is_lt
+                + is_gt
+                + is_lte
+                + is_gte
+                + is_sread
+                + is_poseidon
+                + is_syscall
+                + is_verify_merkle
+                + is_privacy_commit
+                + is_nullifier_check
+                + is_sum_conservation
+                + is_verify_inference;
             let c_rd = register_term(
                 alpha,
                 beta,
@@ -1385,7 +1465,7 @@ fn aux_trace_generator(
                 clk_rd,
                 rd_idx,
                 rd_val_new * rd_idx_z,
-                Goldilocks::ONE,
+                writes_rd,
             );
             let c_reg = register_term(
                 alpha,
@@ -2011,6 +2091,19 @@ mod tests {
         gas_limit: u64,
         gas_used: u64,
     ) -> Result<(), VerifyError> {
+        verify_forged_matrix(program, trace, gas_limit, gas_used, |_| {})
+    }
+
+    /// Same as [`verify_forged_trace`], with a hook that edits the finished
+    /// matrix before it is proved. For forgeries a step list cannot express,
+    /// because the trace builder derives the cell from honest state.
+    fn verify_forged_matrix(
+        program: &[u64],
+        trace: &[Step],
+        gas_limit: u64,
+        gas_used: u64,
+        edit: impl FnOnce(&mut [Goldilocks]),
+    ) -> Result<(), VerifyError> {
         let program_bytes: Vec<u8> = program
             .iter()
             .flat_map(|&i| i.to_le_bytes().to_vec())
@@ -2039,7 +2132,8 @@ mod tests {
             state_writes_digest: [0u8; 32],
         };
 
-        let (matrix, n_cpu) = trace_matrix(trace, program, &pi);
+        let (mut matrix, n_cpu) = trace_matrix(trace, program, &pi);
+        edit(&mut matrix.values);
         let matrix = RowMajorMatrix::new(matrix.values, TRACE_WIDTH);
         let air = BudAir {
             num_steps: trace.len(),
@@ -7146,6 +7240,131 @@ mod tests {
             "an honest program that writes to r0 was rejected; the r0 rule has \
              been written against the wrong column"
         );
+    }
+
+    /// Programs whose instruction at `at` names r5 as `rd` without writing it,
+    /// followed by an `Add` that reads r5. The VM leaves r5 at 3.
+    fn non_writing_rd_programs() -> Vec<(&'static str, Vec<u64>, usize)> {
+        vec![
+            (
+                "Store",
+                vec![
+                    inst(Opcode::Load, 5, 0, 0, 3),
+                    inst(Opcode::Load, 1, 0, 0, 8),
+                    inst(Opcode::Load, 2, 0, 0, 1),
+                    inst(Opcode::Store, 5, 1, 2, 0),
+                    inst(Opcode::Add, 6, 5, 0, 0),
+                    inst(Opcode::Halt, 0, 0, 0, 0),
+                ],
+                3,
+            ),
+            (
+                "Push",
+                vec![
+                    inst(Opcode::Load, 5, 0, 0, 3),
+                    inst(Opcode::Load, 1, 0, 0, 7),
+                    inst(Opcode::Push, 5, 1, 0, 0),
+                    inst(Opcode::Add, 6, 5, 0, 0),
+                    inst(Opcode::Halt, 0, 0, 0, 0),
+                ],
+                2,
+            ),
+            (
+                "Call and Ret",
+                vec![
+                    inst(Opcode::Load, 5, 0, 0, 3),
+                    inst(Opcode::Call, 5, 0, 0, 3),
+                    inst(Opcode::Add, 6, 5, 0, 0),
+                    inst(Opcode::Halt, 0, 0, 0, 0),
+                    inst(Opcode::Ret, 5, 0, 0, 0),
+                ],
+                1,
+            ),
+        ]
+    }
+
+    /// An opcode that writes no register must not be able to give `rd` a
+    /// value.
+    ///
+    /// The register bus used to publish a write for the `rd` slot of every
+    /// row, so `Store r5, ...` could write anything into r5 as long as the
+    /// next reader of r5 agreed. The forged matrix below is the proof such a
+    /// prover would hand in: the Store row carries `rd_val_new = 1000`, the
+    /// register table holds a write of 1000 at the Store's slot, and every
+    /// later r5 event and the `Add` that reads it follow. Nothing but the
+    /// "does this opcode write" rule stands between it and acceptance.
+    #[test]
+    fn rejects_a_register_write_from_an_opcode_that_writes_none() {
+        const FORGED: u64 = 1000;
+        for (name, program, at) in non_writing_rd_programs() {
+            // Call and Ret are covered by the honest test; the Add after them
+            // sits two steps on, so the forgery targets Store and Push only.
+            if name == "Call and Ret" {
+                continue;
+            }
+            let mut vm = Vm::new(1024);
+            let receipt = vm.run_receipt(&program);
+            assert!(receipt.success, "{name}: the honest run must succeed");
+            assert_eq!(vm.registers[5], 3, "{name}: the VM must leave r5 alone");
+            let k = vm
+                .trace
+                .iter()
+                .position(|s| s.pc == at)
+                .expect("the non-writing step must be in the trace");
+            assert_eq!(vm.trace[k + 1].instruction.opcode, Opcode::Add);
+
+            let verdict =
+                verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                    let set = |values: &mut [Goldilocks], row: usize, col: usize, v: u64| {
+                        values[row * TRACE_WIDTH + col] = Goldilocks::new(v);
+                    };
+                    set(values, k, COL_RD_VAL_NEW, FORGED);
+                    set(values, k + 1, COL_RS1_VAL, FORGED);
+                    set(values, k + 1, COL_RD_VAL_NEW, FORGED);
+                    let rows = values.len() / TRACE_WIDTH;
+                    for row in 0..rows {
+                        let at_ = row * TRACE_WIDTH;
+                        if values[at_ + COL_REG_ACTIVE].as_canonical_u64() != 1 {
+                            continue;
+                        }
+                        let idx = values[at_ + COL_REG_IDX].as_canonical_u64();
+                        let clk = values[at_ + COL_REG_CLK].as_canonical_u64();
+                        let sub = values[at_ + COL_REG_SUB_CLK].as_canonical_u64();
+                        if idx == 5 && clk >= k as u64 {
+                            set(values, row, COL_REG_VAL, FORGED);
+                            if clk == k as u64 && sub == 3 {
+                                set(values, row, COL_REG_IS_WRITE, 1);
+                            }
+                        }
+                        if idx == 6 && clk == k as u64 + 1 && sub == 3 {
+                            set(values, row, COL_REG_VAL, FORGED);
+                        }
+                    }
+                });
+            assert!(
+                verdict.is_err(),
+                "{name}: an opcode that writes no register gave r5 a value of \
+                 its own choosing and the proof verified. verdict={verdict:?}"
+            );
+        }
+    }
+
+    /// An opcode that writes no register still names an `rd`, and honest
+    /// programs must stay provable: the slot is a read of r5's current value.
+    #[test]
+    fn proves_non_writing_opcode_with_nonzero_rd() {
+        for (name, program, _) in non_writing_rd_programs() {
+            let mut vm = Vm::new(1024);
+            let receipt = vm.run_receipt(&program);
+            assert!(receipt.success, "{name}: the honest run must succeed");
+            assert_eq!(vm.registers[5], 3, "{name}: r5 must stay at 3");
+            let verdict = verify_forged_trace(&program, &vm.trace, vm.gas_limit, vm.gas_used);
+            assert!(
+                verdict.is_ok(),
+                "{name}: an honest program with a non-zero rd on an opcode \
+                 that writes none must verify. verdict={verdict:?}"
+            );
+        }
     }
 
     /// A prover must not relabel an instruction as a different one.

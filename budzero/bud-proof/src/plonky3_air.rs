@@ -2360,12 +2360,44 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
             builder.assert_zero(rd_idx.clone() * (one.clone() - rd_idx_z.clone()));
             let rd_written = rd_val_new.clone() * rd_idx_z;
 
+            // Only the opcodes that write `rd` publish a write. Every other
+            // row reads `rd` at its current value, so the register table, and
+            // not the prover, decides what that value is. The selectors are
+            // mutually exclusive, so the sum is boolean. VerifyInference is
+            // left out: its selector is held at zero above and the opcode is
+            // outside `is_real_op`.
+            // Some selectors were moved into `when(...)` above, so they are
+            // read from the row again here.
+            let sel = |col: usize| -> AB::Expr { cur[col].into() };
+            let writes_rd = sel(COL_IS_ADD)
+                + sel(COL_IS_SUB)
+                + sel(COL_IS_MUL)
+                + sel(COL_IS_DIV)
+                + sel(COL_IS_INV)
+                + sel(COL_IS_AND)
+                + sel(COL_IS_NOT)
+                + sel(COL_IS_LOAD)
+                + sel(COL_IS_POP)
+                + sel(COL_IS_EQ)
+                + sel(COL_IS_NEQ)
+                + sel(COL_IS_LT)
+                + sel(COL_IS_GT)
+                + sel(COL_IS_LTE)
+                + sel(COL_IS_GTE)
+                + sel(COL_IS_SREAD)
+                + sel(COL_IS_POSEIDON)
+                + sel(COL_IS_SYSCALL)
+                + sel(COL_IS_VERIFY_MERKLE)
+                + sel(COL_IS_PRIVACY_COMMIT)
+                + sel(COL_IS_NULLIFIER_CHECK)
+                + sel(COL_IS_SUM_CONSERVATION);
+
             let c_rd = term(
                 table_reg.clone(),
                 clk_rd,
                 rd_idx.clone(),
                 rd_written,
-                one.clone(),
+                writes_rd,
             );
             let c_reg = term(
                 table_reg.clone(),
