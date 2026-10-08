@@ -335,6 +335,13 @@ pub struct AccountState {
     /// `current_block_height`: not hashed, not persisted, and set before every
     /// application.
     pub current_block_unix_secs: u64,
+    /// Entropy of the block being applied, derived from the previous block
+    /// hash and the block VRF output. A signer cannot know it when signing,
+    /// so in-block execution may use it as a randomness source. Block context
+    /// like `current_block_unix_secs`: not hashed, not persisted, and set
+    /// before every application. Transaction validity must not depend on it,
+    /// because the block producer selects transactions before the VRF exists.
+    pub current_block_entropy: [u8; 32],
     pub governance: GovernanceState,
     pub base_fee: u64,
     /// Legacy EIP-1559 preview records. Not part of live flat-fee settlement.
@@ -398,6 +405,7 @@ impl AccountState {
             last_epoch_time: 0,
             current_block_height: 0,
             current_block_unix_secs: 0,
+            current_block_entropy: [0u8; 32],
             governance: GovernanceState::default(),
             bns_registry: crate::bns::BnsRegistry::new(),
             nft_registry: crate::socialfi::NftRegistry::new(),
@@ -447,6 +455,7 @@ impl AccountState {
             last_epoch_time: 0,
             current_block_height: 0,
             current_block_unix_secs: 0,
+            current_block_entropy: [0u8; 32],
             governance: GovernanceState::default(),
             storage_registry: StorageRegistry::new(),
             ai_registry: crate::ai::registry::AiRegistry::new(),
@@ -518,6 +527,7 @@ impl AccountState {
             last_epoch_time: 0,
             current_block_height: 0,
             current_block_unix_secs: 0,
+            current_block_entropy: [0u8; 32],
             governance: GovernanceState::default(),
             bns_registry: crate::bns::BnsRegistry::new(),
             nft_registry: crate::socialfi::NftRegistry::new(),
@@ -600,6 +610,7 @@ impl AccountState {
             epoch_index: snapshot.epoch_index,
             current_block_height: snapshot.height,
             current_block_unix_secs: 0,
+            current_block_entropy: [0u8; 32],
             last_epoch_time: snapshot.last_epoch_time,
             bns_registry: snapshot.bns_registry.clone().unwrap_or_default(),
             nft_registry: snapshot.nft_registry.clone().unwrap_or_default(),
