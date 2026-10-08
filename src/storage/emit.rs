@@ -673,6 +673,11 @@ fn hex(bytes: [u8; 32]) -> String {
     out
 }
 
+/// Bytes a seal adds to the body: the sealed header (magic, version, nonce24)
+/// plus the 16 byte Poly1305 tag (`payload_crypt` `open_payload` reads the same
+/// `SEALED_HEADER_LEN + 16` minimum). A sealed body is never shorter than this.
+const SEAL_OVERHEAD: usize = SEALED_HEADER_LEN + 16;
+
 /// Everything the ceilings say about a body before a single drop is built.
 ///
 /// The bound is computed on `len + THREE_PAYLOAD_HEADER_LEN`, not on `len`:
@@ -737,7 +742,15 @@ fn plan(content: &[u8], policy: &EmitPolicy) -> Result<(u16, u32), EmitError> {
         return Err(EmitError::ZeroBlockLen);
     }
     let blok = usize::from(policy.block_len);
-    let bloklar = len.saturating_add(THREE_PAYLOAD_HEADER_LEN).div_ceil(blok);
+    let sealed_extra = if policy.seal_seed.is_some() {
+        SEAL_OVERHEAD
+    } else {
+        0
+    };
+    let bloklar = len
+        .saturating_add(THREE_PAYLOAD_HEADER_LEN)
+        .saturating_add(sealed_extra)
+        .div_ceil(blok);
     let k = u16::try_from(bloklar).map_err(|_| EmitError::TooManyBlocks {
         k: MAX_K,
         limit: MAX_K,
@@ -1537,6 +1550,57 @@ mod tests {
         };
         qr_feed_frames_burst(&[], &sealed, 0, 1).expect("sealed empty burst");
         qr_feed_frames_burst(&[], &EmitPolicy::default(), 0, 1).expect("plain empty burst");
+    }
+
+    fn sealed_policy(block_len: u16) -> EmitPolicy {
+        EmitPolicy {
+            block_len,
+            seal_seed: Some([5u8; 32]),
+            ..EmitPolicy::default()
+        }
+    }
+
+    #[test]
+    fn sealed_preview_is_ok_for_small_block_lens() {
+        for bl in [64u16, 128, 200] {
+            for n in [0usize, 1, 10, 100, 1000] {
+                let p = qr_feed_preview(&body(n), &sealed_policy(bl), None)
+                    .unwrap_or_else(|e| panic!("sealed preview n={n} bl={bl}: {e:?}"));
+                assert!(p.planned_drops <= p.drop_bound);
+                assert!(p.k >= p.preflight_k);
+            }
+        }
+    }
+
+    #[test]
+    fn sealed_burst_is_ok_for_small_block_len() {
+        for n in [0usize, 10] {
+            qr_feed_frames_burst(&body(n), &sealed_policy(64), 0, 1)
+                .unwrap_or_else(|e| panic!("sealed burst n={n} bl=64: {e:?}"));
+        }
+    }
+
+    #[test]
+    fn sealed_overhead_matches_a_real_seal() {
+        let key = PayloadKey::derive(&[5u8; 32]);
+        let sealed = crate::storage::payload_crypt::seal_payload_csprng(&key, &[]).unwrap();
+        assert_eq!(sealed.len(), SEAL_OVERHEAD);
+    }
+
+    #[test]
+    fn unsealed_plan_is_unchanged_by_the_seal_overhead() {
+        for bl in [64u16, 128, 200, 1024] {
+            for n in [0usize, 1, 10, 100, 1000, 5000] {
+                let policy = EmitPolicy {
+                    block_len: bl,
+                    ..EmitPolicy::default()
+                };
+                let (k, drops) = plan(&body(n), &policy).expect("plain plan");
+                let want_k = (n + THREE_PAYLOAD_HEADER_LEN).div_ceil(usize::from(bl));
+                assert_eq!(usize::from(k), want_k, "n={n} bl={bl}");
+                assert_eq!(drops, oneshot_drop_count(k, ONESHOT_REPAIR_PERMILLAGE));
+            }
+        }
     }
 
     #[test]

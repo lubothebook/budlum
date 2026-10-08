@@ -1229,11 +1229,11 @@ mod rpc_tests {
         let (server, _chain) = setup().await;
         let seed = "ab".repeat(32);
         server
-            .storage_qr_feed_preview(String::new(), 200, None, Some(seed.clone()))
+            .storage_qr_feed_preview(String::new(), 64, None, Some(seed.clone()))
             .await
             .expect("sealed empty preview");
         let burst = server
-            .storage_qr_feed_frames(String::new(), 200, 0, 1, Some(seed))
+            .storage_qr_feed_frames(String::new(), 64, 0, 1, Some(seed))
             .await
             .expect("sealed empty frames");
         assert_eq!(burst["count"], 1);
