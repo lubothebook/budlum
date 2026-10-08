@@ -1,6 +1,6 @@
 # MODEL YÖNLENDİRME (Budlum, Claude Pro, Claude Code)
 
-Sürüm: SERT-2, 8 Ekim 2026. Bu dosya her turda bağlama girer, bu yüzden kısadır. Tam metin ve gerekçe: `MODEL_ROUTING_REF.md` (bağlanmaz, gerekirse okunur). Kurulum: `MODEL_ROUTING_KURULUM.md`.
+Sürüm: SERT-3, 8 Ekim 2026. Bu dosya her turda bağlama girer, bu yüzden kısadır. Tam metin ve gerekçe: `MODEL_ROUTING_REF.md` (bağlanmaz, gerekirse okunur). Kurulum: `MODEL_ROUTING_KURULUM.md`.
 Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karşılığı olmayan durumda dur, §8 kullan, varsayma.
 
 ## 1. Ajanlar
@@ -17,6 +17,7 @@ Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karş�
 
 - Mekanik iş: biçim, yeniden adlandırma, doküman, import düzeni, clippy'nin açıkça önerdiği düzeltme. Davranış değişmez. R3'te mekanik iş yoktur.
 - "Karmaşıklık: yüksek" (architect işaretler): iki veya daha fazla modül, durum geçişi veya imza/doğrulama mantığı değişiyor, ya da değişmezler listesi 3 maddeyi aşıyor.
+- scout yalnızca belirli sembol, çağrı yeri veya dosya bulmak içindir. Toplu Haiku taraması (modül başına 12 kontrol) yapılmaz: 9 grup taraması verimsiz çıktı, doğrulanan ipuçlarının hiçbiri bulgu değildi. Bulgu avı doğrudan Opus ile yapılır.
 - Opus ajanları (finder, architect, finder-max) dosya yazmaz. Opus kod yazmaz.
 - Ana oturum `opusplan`. Plan ve doğrulama `architect` ajanına devredilir, plan moduna güvenilmez.
 - Fable ve "Requires usage credits" yazan model seçilmez.
@@ -43,7 +44,7 @@ Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karş�
 2.5 Faz beyanı. Her faz başlamadan önce tek satır yazılır:
 `FAZ: <keşif|bulgu|plan|kod|mekanik|doğrulama> | KADEME: R<0-3> | AJAN: <ad> | EFFORT: <seviye> | NEDEN: <en fazla 8 kelime>`
 
-2.6 Bulgu avı. finder: R3 modülünde ilk tarama, ya da önceki taramadan sonra imza/doğrulama, konsensüs durum makinesi, tokenomics parametresi veya kalıcılık formatı değiştiyse. architect: önceki tarama kaydı STATUS.md veya memanto'da varsa ve yalnızca `git diff <son-taranan-commit>..HEAD` taranıyorsa; ve tüm R2 taramalarında. R1 ve R0'da bulgu avı yapılmaz.
+2.6 Bulgu avı. finder: R3 modülünde ilk tarama, ya da önceki taramadan sonra imza/doğrulama, konsensüs durum makinesi, tokenomics parametresi veya kalıcılık formatı değiştiyse. architect: önceki tarama kaydı STATUS.md veya memanto'da varsa ve yalnızca `git diff <son-taranan-commit>..HEAD` taranıyorsa; ve tüm R2 taramalarında. R1 ve R0'da bulgu avı yapılmaz. Claude bulgu avını Ayaz'dan istemeden başlatır: R3 modülleri sırayla taranır, her seferinde bir finder (§4). Bulgu raporları repoya yazılmaz (§12.10), scratchpad'te tutulur ve özel kanala (docs/SECURITY.md) bildirilir.
 
 2.7 Handoff'taki "Ajan" alanı bağlayıcıdır. Boşsa Claude tablodan seçer ve beyan eder.
 

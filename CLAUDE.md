@@ -1,7 +1,7 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.4 (2026-10-08). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Sürüm: 1.5 (2026-10-08). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızca Ayaz'ın onayıyla yapılır.
 
 ## 0. Dosyalar
 
@@ -15,7 +15,7 @@ Sürüm: 1.4 (2026-10-08). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızc
 | BUD-AI-KAPSAMLI-DIREKTIF.md | Yalnızca BUD işinde (bağlanmaz) |
 
 - Çelişki: model, effort, ajan, okuma, maliyet, onay konularında MODEL_ROUTING.md geçerlidir. Amaç ve çalışma ritminde CLAUDE.md geçerlidir.
-- Kalıcı kararlar memanto'dadır. Repo, dal ve görev yönlendirmesini Ayaz yapar.
+- Kalıcı kararlar memanto'dadır. Ayaz hedefi koyar (mainnet). Görevleri Claude STATUS.md ve canlı durumdan kendisi çıkarır. Komut beklenmez.
 
 ## 1. Amaç
 
@@ -77,7 +77,8 @@ Seviye 2: Dur, MODEL_ROUTING §8 şablonuyla sor, yalnızca: §8 listesi, mimari
 1. Kurulum yapılmadıysa MODEL_ROUTING_KURULUM.md §9 sırasıyla kurulum, bitmeden kod işi yok.
 2. MODEL_ROUTING §10 ortam kontrolü ve `memanto status`.
 3. STATUS.md oku, `git` ve `gh` ile karşılaştır. Çelişkide canlı durum esastır.
-4. Ayaz'ın yönlendirmesini bekle, sonra §4 döngüsü kesintisiz çalışır.
+4. Yönlendirme beklenmez. STATUS.md sonraki adımından §4 döngüsü kesintisiz çalışır. Ayaz araya girerse onun yönü esastır.
+5. Önce kırmızı CI, sonra bulgu avı (MODEL_ROUTING §2.6), sonra STATUS.md kuyrukları. Bulgu bulunmazsa sıradaki R3 modülü taranır.
 
 ## 8. Kodlama ilkeleri (Karpathy, kısa)
 
