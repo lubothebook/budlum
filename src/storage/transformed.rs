@@ -303,13 +303,18 @@ pub struct TransformOpts {
 ///
 /// # Errors
 ///
-/// Empty / oversized input.
+/// Oversized input. Empty input is a valid empty payload of class Generic.
 pub fn transform_content(
     input: &[u8],
     opts: TransformOpts,
 ) -> Result<TransformedPayload, TransformError> {
     if input.is_empty() {
-        return Err(TransformError::Empty);
+        return Ok(TransformedPayload {
+            bytes: Vec::new(),
+            content_sha256: calculate_hash_bytes(&[]),
+            codec_flags: CodecFlags::NONE,
+            class: ContentClass::Generic,
+        });
     }
     if input.len() > MAX_TRANSFORM_IN {
         return Err(TransformError::TooLarge {
@@ -375,10 +380,24 @@ mod tests {
             TransformedPayload::from_bytes(vec![], CodecFlags::NONE).unwrap_err(),
             TransformError::Empty
         );
-        assert_eq!(
-            transform_content(b"", TransformOpts::default()).unwrap_err(),
-            TransformError::Empty
-        );
+    }
+
+    #[test]
+    fn empty_input_gives_empty_generic_payload() {
+        for apply_zlib in [false, true] {
+            let t = transform_content(
+                b"",
+                TransformOpts {
+                    apply_zlib,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(t.bytes.is_empty());
+            assert_eq!(t.class, ContentClass::Generic);
+            assert_eq!(t.content_sha256, calculate_hash_bytes(b""));
+            assert!(!t.codec_flags.contains(CodecFlags::PRE_SHRUNK));
+        }
     }
 
     #[test]

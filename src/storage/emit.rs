@@ -236,8 +236,6 @@ pub struct FeedPreview {
 /// Errors from the emit path.
 #[derive(Debug)]
 pub enum EmitError {
-    /// Empty body: nothing to encode, and an empty frame stream is not a feed.
-    Empty,
     /// Body over [`MAX_PREVIEW_CONTENT_BYTES`].
     TooLarge {
         /// Bytes offered.
@@ -446,7 +444,6 @@ pub enum EmitError {
 impl std::fmt::Display for EmitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Empty => write!(f, "empty body"),
             Self::ZeroBlockLen => write!(f, "block_len must be at least 1"),
             Self::TooLarge { len, limit } => {
                 write!(f, "body of {len} bytes over emit cap {limit}")
@@ -688,9 +685,6 @@ fn hex(bytes: [u8; 32]) -> String {
 ///
 /// [`EmitError`] naming the first ceiling the request crosses.
 fn plan(content: &[u8], policy: &EmitPolicy) -> Result<(u16, u32), EmitError> {
-    if content.is_empty() {
-        return Err(EmitError::Empty);
-    }
     let len = content.len();
     if len > MAX_PREVIEW_CONTENT_BYTES {
         return Err(EmitError::TooLarge {
@@ -1373,7 +1367,7 @@ pub fn qr_feed_frames_burst(
     seq_start: u32,
     count: u32,
 ) -> Result<(Vec<Vec<u8>>, [u8; 32]), EmitError> {
-    let (preflight_k, _) = plan(content, policy)?;
+    plan(content, policy)?;
     if count == 0 || count > policy.max_burst_frames {
         return Err(EmitError::BurstTooWide {
             count,
@@ -1388,9 +1382,6 @@ pub fn qr_feed_frames_burst(
             seq: seq_start,
             len: total,
         });
-    }
-    if u32::from(preflight_k) == 0 {
-        return Err(EmitError::Empty);
     }
     // The read path goes through the reveal session rather than opening an
     // emitter beside it: the session is what decides whether these bytes may be
@@ -1437,6 +1428,13 @@ mod tests {
     }
 
     #[test]
+    fn empty_body_passes_the_plan_ceilings() {
+        let (k, drops) = plan(&[], &EmitPolicy::default()).expect("empty plan");
+        assert_eq!(k, 1);
+        assert!(drops >= 1);
+    }
+
+    #[test]
     fn ceilings_refuse_before_anything_is_paid_for() {
         let big = body(MAX_PREVIEW_CONTENT_BYTES + 1);
         assert!(matches!(
@@ -1450,10 +1448,6 @@ mod tests {
         assert!(matches!(
             qr_feed_preview(&body(4096), &tiny_policy, None),
             Err(EmitError::QrOverflow { .. }) | Err(EmitError::WireTooLarge { .. })
-        ));
-        assert!(matches!(
-            qr_feed_preview(&[], &EmitPolicy::default(), None),
-            Err(EmitError::Empty)
         ));
         // A zero block length used to reach `div_ceil` and panic the
         // request; it is a caller error and is reported as one.

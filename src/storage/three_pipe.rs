@@ -415,6 +415,15 @@ mod tests {
         assert_eq!(enc.video_blob, again.video_blob);
     }
 
+    #[test]
+    fn empty_content_qr_video_round_trip() {
+        let enc = encode_qr_video(b"", 64, None).unwrap();
+        assert!(enc.video_blob.starts_with(b"BDLV"));
+        let (kind, raw, _v) = decode_qr_video(&enc.video_blob).unwrap();
+        assert_eq!(kind, PayloadKind::ContentBytes);
+        assert!(raw.is_empty());
+    }
+
     /// The sealed body's nonce: 4 B magic + 1 B version + 24 B nonce.
     fn sealed_nonce_of(enc: &EncodedPipe) -> [u8; SEALED_NONCE_LEN] {
         let (_, body) = unpack_payload(&enc.packed).unwrap();
