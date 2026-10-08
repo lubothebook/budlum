@@ -945,6 +945,8 @@ impl Blockchain {
         // Restored state carries no block clock, so seed it from the tip.
         if let Some(last) = bc.chain.last() {
             bc.state.current_block_unix_secs = Self::block_timestamp_secs(last.timestamp);
+            bc.state.current_block_entropy =
+                Self::block_context_entropy(&last.previous_hash, &last.vrf_output);
         }
 
         bc
@@ -1004,6 +1006,16 @@ impl Blockchain {
     /// Converts a block timestamp in milliseconds to whole seconds.
     fn block_timestamp_secs(timestamp_ms: u128) -> u64 {
         u64::try_from(timestamp_ms / 1_000).unwrap_or(u64::MAX)
+    }
+
+    /// Entropy a signer cannot know at signing time. The VRF output is empty
+    /// for PoA and BFT blocks, and while a block is still being assembled.
+    fn block_context_entropy(previous_hash: &str, vrf_output: &[u8]) -> [u8; 32] {
+        crate::core::hash::hash_fields_bytes(&[
+            b"BDLM_BLOCK_CONTEXT_ENTROPY_V1",
+            previous_hash.as_bytes(),
+            vrf_output,
+        ])
     }
 
     /// The timestamp a block at `index` is stamped with when produced.
@@ -1914,7 +1926,7 @@ impl Blockchain {
             global_height: self.global_headers.len() as u64,
             previous_global_hash,
             chain_id: self.chain_id,
-            timestamp_ms: self.global_headers.len() as u128,
+            timestamp_ms: self.chain.last().map_or(0, |b| b.timestamp),
             domain_registry_root: self.domain_registry.root(),
             domain_commitment_root: self.domain_commitment_registry.root(),
             message_root: self.state.message_registry.root(),
@@ -4205,7 +4217,11 @@ impl Blockchain {
         })
     }
 
-    fn collect_block_transactions(&self, block_timestamp_ms: u128) -> Vec<Transaction> {
+    fn collect_block_transactions(
+        &self,
+        block_timestamp_ms: u128,
+        previous_hash: &str,
+    ) -> Vec<Transaction> {
         let pending_txs = self
             .mempool
             .get_sorted_transactions(crate::consensus::MAX_TRANSACTIONS_PER_BLOCK);
@@ -4213,6 +4229,7 @@ impl Blockchain {
         let mut temp_state = self.state.clone();
         temp_state.current_block_height = self.chain.len() as u64;
         temp_state.current_block_unix_secs = Self::block_timestamp_secs(block_timestamp_ms);
+        temp_state.current_block_entropy = Self::block_context_entropy(previous_hash, &[]);
         let mut included = std::collections::HashSet::new();
         let mut progress = true;
         let mut contract_calls: u64 = 0;
@@ -4517,6 +4534,8 @@ impl Blockchain {
         let mut next_state = base_state.clone();
         next_state.current_block_height = block.index;
         next_state.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
+        next_state.current_block_entropy =
+            Self::block_context_entropy(&block.previous_hash, &block.vrf_output);
         Executor::apply_block_checked(
             &mut next_state,
             &block.transactions,
@@ -4584,7 +4603,7 @@ impl Blockchain {
             .last()
             .map_or_else(|| "0".repeat(64), |block| block.hash.clone());
         let block_timestamp = self.planned_block_timestamp(index);
-        let valid_txs = self.collect_block_transactions(block_timestamp);
+        let valid_txs = self.collect_block_transactions(block_timestamp, &previous_hash);
         let mut block = Block::new_with_chain_id(index, previous_hash, valid_txs, self.chain_id);
         if !self.pending_slashing_evidence.is_empty() {
             block.slashing_evidence = Some(self.pending_slashing_evidence.clone());
@@ -4908,6 +4927,8 @@ impl Blockchain {
         let mut temp_state = self.state.clone();
         temp_state.current_block_height = block.index;
         temp_state.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
+        temp_state.current_block_entropy =
+            Self::block_context_entropy(&block.previous_hash, &block.vrf_output);
         for (i, tx) in block.transactions.iter().enumerate() {
             if tx.chain_id != block.chain_id {
                 return Err(format!(
@@ -5139,6 +5160,8 @@ impl Blockchain {
             let mut projected = state.clone();
             projected.current_block_height = block.index;
             projected.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
+            projected.current_block_entropy =
+                Self::block_context_entropy(&block.previous_hash, &block.vrf_output);
             for (tx_index, transaction) in block.transactions.iter().enumerate() {
                 if transaction.chain_id != self.chain_id {
                     return Err(format!(
@@ -5623,6 +5646,8 @@ impl Blockchain {
         // With pre-restore balances/nonces.
         snapshot_state.mark_all_accounts_dirty();
         snapshot_state.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
+        snapshot_state.current_block_entropy =
+            Self::block_context_entropy(&block.previous_hash, &block.vrf_output);
         self.state = snapshot_state;
         self.finalized_height = snapshot.finalized_height;
         self.finalized_hash = snapshot.finalized_hash;
@@ -5663,6 +5688,8 @@ impl Blockchain {
         // Durable on the next commit rather than relying on a later mutation.
         v2_state.mark_all_accounts_dirty();
         v2_state.current_block_unix_secs = Self::block_timestamp_secs(block.timestamp);
+        v2_state.current_block_entropy =
+            Self::block_context_entropy(&block.previous_hash, &block.vrf_output);
         self.state = v2_state;
         self.finalized_height = v2.finalized_height;
         self.finalized_hash = v2.finalized_hash.clone();
@@ -6842,6 +6869,35 @@ mod tests {
         out
     }
 
+    /// Block entropy is block context: set from the previous hash and the VRF
+    /// output when a block is applied, different for different VRFs, and never
+    /// part of the state root.
+    #[test]
+    fn block_entropy_follows_previous_hash_and_vrf() {
+        let base = AccountState::new();
+        let mut block_a = Block::new_with_chain_id(1, "ab".repeat(32), Vec::new(), 1337);
+        block_a.vrf_output = vec![1u8; 32];
+        let mut block_b = block_a.clone();
+        block_b.vrf_output = vec![2u8; 32];
+
+        let mut state_a =
+            Blockchain::apply_block_effects(&base, &block_a, &[]).expect("block a applies");
+        let mut state_b =
+            Blockchain::apply_block_effects(&base, &block_b, &[]).expect("block b applies");
+
+        let expected = crate::core::hash::hash_fields_bytes(&[
+            b"BDLM_BLOCK_CONTEXT_ENTROPY_V1",
+            block_a.previous_hash.as_bytes(),
+            &block_a.vrf_output,
+        ]);
+        assert_eq!(state_a.current_block_entropy, expected);
+        assert_ne!(state_a.current_block_entropy, state_b.current_block_entropy);
+        assert_eq!(
+            state_a.calculate_state_root(),
+            state_b.calculate_state_root()
+        );
+    }
+
     /// F-7: the settlement finality window is a pure function of the chain
     /// prefix. A checkpoint enters only once it is buried a finality
     /// horizon deep, and leaves once it is older than the settled-row
@@ -7704,6 +7760,22 @@ mod tests {
         receiver
             .validate_and_add_block(block)
             .expect("peer without any sealed global header must accept the block");
+    }
+
+    #[test]
+    fn global_header_timestamp_follows_chain_tip() {
+        let chain_id = crate::core::chain_config::Network::Mainnet
+            .chain_id()
+            .value();
+        let mut chain = Blockchain::new(Arc::new(PoWEngine::new(0)), None, chain_id, None);
+
+        chain
+            .produce_block(Address::from([0xABu8; 32]))
+            .expect("producer should create a block");
+
+        let header = chain.seal_global_header(None).expect("seal");
+        let tip_timestamp = chain.chain.last().expect("tip").timestamp;
+        assert_eq!(header.timestamp_ms, tip_timestamp);
     }
 
     #[test]
