@@ -1226,6 +1226,18 @@ pub fn trace_matrix(
         if i < n_mem - 1 && mem_events[i + 1].addr == e.addr {
             values[row_start + COL_MEM_SAME] = Goldilocks::new(1);
         }
+
+        // Inverse witness for `COL_MEM_SAME`, only read where this row and the
+        // next one both hold a memory event.
+        if i < n_mem - 1 {
+            let diff = mem_events[i + 1].addr.wrapping_sub(e.addr);
+            let inv = if diff != 0 {
+                bud_vm::field_inverse_goldilocks(diff)
+            } else {
+                0
+            };
+            values[row_start + COL_MEM_SAME_INV] = Goldilocks::new(inv);
+        }
     }
 
     // Fold the initial-image rows, then hold the final value on every
@@ -7538,6 +7550,53 @@ mod tests {
             .expect("the register event must be in the table")
     }
 
+    /// The memory table columns that describe one event. Moving a row means
+    /// moving all of them. `COL_MEM_INIT_ACC` is a running sum, so it stays.
+    const MEM_TABLE_COLS: [usize; 8] = [
+        COL_MEM_CLK,
+        COL_MEM_ADDR,
+        COL_MEM_VAL,
+        COL_MEM_IS_WRITE,
+        COL_MEM_ACTIVE,
+        COL_MEM_SAME,
+        COL_MEM_SAME_INV,
+        COL_MEM_IS_INIT,
+    ];
+
+    /// The memory table row that holds the event `(addr, clk)`.
+    fn find_mem_row(values: &[Goldilocks], addr: u64, clk: u64) -> usize {
+        (0..values.len() / TRACE_WIDTH)
+            .find(|&row| {
+                let at = |col: usize| values[row * TRACE_WIDTH + col].as_canonical_u64();
+                at(COL_MEM_ACTIVE) == 1 && at(COL_MEM_ADDR) == addr && at(COL_MEM_CLK) == clk
+            })
+            .expect("the memory event must be in the table")
+    }
+
+    /// Writes 7 to address 5 and reads it back into r3. The table holds a
+    /// write and a read of one address, and a padding row after them.
+    fn memory_round_trip_program() -> Vec<u64> {
+        vec![
+            inst(Opcode::Load, 1, 0, 0, 5),
+            inst(Opcode::Load, 2, 0, 0, 7),
+            inst(Opcode::Store, 0, 1, 2, 0),
+            inst(Opcode::Load, 3, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ]
+    }
+
+    /// Writes 0 to address 0 and reads it back. The table holds a write and a
+    /// read of address 0, both with value 0, so an extra starting-image flag
+    /// on one of them leaves the public root unchanged.
+    fn memory_zero_round_trip_program() -> Vec<u64> {
+        vec![
+            inst(Opcode::Load, 1, 0, 0, 0),
+            inst(Opcode::Store, 0, 1, 0, 0),
+            inst(Opcode::Load, 3, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ]
+    }
+
     /// The register table is a sorted list with no gaps, and nothing used to
     /// say so.
     ///
@@ -7758,6 +7817,141 @@ mod tests {
         assert!(
             verdict.is_err(),
             "the events of one register were accepted in two blocks. \
+             verdict={verdict:?}"
+        );
+    }
+
+    /// The memory table is a prefix: active rows first, padding after. Every
+    /// rule of the table is gated by `m_active * nm_active`, so an inactive
+    /// row between two active ones switches all of them off at once.
+    ///
+    /// The forged matrix moves the read of address 5 one row down and leaves
+    /// an inactive row behind the write. The read returns 1000 and r3 takes
+    /// that value.
+    #[test]
+    fn rejects_memory_read_after_inactive_gap() {
+        const FORGED: u64 = 1000;
+        let program = memory_round_trip_program();
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[3].instruction.opcode, Opcode::Load);
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let rows = values.len() / TRACE_WIDTH;
+                let write = find_mem_row(values, 5, 2);
+                let read = find_mem_row(values, 5, 3);
+                assert_eq!(read, write + 1);
+                assert!(read + 1 < rows, "a padding row must follow the table");
+                assert_eq!(values[at(read + 1, COL_MEM_ACTIVE)].as_canonical_u64(), 0);
+                for col in MEM_TABLE_COLS {
+                    values[at(read + 1, col)] = values[at(read, col)];
+                    values[at(read, col)] = Goldilocks::new(0);
+                }
+                values[at(write, COL_MEM_SAME)] = Goldilocks::new(0);
+                values[at(read + 1, COL_MEM_VAL)] = Goldilocks::new(FORGED);
+                let reg = find_reg_row(values, 3, 3, 3);
+                values[at(reg, COL_REG_VAL)] = Goldilocks::new(FORGED);
+                values[at(3, COL_RD_VAL_NEW)] = Goldilocks::new(FORGED);
+            });
+        assert!(
+            verdict.is_err(),
+            "a memory read after an inactive gap returned a value nothing \
+             wrote and the proof verified. verdict={verdict:?}"
+        );
+    }
+
+    /// `m_same` gates the value continuity between two rows of one address.
+    /// Here it is cleared on the write of address 5, so the read after it only
+    /// has to be zero, and it is. Its value is 0 and it is not flagged as
+    /// starting state.
+    #[test]
+    fn rejects_memory_same_flag_cleared_on_same_address() {
+        let program = memory_round_trip_program();
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[3].instruction.opcode, Opcode::Load);
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let write = find_mem_row(values, 5, 2);
+                let read = find_mem_row(values, 5, 3);
+                assert_eq!(read, write + 1);
+                assert_eq!(values[at(write, COL_MEM_SAME)].as_canonical_u64(), 1);
+                values[at(write, COL_MEM_SAME)] = Goldilocks::new(0);
+                values[at(read, COL_MEM_VAL)] = Goldilocks::new(0);
+                let reg = find_reg_row(values, 3, 3, 3);
+                values[at(reg, COL_REG_VAL)] = Goldilocks::new(0);
+                values[at(3, COL_RD_VAL_NEW)] = Goldilocks::new(0);
+            });
+        assert!(
+            verdict.is_err(),
+            "a memory read returned zero after a write of 7 to the same \
+             address and the proof verified. verdict={verdict:?}"
+        );
+    }
+
+    /// The starting-image flag belongs to active rows only. Here a padding row
+    /// right after the memory table carries it. The program has no starting
+    /// memory, so the fold stays at zero and the public root still matches.
+    #[test]
+    fn rejects_memory_init_flag_on_padding_row() {
+        let program = memory_zero_round_trip_program();
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert!(
+            initial_memory_reads(&vm.trace).is_empty(),
+            "the program must start from an empty memory image"
+        );
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let rows = values.len() / TRACE_WIDTH;
+                let read = find_mem_row(values, 0, 2);
+                assert!(read + 1 < rows, "a padding row must follow the table");
+                assert_eq!(values[at(read + 1, COL_MEM_ACTIVE)].as_canonical_u64(), 0);
+                values[at(read + 1, COL_MEM_IS_INIT)] = Goldilocks::new(1);
+            });
+        assert!(
+            verdict.is_err(),
+            "the starting-image flag was accepted on a padding row. \
+             verdict={verdict:?}"
+        );
+    }
+
+    /// The starting-image flag marks the first row of an address block and
+    /// nothing else. Here the read after the write of address 0 carries it.
+    /// Address and value are zero, so the fold does not move and the public
+    /// root still matches.
+    #[test]
+    fn rejects_memory_init_flag_inside_a_block() {
+        let program = memory_zero_round_trip_program();
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert!(
+            initial_memory_reads(&vm.trace).is_empty(),
+            "the program must start from an empty memory image"
+        );
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let write = find_mem_row(values, 0, 1);
+                let read = find_mem_row(values, 0, 2);
+                assert_eq!(read, write + 1);
+                assert_eq!(values[at(write, COL_MEM_SAME)].as_canonical_u64(), 1);
+                values[at(read, COL_MEM_IS_INIT)] = Goldilocks::new(1);
+            });
+        assert!(
+            verdict.is_err(),
+            "the starting-image flag was accepted inside a memory block. \
              verdict={verdict:?}"
         );
     }

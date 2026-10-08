@@ -1,7 +1,7 @@
 use p3_air::{Air, AirBuilder, BaseAir, ExtensionBuilder, PermutationAirBuilder, WindowAccess};
 use p3_field::PrimeCharacteristicRing;
 
-pub const TRACE_WIDTH: usize = 786;
+pub const TRACE_WIDTH: usize = 787;
 
 /// Columns in the preprocessed (program ROM) trace: pc, raw instruction word,
 /// active flag, then the four decoded fields (opcode, rd, rs1, rs2).
@@ -97,6 +97,9 @@ pub const COL_MEM_SAME: usize = 54;
 /// image. The prover cannot invent one: changing any seeded byte changes the
 /// commitment, and the commitment is a public input the verifier already
 /// holds.
+///
+/// The flag is allowed on an active row only, and only on the first row of an
+/// address block: the row after a row of the same address cannot carry it.
 pub const COL_MEM_IS_INIT: usize = 730;
 
 /// Running fold of every initial-image row, checked against
@@ -620,6 +623,15 @@ pub const COL_PROG_MULT: usize = 753;
 /// `time` is below 2^32, so no honest or forged step wraps into range.
 pub const COL_REG_ORD_BITS_BASE: usize = 754;
 pub const REG_ORD_BITS: usize = 32;
+
+/// Inverse witness pinning `COL_MEM_SAME` to the address equality it claims.
+///
+/// Same shape as [`COL_REG_SAME_INV`], over `diff = next_addr - addr`:
+/// `diff * inv` is boolean, `diff * (1 - diff * inv) == 0`, and `m_same` equals
+/// `1 - diff * inv`. Before this column a prover could write zero for
+/// `m_same` on two rows of one address, turning off the value continuity
+/// between them. The first read of the next block then only had to be zero.
+pub const COL_MEM_SAME_INV: usize = 786;
 
 /// Fold constants for [`COL_REG_INIT_ACC`].
 ///
@@ -2254,6 +2266,35 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         // boolean outright means they do not have to.
         builder.assert_bool(m_same.clone());
 
+        // `m_same` is pinned to the address equality it claims, with the
+        // inverse witness pattern the register table uses above. The zero rule
+        // below made a cleared flag cost the prover a value, but it still let
+        // a read return zero after a write of the same address.
+        let mem_pair_live = m_active.clone() * nm_active.clone();
+        let mem_addr_diff = nm_addr.clone() - m_addr.clone();
+        let mem_same_inv: AB::Expr = cur[COL_MEM_SAME_INV].into();
+        let mem_diff_z = mem_addr_diff.clone() * mem_same_inv;
+        builder
+            .when_transition()
+            .when(mem_pair_live.clone())
+            .assert_bool(mem_diff_z.clone());
+        builder
+            .when_transition()
+            .when(mem_pair_live.clone())
+            .assert_zero(mem_addr_diff * (one.clone() - mem_diff_z.clone()));
+        builder
+            .when_transition()
+            .when(mem_pair_live)
+            .assert_eq(m_same.clone(), one.clone() - mem_diff_z);
+
+        // The table is a prefix: active rows first, padding after. Every rule
+        // of the table is gated by `m_active * nm_active`, so an inactive row
+        // between two active ones would switch all of them off at once.
+        builder.assert_bool(m_active.clone());
+        builder
+            .when_transition()
+            .assert_zero((one.clone() - m_active.clone()) * nm_active.clone());
+
         builder.when_transition().assert_zero(
             m_active.clone()
                 * nm_active.clone()
@@ -2279,6 +2320,13 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         // An initial-image row is a read by definition; it describes memory as
         // it was before the program ran.
         builder.assert_zero(m_is_init.clone() * m_is_write.clone());
+        // The flag lives on active rows, and only on the first row of an
+        // address block. The fold below is still the weak one described at
+        // `COL_MEM_INIT_ACC`; the step that replaces its constants closes that.
+        builder.assert_zero(m_is_init.clone() * (one.clone() - m_active.clone()));
+        builder.when_transition().assert_zero(
+            m_active.clone() * nm_active.clone() * m_same.clone() * nm_is_init.clone(),
+        );
 
         builder.when_first_row().assert_zero(
             m_active.clone()
