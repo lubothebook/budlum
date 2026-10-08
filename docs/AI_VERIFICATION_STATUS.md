@@ -18,7 +18,7 @@ feature, while the code deliberately refuses to perform it.
 | Perception declaration (what is read, in which modality, how much) enforced fail-closed at admission | working | `ai_inference::admit_inference_request`, `AiInferenceRequest::perception` (request-id V3) |
 | Model modality declaration checked against the read it is asked to serve | working | `AiModelSpec::modalities`, `ModalitySet` |
 | SocialFi bridge: finalized AI inference layer output minted as requester-owned NFT | working (best-effort) | `src/execution/executor.rs` → `ai_inference::social::ai_output_to_nft` |
-| `VerifyInference` opcode (0x1F) inside the zkVM | **fail-closed Poseidon binding**: `rd = 1` iff `output_c == poseidon4_hash(model_c, input_c)` for a proof window that fits memory, else 0; mainnet decoding is gated off | `budzero/bud-vm/src/lib.rs` |
+| `VerifyInference` opcode (0x1F) inside the zkVM | **reserved, fail-closed**: the VM always answers `rd = 0` and reads no memory; the AIR forces the opcode selector and the expansion flag to zero, so no proof of a trace with this opcode exists; mainnet decoding is gated off | `budzero/bud-vm/src/lib.rs`, `budzero/bud-proof/src/plonky3_air.rs` |
 
 ## Perception declaration (V3)
 
@@ -277,16 +277,21 @@ this document has to be updated with the change.
 
 ## The zkVM opcode
 
-`VerifyInference` (0x1F) is no longer a hard-coded zero. The VM reads a
-32-byte proof window (model, input and output commitments) and sets `rd = 1`
-exactly when `output_c == poseidon4_hash(model_c, input_c)`; a window that
-does not fit in memory, and any binding mismatch, answer 0. The AIR carries
-the matching witnesses: `COL_IS_VERIFY_INFERENCE` is bound to opcode 0x1F and
-`inference_is_expand` rows feed the commitment chain into the trace.
+`VerifyInference` (0x1F) is reserved. The VM answers `rd = 0` for every
+operand and every immediate. It reads no memory and emits no expansion rows.
+The AIR forces `COL_IS_VERIFY_INFERENCE` and `COL_INFERENCE_IS_EXPAND` to zero
+on every row, and the opcode is not part of the selector sum or the gas table.
+A row that carries opcode 0x1F therefore matches no selector, and no proof of
+a trace that contains it can verify. The columns 689 to 693 stay in the layout,
+so the trace width and the proof format do not change.
 
-What is still open is the circuit half: nothing re-derives `output_c` from
-model weights yet, so no proof demonstrates the forward pass of an inference.
-Until that exists, mainnet keeps the opcode undecodable
+An earlier version checked a three-commitment window against a Poseidon chain
+(`output_c == poseidon4_hash(model_c, input_c)`). That check bound nothing
+about the model weights, and its expansion rows were free filler in the trace.
+It is removed. Binding weights, input and output is planned through a
+hash-over-memory primitive, not through this opcode.
+
+Mainnet keeps the opcode undecodable as well
 (`MainnetActivation::default()` sets `verify_inference_enabled = false`), and
 no production settlement can depend on an inference verification.
 
@@ -314,10 +319,10 @@ The original five-step plan, with what has since landed:
 
 The honest claim is now "AI layer with data-sovereign access control, a guest
 that really computes the forward pass, and a transaction path that STARK-
-verifies proof-required executions against the registered program". The gap argued above stays open: the Fiat-Shamir fold (step 2). Behind the
-`VerifyInference` opcode the commitment binding is real in VM and AIR, while
-the circuit that re-derives the output from the weights (step 3b) is not
-written, and mainnet keeps the opcode undecodable until it is.
+verifies proof-required executions against the registered program". The gap argued above stays open: the Fiat-Shamir fold (step 2). The
+`VerifyInference` opcode is reserved and fails closed in VM and AIR. The
+circuit that re-derives the output from the weights (step 3b) is not written,
+and mainnet keeps the opcode undecodable until it is.
 
 ## RPC / economics audit (2026-08-14, skill §10.5 pass)
 

@@ -33,20 +33,15 @@ pub enum Opcode {
     SWrite = 0x1C,
     Syscall = 0x1D,
     VerifyMerkle = 0x1E,
-    /// AI Inference verification opcode.
-    /// Verifies a ZKVM execution proof for AI inference, the core
-    /// Primitive for trustless AI in the Agentic Economy paradigm.
+    /// Reserved opcode. It verifies nothing.
     ///
     /// Semantics: VerifyInference rd, rs1, rs2, imm
-    ///   Rd = destination register (0 = fail, 1 = success)
-    ///   Rs1  = pointer to AiExecutionProof struct in memory
-    ///   Rs2  = pointer to model_id + input_commitment in memory
-    ///   Imm = proof_type (0 = STARK, 1 = SNARK wrap)
+    ///   Rd = always 0. The VM reads no memory and ignores the operands.
+    ///   The AIR forces the opcode selector to zero, so no proof of a trace
+    ///   that contains this opcode can verify.
     ///
-    /// Like VerifyMerkle, this opcode is mainnet-gated: it requires
-    /// Explicit activation via MainnetActivation after the genesis
-    /// Ceremony completes. This ensures the AI verification layer
-    /// Is thoroughly audited before mainnet deployment.
+    /// The number stays reserved. Mainnet decoding is also gated: it needs
+    /// explicit activation via MainnetActivation.
     VerifyInference = 0x1F,
     /// Privacy layer - commitment for private transfer.
     /// Binds amount + recipient + blinding into a Poseidon commitment hash.
@@ -98,8 +93,8 @@ pub struct MainnetActivation {
     pub verify_merkle_enabled: bool,
     /// AI inference verification opcode gate.
     /// False means OFF on mainnet - it requires post-ceremony activation.
-    /// When true, VerifyInference (0x1F) opcode is allowed on mainnet,
-    /// Enabling ZKVM-proven AI inference verification.
+    /// When true, the reserved VerifyInference (0x1F) opcode decodes on
+    /// mainnet. It still answers 0, and the AIR refuses any proof of it.
     pub verify_inference_enabled: bool,
     /// Privacy-layer opcode gates (staged rollout).
     pub privacy_commit_enabled: bool,
@@ -122,8 +117,8 @@ impl Default for MainnetActivation {
     /// reason for the gate is gone, so the gate is gone.
     ///
     /// `VerifyMerkle` and `VerifyInference` stay closed for reasons that have
-    /// nothing to do with Poseidon. `VerifyInference` has no verification
-    /// circuit behind it at all and returns a hard-coded zero; see
+    /// nothing to do with Poseidon. `VerifyInference` is a reserved opcode:
+    /// it returns zero and the AIR refuses any proof of it; see
     /// `docs/AI_VERIFICATION_STATUS.md`.
     ///
     /// The rationale for `VerifyMerkle` has changed. For a long time it read
@@ -500,7 +495,7 @@ mod tests {
 
     /// The two opcodes that are still gated must keep failing closed, and for
     /// their own reasons - an unfinished Merkle path check and a
-    /// VerifyInference that has no circuit behind it.
+    /// reserved VerifyInference.
     #[test]
     fn d2_mainnet_activation_default_still_rejects_merkle_and_inference() {
         for op in [Opcode::VerifyMerkle, Opcode::VerifyInference] {
@@ -590,8 +585,8 @@ mod tests {
         );
         assert!(
             !default.verify_inference_enabled,
-            "VerifyInference has no verification circuit; it returns a \
-             hard-coded zero. See docs/AI_VERIFICATION_STATUS.md"
+            "VerifyInference is reserved; it returns zero and the AIR \
+             refuses any proof of it. See docs/AI_VERIFICATION_STATUS.md"
         );
         assert!(!default.allows(Opcode::VerifyMerkle));
         assert!(!default.allows(Opcode::VerifyInference));
