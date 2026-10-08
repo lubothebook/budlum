@@ -397,6 +397,11 @@ pub const COL_RD_IDX_INV: usize = 734;
 /// read of a non-zero value, folded into an accumulator the AIR checks against
 /// a public input. Anything a prover invents about the starting registers has
 /// to survive that check.
+///
+/// The flag is allowed on an active row only, and only on the first row of a
+/// register block: the row after a row of the same register cannot carry it.
+/// Before that rule a padding row or the middle of a block could carry the
+/// flag and add an entry to the folded image that no first read backs.
 pub const COL_REG_IS_INIT: usize = 735;
 
 /// Running fold of every initial register row, checked against limbs 2 and 3
@@ -2174,6 +2179,13 @@ impl<AB: PermutationAirBuilder> Air<AB> for BudAir {
         // An initial-image row describes the register file before the program
         // ran, so it is a read by definition.
         builder.assert_zero(r_is_init.clone() * r_is_write.clone());
+        // The flag lives on active rows, and only on the first row of a
+        // register block. The fold below is still the weak one described at
+        // `COL_REG_INIT_ACC`; the step that replaces its constants closes that.
+        builder.assert_zero(r_is_init.clone() * (one.clone() - r_active.clone()));
+        builder.when_transition().assert_zero(
+            r_active.clone() * nr_active.clone() * r_same.clone() * nr_is_init.clone(),
+        );
 
         builder.when_first_row().assert_zero(
             r_active.clone()

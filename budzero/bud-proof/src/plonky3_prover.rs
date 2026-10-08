@@ -7637,6 +7637,131 @@ mod tests {
         );
     }
 
+    /// The starting-file flag belongs to active rows only. Here a padding row
+    /// right after the table carries the flag. The honest program has no
+    /// starting registers, so the fold stays at zero and the public root
+    /// still matches.
+    #[test]
+    fn rejects_register_init_flag_on_padding_row() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 7),
+            inst(Opcode::Add, 2, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert!(
+            initial_register_reads(&vm.trace).is_empty(),
+            "the program must start from an all-zero register file"
+        );
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let rows = values.len() / TRACE_WIDTH;
+                let last = find_reg_row(values, 2, 1, 3);
+                assert!(last + 1 < rows, "a padding row must follow the table");
+                assert_eq!(values[at(last + 1, COL_REG_ACTIVE)].as_canonical_u64(), 0);
+                values[at(last + 1, COL_REG_IS_INIT)] = Goldilocks::new(1);
+            });
+        assert!(
+            verdict.is_err(),
+            "the starting-file flag was accepted on a padding row. \
+             verdict={verdict:?}"
+        );
+    }
+
+    /// The starting-file flag marks the first row of a register block and
+    /// nothing else. Here the second read of r0 inside its block carries it.
+    /// The value and index are zero, so the fold does not move and the public
+    /// root still matches.
+    #[test]
+    fn rejects_register_init_flag_inside_a_block() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 7),
+            inst(Opcode::Add, 2, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert!(
+            initial_register_reads(&vm.trace).is_empty(),
+            "the program must start from an all-zero register file"
+        );
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let inner = find_reg_row(values, 0, 0, 2);
+                assert!(inner > 0, "the row must not open the table");
+                assert_eq!(values[at(inner - 1, COL_REG_IDX)].as_canonical_u64(), 0);
+                assert_eq!(values[at(inner - 1, COL_REG_SAME)].as_canonical_u64(), 1);
+                values[at(inner, COL_REG_IS_INIT)] = Goldilocks::new(1);
+            });
+        assert!(
+            verdict.is_err(),
+            "the starting-file flag was accepted inside a register block. \
+             verdict={verdict:?}"
+        );
+    }
+
+    /// The events of one register must form one block. Here the events of r1
+    /// are split in two blocks with the block of r2 between them, and the
+    /// second r1 block starts with a read of zero that is not flagged as
+    /// starting state. Every flag and inverse witness is set to match the new
+    /// layout, so only the strict order of the table stands in the way.
+    #[test]
+    fn rejects_register_events_split_into_two_blocks() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 7),
+            inst(Opcode::Add, 2, 1, 0, 0),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the honest run must succeed");
+        assert_eq!(vm.trace[1].instruction.opcode, Opcode::Add);
+
+        let verdict =
+            verify_forged_matrix(&program, &vm.trace, vm.gas_limit, vm.gas_used, |values| {
+                let at = |row: usize, col: usize| row * TRACE_WIDTH + col;
+                let first = find_reg_row(values, 1, 0, 3);
+                let second = first + 1;
+                let third = first + 2;
+                assert_eq!(find_reg_row(values, 1, 1, 1), second);
+                assert_eq!(find_reg_row(values, 2, 1, 3), third);
+                // Swap the last two rows: the table becomes r1 write, r2
+                // write, r1 read.
+                for col in REG_TABLE_COLS {
+                    let a = values[at(second, col)];
+                    values[at(second, col)] = values[at(third, col)];
+                    values[at(third, col)] = a;
+                }
+                let zero = Goldilocks::new(0);
+                // Every pair of neighbours holds two different registers, so
+                // no row continues into the next.
+                values[at(first, COL_REG_SAME)] = zero;
+                values[at(first, COL_REG_SAME_INV)] = Goldilocks::new(1);
+                values[at(second, COL_REG_SAME)] = zero;
+                values[at(second, COL_REG_SAME_INV)] = zero - Goldilocks::new(1);
+                values[at(third, COL_REG_SAME)] = zero;
+                values[at(third, COL_REG_SAME_INV)] = zero;
+                // The read of r1 in the second block returns zero, and the
+                // add that used it follows.
+                values[at(second, COL_REG_VAL)] = zero;
+                values[at(third, COL_REG_VAL)] = zero;
+                values[at(1, COL_RS1_VAL)] = zero;
+                values[at(1, COL_RD_VAL_NEW)] = zero;
+            });
+        assert!(
+            verdict.is_err(),
+            "the events of one register were accepted in two blocks. \
+             verdict={verdict:?}"
+        );
+    }
+
     /// A prover must not relabel an instruction as a different one.
     ///
     /// Every per opcode rule in the AIR is written as
