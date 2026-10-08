@@ -96,8 +96,9 @@ fn build_config() -> MyConfig {
     MyConfig::new_with_security(pcs, challenger, security)
 }
 
-/// Whether the VM writes `rd` for this opcode. The same 23 opcodes the AIR sums
-/// into `writes_rd`.
+/// Whether the VM writes `rd` for this opcode. The AIR sums 22 selectors into
+/// `writes_rd`. This list also holds the reserved `VerifyInference`: the AIR
+/// leaves it out because its selector is zero on every row.
 fn opcode_writes_rd(op: bud_isa::Opcode) -> bool {
     use bud_isa::Opcode as O;
     matches!(
@@ -2076,6 +2077,45 @@ mod tests {
             Plonky3Adapter::verify(&envelope, &pi, &program).is_ok(),
             "the untouched envelope must still verify"
         );
+    }
+
+    /// Run a program honestly and return what the verifier answers, with the
+    /// event and state write digests the run published. `prove_and_verify`
+    /// leaves both at zero, which only suits a program that emits nothing.
+    fn verify_honest_run(program: &[u64]) -> Result<(), VerifyError> {
+        let mut vm = Vm::new(1024);
+        let receipt = vm.run_receipt(program);
+        assert!(receipt.success, "the honest run must succeed");
+        let program_bytes: Vec<u8> = program
+            .iter()
+            .flat_map(|&i| i.to_le_bytes().to_vec())
+            .collect();
+        let mut hasher = Keccak::v256();
+        hasher.update(&program_bytes);
+        let mut program_hash = [0u8; 32];
+        hasher.finalize(&mut program_hash);
+        let pi = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash,
+            initial_state_root: crate::adapter::initial_state_root_of(
+                crate::adapter::memory_image_commitment_of_reads(&initial_memory_reads(&vm.trace)),
+                crate::adapter::register_image_commitment_of_reads(&initial_register_reads(
+                    &vm.trace,
+                )),
+            ),
+            final_state_root: [0u8; 32],
+            sender: vm.context.sender,
+            nonce: vm.context.nonce,
+            block_height: vm.context.block_height,
+            gas_limit: vm.gas_limit,
+            gas_used: vm.gas_used,
+            exit_code: 0,
+            trace_len: vm.trace.len() as u64,
+            event_digest: crate::event_digest_from_events(&receipt.events),
+            state_writes_digest: receipt.state_writes_digest,
+        };
+        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, program).expect("prove");
+        Plonky3Adapter::verify(&envelope, &pi, program)
     }
 
     /// Prove a hand-built step list and return what the verifier answers.
@@ -7280,6 +7320,60 @@ mod tests {
                 ],
                 1,
             ),
+            (
+                "Jmp",
+                vec![
+                    inst(Opcode::Load, 5, 0, 0, 3),
+                    inst(Opcode::Jmp, 5, 0, 0, 1),
+                    inst(Opcode::Add, 6, 5, 0, 0),
+                    inst(Opcode::Halt, 0, 0, 0, 0),
+                ],
+                1,
+            ),
+            (
+                "Jnz",
+                vec![
+                    inst(Opcode::Load, 5, 0, 0, 3),
+                    inst(Opcode::Load, 1, 0, 0, 7),
+                    inst(Opcode::Jnz, 5, 1, 0, 1),
+                    inst(Opcode::Add, 6, 5, 0, 0),
+                    inst(Opcode::Halt, 0, 0, 0, 0),
+                ],
+                2,
+            ),
+            (
+                "Assert",
+                vec![
+                    inst(Opcode::Load, 5, 0, 0, 3),
+                    inst(Opcode::Load, 1, 0, 0, 7),
+                    inst(Opcode::Assert, 5, 1, 0, 0),
+                    inst(Opcode::Add, 6, 5, 0, 0),
+                    inst(Opcode::Halt, 0, 0, 0, 0),
+                ],
+                2,
+            ),
+            (
+                "Log",
+                vec![
+                    inst(Opcode::Load, 5, 0, 0, 3),
+                    inst(Opcode::Load, 1, 0, 0, 7),
+                    inst(Opcode::Log, 5, 1, 0, 0),
+                    inst(Opcode::Add, 6, 5, 0, 0),
+                    inst(Opcode::Halt, 0, 0, 0, 0),
+                ],
+                2,
+            ),
+            (
+                "SWrite",
+                vec![
+                    inst(Opcode::Load, 5, 0, 0, 3),
+                    inst(Opcode::Load, 1, 0, 0, 7),
+                    inst(Opcode::SWrite, 5, 1, 0, 1),
+                    inst(Opcode::Add, 6, 5, 0, 0),
+                    inst(Opcode::Halt, 0, 0, 0, 0),
+                ],
+                2,
+            ),
         ]
     }
 
@@ -7297,9 +7391,11 @@ mod tests {
     fn rejects_a_register_write_from_an_opcode_that_writes_none() {
         const FORGED: u64 = 1000;
         for (name, program, at) in non_writing_rd_programs() {
-            // Call and Ret are covered by the honest test; the Add after them
-            // sits two steps on, so the forgery targets Store and Push only.
-            if name == "Call and Ret" {
+            // The other programs are covered by the honest test. The forgery
+            // targets Store and Push only: the Add after Call and Ret sits two
+            // steps on, and Log and SWrite need the digests an honest run
+            // publishes, which this helper leaves at zero.
+            if !matches!(name, "Store" | "Push") {
                 continue;
             }
             let mut vm = Vm::new(1024);
@@ -7358,13 +7454,47 @@ mod tests {
             let receipt = vm.run_receipt(&program);
             assert!(receipt.success, "{name}: the honest run must succeed");
             assert_eq!(vm.registers[5], 3, "{name}: r5 must stay at 3");
-            let verdict = verify_forged_trace(&program, &vm.trace, vm.gas_limit, vm.gas_used);
+            let verdict = verify_honest_run(&program);
             assert!(
                 verdict.is_ok(),
                 "{name}: an honest program with a non-zero rd on an opcode \
                  that writes none must verify. verdict={verdict:?}"
             );
         }
+    }
+
+    /// The prover publishes a register write for the opcodes in
+    /// `opcode_writes_rd`, and the AIR sums selectors for the same set. The VM
+    /// is the truth. If the VM starts to write `rd` for another opcode, or
+    /// stops for one on the list, the honest trace no longer matches the
+    /// register table, so the two must agree for all 33 opcodes.
+    #[test]
+    fn opcode_writes_rd_matches_what_the_vm_does() {
+        const OLD: u64 = 0xDEAD_BEEF;
+        let mut seen = 0;
+        for byte in 0u64..=0xFF {
+            let Ok(decoded) = Instruction::decode_any(byte) else {
+                continue;
+            };
+            let op = decoded.opcode;
+            seen += 1;
+            let program = vec![inst(op, 5, 1, 2, 0)];
+            let mut vm = Vm::new(1024);
+            vm.registers[1] = 8;
+            vm.registers[2] = 3;
+            vm.registers[5] = OLD;
+            vm.stack.push(9);
+            vm.step(&program)
+                .unwrap_or_else(|e| panic!("{op:?}: the single instruction must run: {e:?}"));
+            assert!(!vm.trace.is_empty(), "{op:?}: the step must be traced");
+            let wrote = vm.registers[5] != OLD;
+            assert_eq!(
+                wrote,
+                opcode_writes_rd(op),
+                "{op:?}: the VM and `opcode_writes_rd` disagree on whether rd is written"
+            );
+        }
+        assert_eq!(seen, 33, "the opcode set changed; extend this test");
     }
 
     /// A prover must not relabel an instruction as a different one.
