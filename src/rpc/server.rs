@@ -163,14 +163,20 @@ struct RpcSecurityLayer {
     config: Arc<RpcSecurityConfig>,
     per_ip_rates: Arc<Mutex<HashMap<IpAddr, VecDeque<Instant>>>>,
     metrics: Option<Arc<crate::core::metrics::Metrics>>,
+    mode: RpcMode,
 }
 
 impl RpcSecurityLayer {
-    fn new(config: RpcSecurityConfig, metrics: Option<Arc<crate::core::metrics::Metrics>>) -> Self {
+    fn new(
+        config: RpcSecurityConfig,
+        metrics: Option<Arc<crate::core::metrics::Metrics>>,
+        mode: RpcMode,
+    ) -> Self {
         Self {
             config: Arc::new(config),
             per_ip_rates: Arc::new(Mutex::new(HashMap::new())),
             metrics,
+            mode,
         }
     }
 }
@@ -184,6 +190,7 @@ impl<S> Layer<S> for RpcSecurityLayer {
             config: self.config.clone(),
             per_ip_rates: self.per_ip_rates.clone(),
             metrics: self.metrics.clone(),
+            mode: self.mode.clone(),
         }
     }
 }
@@ -194,6 +201,7 @@ struct RpcSecurityService<S> {
     config: Arc<RpcSecurityConfig>,
     per_ip_rates: Arc<Mutex<HashMap<IpAddr, VecDeque<Instant>>>>,
     metrics: Option<Arc<crate::core::metrics::Metrics>>,
+    mode: RpcMode,
 }
 
 impl<S, B> Service<HttpRequest<B>> for RpcSecurityService<S>
@@ -213,6 +221,10 @@ where
 
     fn call(&mut self, req: HttpRequest<B>) -> Self::Future {
         if !is_ip_allowed(&self.config, &req) {
+            return Box::pin(async { Ok(text_response(StatusCode::FORBIDDEN, "Forbidden")) });
+        }
+
+        if self.mode == RpcMode::Operator && !is_operator_request_allowed(&req) {
             return Box::pin(async { Ok(text_response(StatusCode::FORBIDDEN, "Forbidden")) });
         }
 
@@ -354,6 +366,7 @@ impl RpcServer {
         let http_middleware = ServiceBuilder::new().layer(RpcSecurityLayer::new(
             self.security.clone(),
             self.metrics.clone(),
+            self.mode.clone(),
         ));
 
         // jsonrpsee 0.26 moved the transport limits off the server builder and
@@ -801,6 +814,48 @@ fn extract_client_ip<B>(config: &RpcSecurityConfig, req: &HttpRequest<B>) -> Opt
     }
 
     direct_ip
+}
+
+/// The operator listener has no auth and always binds loopback. It accepts
+/// only a loopback `Host` and no `Origin` header, so a browser page cannot
+/// reach it.
+fn is_operator_request_allowed<B>(req: &HttpRequest<B>) -> bool {
+    if req.headers().contains_key("origin") {
+        return false;
+    }
+    req.headers()
+        .get("host")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(is_loopback_host)
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    let valid_port = |rest: &str| {
+        rest.is_empty()
+            || rest
+                .strip_prefix(':')
+                .is_some_and(|p| p.parse::<u16>().is_ok())
+    };
+    let name = if host.starts_with('[') {
+        let Some(end) = host.find(']') else {
+            return false;
+        };
+        if !valid_port(&host[end + 1..]) {
+            return false;
+        }
+        &host[..=end]
+    } else {
+        match host.split_once(':') {
+            None => host,
+            Some((name, port)) => {
+                if port.parse::<u16>().is_err() {
+                    return false;
+                }
+                name
+            }
+        }
+    };
+    name.eq_ignore_ascii_case("localhost") || name == "127.0.0.1" || name == "[::1]"
 }
 
 fn is_ip_allowed<B>(config: &RpcSecurityConfig, req: &HttpRequest<B>) -> bool {
@@ -1265,8 +1320,7 @@ fn qr_feed_json(feed: &crate::storage::emit::FeedPreview) -> serde_json::Value {
 /// the same body.
 fn emit_reject(e: crate::storage::emit::EmitError) -> ErrorObjectOwned {
     let code = match &e {
-        crate::storage::emit::EmitError::Empty
-        | crate::storage::emit::EmitError::ZeroBlockLen
+        crate::storage::emit::EmitError::ZeroBlockLen
         | crate::storage::emit::EmitError::TooLarge { .. }
         | crate::storage::emit::EmitError::BurstTooWide { .. }
         | crate::storage::emit::EmitError::FrameOutOfRange { .. }
@@ -6878,6 +6932,105 @@ mod tests {
         // A plain OPTIONS is not a preflight.
         *req.method_mut() = hyper::Method::POST;
         assert!(!is_cors_preflight(&req));
+    }
+
+    async fn status_through_layer(
+        mode: RpcMode,
+        host: Option<&str>,
+        origin: Option<&str>,
+    ) -> StatusCode {
+        let layer = RpcSecurityLayer::new(
+            match mode {
+                RpcMode::Operator => RpcSecurityConfig::operator_default(),
+                RpcMode::Public => RpcSecurityConfig {
+                    auth_required: false,
+                    allowed_ips: Vec::new(),
+                    ..Default::default()
+                },
+            },
+            None,
+            mode,
+        );
+        let inner = tower::service_fn(|_req: HttpRequest<()>| async {
+            Ok::<_, std::convert::Infallible>(text_response(StatusCode::OK, "ok"))
+        });
+        let mut svc = layer.layer(inner);
+        let mut builder = HttpRequest::builder().uri("/");
+        if let Some(host) = host {
+            builder = builder.header("host", host);
+        }
+        if let Some(origin) = origin {
+            builder = builder.header("origin", origin);
+        }
+        let mut req = builder.body(()).unwrap();
+        req.extensions_mut()
+            .insert(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 40000));
+        svc.call(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn operator_rejects_foreign_host() {
+        let op = RpcMode::Operator;
+        assert_eq!(
+            status_through_layer(op.clone(), Some("evil.example"), None).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status_through_layer(op.clone(), Some("evil.example:8546"), None).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status_through_layer(op.clone(), Some("127.0.0.1.evil.example"), None).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status_through_layer(op.clone(), Some("127.0.0.1:abc"), None).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status_through_layer(op.clone(), None, None).await,
+            StatusCode::FORBIDDEN
+        );
+        for host in [
+            "127.0.0.1:8546",
+            "127.0.0.1",
+            "localhost",
+            "LocalHost:8546",
+            "[::1]",
+            "[::1]:8546",
+        ] {
+            assert_eq!(
+                status_through_layer(op.clone(), Some(host), None).await,
+                StatusCode::OK,
+                "host {host}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn operator_rejects_origin_header() {
+        assert_eq!(
+            status_through_layer(
+                RpcMode::Operator,
+                Some("127.0.0.1:8546"),
+                Some("http://x.example")
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn public_mode_ignores_host_and_origin_rules() {
+        assert_eq!(
+            status_through_layer(
+                RpcMode::Public,
+                Some("rpc.budlum.example"),
+                Some("http://x.example")
+            )
+            .await,
+            StatusCode::OK
+        );
     }
 
     #[test]

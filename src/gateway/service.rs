@@ -18,6 +18,30 @@ fn checked_gateway_content(source: &str, data: Vec<u8>) -> Result<Vec<u8>, Strin
     Ok(data)
 }
 
+fn verified_gateway_content(
+    source: &str,
+    cid: &ContentId,
+    data: Vec<u8>,
+) -> Result<Vec<u8>, String> {
+    let data = checked_gateway_content(source, data)?;
+    if ContentId::of(&data) != *cid {
+        return Err(format!(
+            "gateway content from {source} does not match ContentId {}",
+            hex::encode(&cid.0[..8])
+        ));
+    }
+    Ok(data)
+}
+
+/// Local sled lookup. `Ok(None)` means "not stored here" and leaves the caller
+/// to the next source. `Err` means bytes were found but are not trusted.
+fn read_local_storage(storage: &Storage, cid: &ContentId) -> Result<Option<Vec<u8>>, String> {
+    match storage.get_content(cid) {
+        Ok(chunk) => verified_gateway_content("local sled storage", cid, chunk).map(Some),
+        Err(_) => Ok(None),
+    }
+}
+
 /// Turn a recipe-based manifest into bytes, or `None` if it is not one.
 ///
 /// `Ok(None)` means "this manifest is not a recipe" and leaves the caller to
@@ -227,8 +251,8 @@ impl BudGateway {
         //    Currently a stub (scope: no blob store yet), so this branch
         //    naturally misses and the NotFound return falls through to a P2P error.
         if let Some(ref storage) = self.storage {
-            if let Ok(chunk) = storage.get_content(&cid) {
-                return checked_gateway_content("local sled storage", chunk);
+            if let Some(chunk) = read_local_storage(storage, &cid)? {
+                return Ok(chunk);
             }
         }
 
@@ -238,7 +262,7 @@ impl BudGateway {
         // RPC server is co-located with storage.
         if let Some(ref network) = self.network {
             if let Ok(chunk) = network.fetch_local_content(cid.0).await {
-                return checked_gateway_content("node-local B.U.D. store", chunk);
+                return verified_gateway_content("node-local B.U.D. store", &cid, chunk);
             }
         }
 
@@ -246,7 +270,7 @@ impl BudGateway {
         // We query connected remote peers over the network.
         if let Some(ref network) = self.network {
             if let Ok(chunk) = network.fetch_remote_content(cid.0).await {
-                return checked_gateway_content("remote P2P peer", chunk);
+                return verified_gateway_content("remote P2P peer", &cid, chunk);
             }
         }
 
@@ -328,6 +352,62 @@ mod tests {
     use super::*;
     use crate::storage::generated::{ContentSource, GeneratedSpec, GeneratorId};
     use crate::storage::ContentManifest;
+
+    fn corrupt_store(good: &[u8], bad: &[u8]) -> (tempfile::TempDir, Storage, ContentId) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().to_str().expect("utf8 path").to_string();
+        let cid = ContentId::of(good);
+        {
+            let raw = sled::open(&path).expect("raw sled");
+            raw.insert(format!("CONTENT:{}", hex::encode(cid.0)).as_bytes(), bad)
+                .expect("insert");
+            raw.flush().expect("flush");
+        }
+        let storage = Storage::new(&path).expect("storage");
+        (dir, storage, cid)
+    }
+
+    #[test]
+    fn corrupted_local_bytes_are_refused() {
+        let (_dir, storage, cid) = corrupt_store(b"honest bytes", b"tampered bytes");
+        let err = read_local_storage(&storage, &cid).expect_err("tampered bytes must be refused");
+        assert!(err.contains("ContentId"), "{err}");
+    }
+
+    #[test]
+    fn honest_local_bytes_are_returned() {
+        let (_dir, storage, cid) = corrupt_store(b"honest bytes", b"honest bytes");
+        assert_eq!(
+            read_local_storage(&storage, &cid).expect("honest read"),
+            Some(b"honest bytes".to_vec())
+        );
+    }
+
+    #[test]
+    fn empty_content_is_verified_too() {
+        let (_dir, storage, cid) = corrupt_store(b"", b"");
+        assert_eq!(
+            read_local_storage(&storage, &cid).expect("empty read"),
+            Some(Vec::new())
+        );
+        let (_dir2, storage2, cid2) = corrupt_store(b"", b"x");
+        assert!(read_local_storage(&storage2, &cid2).is_err());
+    }
+
+    #[test]
+    fn missing_local_bytes_fall_through() {
+        let (_dir, storage, _) = corrupt_store(b"a", b"a");
+        let other = ContentId::of(b"never stored");
+        assert_eq!(read_local_storage(&storage, &other).expect("miss"), None);
+    }
+
+    #[test]
+    fn network_bytes_are_checked_against_the_id() {
+        let cid = ContentId::of(b"real");
+        assert!(verified_gateway_content("test", &cid, b"real".to_vec()).is_ok());
+        assert!(verified_gateway_content("test", &cid, b"fake".to_vec()).is_err());
+        assert!(verified_gateway_content("test", &cid, Vec::new()).is_err());
+    }
 
     fn spec() -> GeneratedSpec {
         GeneratedSpec {

@@ -1,0 +1,9 @@
+{
+  "model": "opusplan",
+  "permissions": {
+    "deny": [
+      "Read(./target/**)",
+      "Read(**/Cargo.lock)"
+    ]
+  }
+}

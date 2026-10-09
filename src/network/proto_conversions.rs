@@ -191,6 +191,14 @@ impl From<&Transaction> for pb::ProtoTransaction {
                     },
                 )),
             ),
+            TransactionType::Storage(storage_tx) => (
+                pb::ProtoTransactionType::Storage as i32,
+                Some(pb::proto_transaction::TypePayload::Storage(
+                    pb::ProtoStorageTx {
+                        data: bincode::serialize(storage_tx).unwrap_or_default(),
+                    },
+                )),
+            ),
             TransactionType::AiModelRegister(spec) => (
                 pb::ProtoTransactionType::AiModelRegister as i32,
                 Some(pb::proto_transaction::TypePayload::AiModelRegister(
@@ -1011,6 +1019,16 @@ impl TryFrom<pb::ProtoTransaction> for Transaction {
                 TransactionType::Vault(
                     bincode::deserialize(&payload.data)
                         .map_err(|e| format!("Invalid VaultTx payload: {e}"))?,
+                )
+            }
+            pb::ProtoTransactionType::Storage => {
+                let payload = match proto.type_payload {
+                    Some(pb::proto_transaction::TypePayload::Storage(p)) => p,
+                    _ => return Err("Missing or mismatched Storage payload".into()),
+                };
+                TransactionType::Storage(
+                    bincode::deserialize(&payload.data)
+                        .map_err(|e| format!("Invalid StorageTx payload: {e}"))?,
                 )
             }
             pb::ProtoTransactionType::AiModelRegister => {
@@ -2265,6 +2283,62 @@ mod tests {
                 to: 4,
                 member: 5,
             }),
+            TransactionType::Storage(crate::domain::StorageTx::RegisterManifest {
+                manifest: {
+                    let mut m = crate::storage::encode_object(
+                        &[5u8; 2048],
+                        crate::storage::ErasureScheme { k: 4, n: 6 },
+                    )
+                    .expect("encode")
+                    .to_manifest()
+                    .expect("manifest");
+                    m.owner = from;
+                    m
+                },
+            }),
+            TransactionType::Storage(crate::domain::StorageTx::DeclareOperatorClass {
+                class: crate::domain::storage_deal::OperatorClass::Mobile,
+            }),
+            TransactionType::Storage(crate::domain::StorageTx::DeclareSelfHostPolicy {
+                manifest_id: crate::storage::ContentId([1u8; 32]),
+                policy: crate::storage::MobileSelfContentPolicy {
+                    content_id: crate::storage::ContentId([2u8; 32]),
+                    owner: from,
+                    critical: true,
+                    required_paid_replicas: 2,
+                    self_host_allowed: false,
+                },
+                profile: crate::storage::MobileSelfProfile {
+                    owner: from,
+                    device_commitment: [3u8; 32],
+                    availability: crate::storage::MobileAvailabilityClass::Scheduled,
+                    max_storage_bytes: 1 << 20,
+                    metered_network_ok: true,
+                    battery_saver_aware: false,
+                    last_seen_block: 9,
+                },
+            }),
+            TransactionType::Storage(crate::domain::StorageTx::OpenDeal(
+                crate::domain::StorageDealOpen {
+                    domain_id: 7,
+                    manifest_id: crate::storage::ContentId([1u8; 32]),
+                    shard_id: crate::storage::ContentId([2u8; 32]),
+                    operator: to,
+                    replica_index: 1,
+                    start_epoch: 3,
+                    end_epoch: 13,
+                    economics: crate::domain::StorageEconomicsParams {
+                        operator_bond: 1_000_000,
+                        fee_per_byte_epoch: 17,
+                    },
+                    merkle_proof: vec![9u8; 40],
+                    storage_root: [4u8; 32],
+                    operator_consent: crate::storage::GrantAuthorization {
+                        owner_key: [5u8; crate::crypto::primitives::ML_DSA_87_PUBLIC_KEY_LEN],
+                        signature: vec![6u8; 64],
+                    },
+                },
+            )),
             TransactionType::Identity(crate::registry::IdentityTx::Register {
                 record: crate::registry::IdentityRecord::new(
                     from,
@@ -2330,6 +2404,9 @@ mod tests {
         assert!(Transaction::try_from(proto.clone()).is_err());
 
         proto.tx_type = pb::ProtoTransactionType::Vault as i32;
+        assert!(Transaction::try_from(proto.clone()).is_err());
+
+        proto.tx_type = pb::ProtoTransactionType::Storage as i32;
         assert!(Transaction::try_from(proto.clone()).is_err());
 
         proto.tx_type = 999; // Unknown transaction type tag

@@ -1561,7 +1561,11 @@ impl Storage {
 
         let mut current_hash = last_hash;
         let mut count = 0;
-        while let Ok(Some(block)) = self.get_block(&current_hash) {
+        loop {
+            let block = self
+                .get_block(&current_hash)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Cannot repair: block {current_hash} is missing"))?;
             let height_key = format!("HEIGHT:{}", block.index);
             self.db
                 .insert(height_key.as_bytes(), block.hash.as_bytes())
@@ -2189,6 +2193,46 @@ mod tests {
         // Blocking forever.
         let err = super::sled_open_with_retry(&path).unwrap_err();
         assert!(err.to_string().contains("could not acquire lock"));
+    }
+
+    fn commit_chain(storage: &Storage, len: u64) -> Vec<Block> {
+        let mut blocks: Vec<Block> = Vec::new();
+        for i in 0..len {
+            let prev = blocks
+                .last()
+                .map_or_else(|| "0".repeat(64), |b| b.hash.clone());
+            let mut b = Block::new(i, prev, vec![]);
+            b.hash = b.calculate_hash();
+            storage.commit_block(&b, "root").unwrap();
+            blocks.push(b);
+        }
+        blocks
+    }
+
+    #[test]
+    fn repair_index_fails_on_gap() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let blocks = commit_chain(&storage, 3);
+        storage.db.remove(blocks[1].hash.as_bytes()).unwrap();
+
+        let err = storage.repair_index().unwrap_err();
+        assert!(
+            err.contains(&blocks[1].hash),
+            "error names the missing hash"
+        );
+    }
+
+    #[test]
+    fn repair_index_ok_on_intact_chain() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let blocks = commit_chain(&storage, 3);
+        storage.db.remove(b"HEIGHT:1").unwrap();
+
+        storage.repair_index().unwrap();
+        let b1 = storage.get_block_by_height(1).unwrap().unwrap();
+        assert_eq!(b1.hash, blocks[1].hash);
     }
 }
 

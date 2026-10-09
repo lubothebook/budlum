@@ -236,9 +236,10 @@ checksum half of the "first-order" label above. The exact checksum side
 is computable by full enumeration: T = sum of 64 iid uniform nibbles has
 an exact 961-bin distribution (convolution, exact integers), and the
 digit ranks are (T mod 16, (T div 16) mod 16, T div 256). The script
-`tools/bpqs_checksum_domination_exact.py` does this with exact rational
-arithmetic; the numbers below are its stdout, reproducible with no
-randomness and no dependencies.
+`crates/bpqs/examples/checksum_domination_exact.rs` does this with exact
+rational arithmetic over a std-only big integer; the numbers below are its
+stdout (pinned in `checksum_domination_exact.expected.txt`, verified by
+`--check`), reproducible with no randomness and no dependencies.
 
 Exact marginals (one checksum vector from one honest message):
 

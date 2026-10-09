@@ -132,14 +132,9 @@ pub struct Step {
     pub merkle_sibling: Option<u64>,
     pub merkle_round: Option<u8>,
     pub merkle_is_expand: bool,
-    /// AI inference verification expansion rows.
-    /// The original VerifyInference step carries these as None/0;
-    /// Follow-up expansion rows carry the commitment values being
-    /// Verified by the AIR trace. The AIR checks that:
-    /// 1. model_id matches the registered model's program_hash
-    /// 2. input_commitment matches the request's input_commitment
-    /// 3. output_commitment is derived from the proof execution
-    /// 4. The STARK proof envelope verifies against the public inputs
+    /// Reserved inference columns. The VM never fills them (always None or
+    /// false) because VerifyInference emits no expansion rows. The AIR forces
+    /// the matching trace columns to zero.
     pub inference_model_commitment: Option<u64>,
     pub inference_input_commitment: Option<u64>,
     pub inference_output_commitment: Option<u64>,
@@ -192,12 +187,23 @@ pub fn field_mul_goldilocks(a: u64, b: u64) -> u64 {
     ((a as u128 * b as u128) % GOLDILOCKS_P as u128) as u64
 }
 
+/// The most memory a VM may hold, in bytes. The memory table of the proof
+/// names an address with 32 bits, so a larger memory could run but not be
+/// proved.
+pub const MAX_MEMORY_BYTES: u64 = 1 << 32;
+
 impl Vm {
     pub fn new(memory_size: usize) -> Self {
         Self::with_gas_limit(memory_size, 1_000_000)
     }
 
+    /// Panics if `memory_size` is above [`MAX_MEMORY_BYTES`]. The size comes
+    /// from the host that builds the VM, never from a program.
     pub fn with_gas_limit(memory_size: usize, gas_limit: u64) -> Self {
+        assert!(
+            memory_size as u64 <= MAX_MEMORY_BYTES,
+            "memory size {memory_size} is above the 2^32 byte address space of the proof"
+        );
         Self {
             registers: [0; 32],
             pc: 0,
@@ -345,7 +351,12 @@ impl Vm {
             }
             Opcode::Load => {
                 let result = if src1_idx == 0 {
-                    inst.imm as u64
+                    // Canonical field element, as in the trace and the AIR.
+                    if inst.imm < 0 {
+                        GOLDILOCKS_P.wrapping_sub(inst.imm.unsigned_abs() as u64)
+                    } else {
+                        inst.imm as u64
+                    }
                 } else if let Some(addr) =
                     Self::memory_word_addr(src1_val, inst.imm, self.memory.len())
                 {
@@ -624,40 +635,12 @@ impl Vm {
                 self.pc += 1;
                 (result, cur_pc + 1)
             }
-            // AI Inference verification opcode.
-            // Kademe 3a (2026-08-28): commitment-chain binding.
-            // The proof window at `src1_val` (32 bytes) carries three
-            // commitments: model_c, input_c, output_c. The chain the VM can
-            // check without running the model is the hash binding
-            //     rd = 1 iff output_c == Poseidon(model_c, input_c)
-            // and any other case answers 0 (fail-closed: a broken or missing
-            // window never verifies). The real zkML verification circuit
-            // (kademe 3b) is a separate architecture decision; this is the
-            // on-chain commitment-chain binding. imm keeps its kademe 2b
-            // meaning: 0 = STARK proof, 1 = SNARK wrap (AIR-pinned).
+            // VerifyInference is reserved. The VM always answers 0 and reads
+            // no memory. Any proof of a trace containing this opcode is
+            // refused by the AIR. Weights, input and output binding is
+            // planned through a hash-over-memory primitive, not here.
             Opcode::VerifyInference => {
-                let proof_addr = src1_val as usize;
-                let result = if proof_addr
-                    .checked_add(8 * 4)
-                    .is_some_and(|end| end <= self.memory.len())
-                {
-                    let read_u64 = |addr: usize| -> u64 {
-                        let mut bytes = [0u8; 8];
-                        bytes.copy_from_slice(&self.memory[addr..addr + 8]);
-                        u64::from_le_bytes(bytes)
-                    };
-                    let model_c = read_u64(proof_addr);
-                    let input_c = read_u64(proof_addr + 8);
-                    let output_c = read_u64(proof_addr + 16);
-                    // poseidon4_hash(model, input) == poseidon4_hash3(model, input, 0)
-                    if output_c == poseidon4_hash(model_c, input_c) {
-                        1
-                    } else {
-                        0
-                    }
-                } else {
-                    0
-                };
+                let result = 0;
                 let dst_idx = inst.rd;
                 if dst_idx as usize > 0 {
                     self.registers[dst_idx as usize] = result;
@@ -776,12 +759,8 @@ impl Vm {
         // Step's `merkle_key` is also set here (post-push, in-place
         // Via index) so the AIR knows the path's key.
         //
-        // Kademe 3a (2026-08-28): VerifyInference used to share this path
-        // (its 8 commitment-chain rows were pushed below, after it), which
-        // produced 64 phantom Merkle expansion rows for every inference
-        // proof and patched the commitment chain onto the last of them
-        // instead of the original step. VerifyInference has its own
-        // expansion block below and must not walk the Merkle path.
+        // Only VerifyMerkle walks this path. VerifyInference is reserved and
+        // emits no expansion rows.
         if matches!(inst.opcode, Opcode::VerifyMerkle) {
             let path_addr = inst.imm as usize;
             // The same wrapped bound as the execution path, and it has to
@@ -789,9 +768,7 @@ impl Vm {
             // different purposes, the value the register receives and the key
             // the trace records, and a bound that admitted an address in one
             // place and refused it in the other would leave the trace
-            // describing a read that did not happen. Kademe 3a: only
-            // `VerifyMerkle` walks this path; `VerifyInference` has its own
-            // 8-row commitment-chain block below.
+            // describing a read that did not happen.
             if path_addr
                 .checked_add(8 * 65)
                 .is_some_and(|end| end <= self.memory.len())
@@ -890,94 +867,6 @@ impl Vm {
                 let orig_idx = self.trace.len() - 1 - 64;
                 if orig_idx < self.trace.len() {
                     self.trace[orig_idx].merkle_current = Some(current);
-                }
-            }
-        }
-
-        // VerifyInference expansion rows.
-        // If the just-pushed step is a VerifyInference, push 8 follow-up
-        // Expansion rows. Each row carries the commitment values for the
-        // AIR to verify the commitment chain (model → input → output).
-        // Fix next_pc pattern to match VerifyMerkle:
-        // Original step stays on cur_pc, expansion rows 0-6 stay on cur_pc,
-        // Expansion row 7 advances to cur_pc+1.
-        if matches!(inst.opcode, Opcode::VerifyInference) {
-            let proof_addr = src1_val as usize;
-            // The third copy of the bound the fuzzer broke, and the one whose
-            // address is the easiest to steer: `src1_val` is a register, so it
-            // is whatever the program last computed rather than a field of the
-            // instruction word. `wrapping_add` let a value near the top of the
-            // space wrap to a small sum, pass this comparison, and index the
-            // slice below at the unwrapped address.
-            //
-            // `VerifyInference` (kademe 3a) answers from the same window this
-            // block reads: the register value and the trace key come from the
-            // same memory. This block runs before that answer is used: it is
-            // the trace writer, and it reads memory whether or not the
-            // opcode's answer is used. The bound below must stay identical to
-            // the execution bound above - a bound that admitted an address in
-            // one place and refused it in the other would leave the trace
-            // describing a read that did not happen.
-            if proof_addr
-                .checked_add(8 * 4)
-                .is_some_and(|end| end <= self.memory.len())
-            {
-                let read_u64 = |addr: usize| -> u64 {
-                    let mut bytes = [0u8; 8];
-                    bytes.copy_from_slice(&self.memory[addr..addr + 8]);
-                    u64::from_le_bytes(bytes)
-                };
-                let model_c = read_u64(proof_addr);
-                let input_c = read_u64(proof_addr + 8);
-                let output_c = read_u64(proof_addr + 16);
-
-                // Patch the original step (just pushed, still the last row)
-                // with commitments and next_pc = cur_pc. Kademe 3a: this used
-                // to hit the last of the phantom Merkle expansion rows; with
-                // VerifyInference off the Merkle path, `last` is the
-                // original step again.
-                if let Some(last) = self.trace.last_mut() {
-                    last.inference_model_commitment = Some(model_c);
-                    last.inference_input_commitment = Some(input_c);
-                    last.inference_output_commitment = Some(output_c);
-                    last.next_pc = cur_pc; // stay on same PC for expansion
-                }
-
-                // Push 8 expansion rows for AIR commitment verification
-                for round in 0..8u8 {
-                    let expand_next_pc = if round == 7 { cur_pc + 1 } else { cur_pc };
-                    self.trace.push(Step {
-                        pc: cur_pc,
-                        next_pc: expand_next_pc,
-                        instruction: Instruction {
-                            opcode: Opcode::VerifyInference,
-                            rd: 0,
-                            rs1: inst.rs1,
-                            rs2: inst.rs2,
-                            imm: round as i32,
-                        },
-                        src1_idx: inst.rs1,
-                        src2_idx: inst.rs2,
-                        dst_idx: 0,
-                        src1_val,
-                        src2_val,
-                        dst_val: 0,
-                        registers: self.registers,
-                        memory_addr: None,
-                        memory_val: None,
-                        is_memory_write: false,
-                        stack_pointer: self.stack.len(),
-                        merkle_key: None,
-                        merkle_current: None,
-                        merkle_sibling: None,
-                        merkle_round: None,
-                        merkle_is_expand: false,
-                        inference_model_commitment: Some(model_c),
-                        inference_input_commitment: Some(input_c),
-                        inference_output_commitment: Some(output_c),
-                        inference_proof_round: Some(round),
-                        inference_is_expand: true,
-                    });
                 }
             }
         }
@@ -1769,6 +1658,31 @@ mod tests {
         .encode()
     }
 
+    /// The memory table of the proof names an address with 32 bits, so a
+    /// memory above `2^32` bytes cannot be proved. The constructor refuses it.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    #[should_panic(expected = "memory size")]
+    fn rejects_memory_larger_than_the_proof_address_space() {
+        let _ = Vm::new((1usize << 32) + 1);
+    }
+
+    /// `Load rd, r0, imm` copies the immediate as a field element. A negative
+    /// immediate is `P - |imm|`, the value the trace and the AIR use, and not
+    /// the two's complement `2^64 - |imm|`, which is not below `P`.
+    #[test]
+    fn load_imm_negative_is_canonical() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, -1),
+            inst(Opcode::Load, 2, 0, 0, i32::MIN),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(64);
+        assert!(vm.run_receipt(&program).success);
+        assert_eq!(vm.registers[1], GOLDILOCKS_P - 1);
+        assert_eq!(vm.registers[2], GOLDILOCKS_P - (1u64 << 31));
+    }
+
     /// The address whose window wraps must be refused, not indexed.
     ///
     /// `VerifyMerkle` reads a 520-byte window at `inst.imm`. The bound used
@@ -1853,22 +1767,12 @@ mod tests {
         );
     }
 
-    /// The third copy of the same bound, reached through a register.
-    ///
-    /// `VerifyInference` takes its address from `src1_val` rather than from
-    /// the instruction word, so the value is whatever the program last
-    /// computed. The opcode is disabled on mainnet and answers zero, but the
-    /// block that reads memory runs before that answer is chosen: it is the
-    /// trace writer. A profile flag decides what the opcode returns, not what
-    /// it reads, which is why this needed the same fix rather than the same
-    /// excuse.
+    /// VerifyInference is reserved. It reads no memory, even through a
+    /// register address whose window would wrap, and it leaves no inference
+    /// data in the trace.
     #[test]
     fn verify_inference_refuses_a_register_address_whose_window_wraps() {
-        // Put usize::MAX-ish into r2, then use it as the proof address.
-        // 8 * 4 = 32 past it wraps to a small number.
         let program = vec![
-            // r2 = 0 - 1, computed rather than written, since imm is i32 and
-            // the address here comes from the register file.
             inst(Opcode::Sub, 2, 0, 1, 0),
             inst(Opcode::VerifyInference, 3, 2, 0, 0),
             inst(Opcode::Halt, 0, 0, 0, 0),
@@ -1881,67 +1785,54 @@ mod tests {
             receipt.success,
             "the program must run to Halt rather than abort the process"
         );
-        // Refusing and answering leave the same zero in the register, so the
-        // trace is what separates them: the inference block records the three
-        // commitments only when the window fits, and a wrapped register
-        // address fits nothing. The refusal is the absence of that read.
+        assert_eq!(vm.registers[3], 0);
+        assert_no_inference_data(&vm);
+    }
+
+    fn assert_no_inference_data(vm: &Vm) {
         assert!(
             vm.trace.iter().all(|row| {
                 row.inference_model_commitment.is_none()
                     && row.inference_input_commitment.is_none()
                     && row.inference_output_commitment.is_none()
+                    && row.inference_proof_round.is_none()
+                    && !row.inference_is_expand
             }),
-            "a refused register address must leave no inference read in the trace"
+            "VerifyInference must leave no inference data in the trace"
         );
     }
 
-    // --- Kademe 3a (2026-08-28): commitment-chain binding. ---
-
-    /// A valid chain (output_c == Poseidon(model_c, input_c)) answers rd = 1
-    /// for both defined proof types (imm = 0 STARK, imm = 1 SNARK wrap).
+    /// Even a window that used to be a valid commitment chain answers 0, and
+    /// the trace holds exactly one VerifyInference row and no expansion rows.
     #[test]
-    fn verify_inference_accepts_a_valid_commitment_chain() {
+    fn verify_inference_always_returns_zero_and_emits_no_expansion_rows() {
         let model_c = 0xABCD_EF01_2345_6789u64;
         let input_c = 0x1122_3344_5566_7788u64;
         let output_c = poseidon4_hash(model_c, input_c);
         for imm in [0i32, 1] {
             let mut vm = Vm::new(256);
-            // 24-byte commitment window at address 64: model, input, output.
             vm.memory[64..72].copy_from_slice(&model_c.to_le_bytes());
             vm.memory[72..80].copy_from_slice(&input_c.to_le_bytes());
             vm.memory[80..88].copy_from_slice(&output_c.to_le_bytes());
-            vm.registers[1] = 64; // proof address
+            vm.registers[1] = 64;
             let program = vec![
                 inst(Opcode::VerifyInference, 3, 1, 0, imm),
                 inst(Opcode::Halt, 0, 0, 0, 0),
             ];
             let receipt = vm.run_receipt(&program);
             assert!(receipt.success);
-            assert_eq!(vm.registers[3], 1, "valid chain must answer 1 (imm={imm})");
+            assert_eq!(
+                vm.registers[3], 0,
+                "reserved opcode must answer 0 (imm={imm})"
+            );
+            let n = vm
+                .trace
+                .iter()
+                .filter(|r| r.instruction.opcode == Opcode::VerifyInference)
+                .count();
+            assert_eq!(n, 1, "exactly one VerifyInference row, no expansion");
+            assert_no_inference_data(&vm);
         }
-    }
-
-    /// A broken output commitment fails closed: rd = 0 even though the
-    /// model/input pair is unchanged. Tampering with any link of the chain
-    /// must never verify.
-    #[test]
-    fn verify_inference_rejects_a_broken_output_commitment() {
-        let model_c = 7u64;
-        let input_c = 9u64;
-        let good = poseidon4_hash(model_c, input_c);
-        let bad = good ^ 1; // flip one bit of the claimed output
-        let mut vm = Vm::new(256);
-        vm.memory[64..72].copy_from_slice(&model_c.to_le_bytes());
-        vm.memory[72..80].copy_from_slice(&input_c.to_le_bytes());
-        vm.memory[80..88].copy_from_slice(&bad.to_le_bytes());
-        vm.registers[1] = 64;
-        let program = vec![
-            inst(Opcode::VerifyInference, 3, 1, 0, 0),
-            inst(Opcode::Halt, 0, 0, 0, 0),
-        ];
-        let receipt = vm.run_receipt(&program);
-        assert!(receipt.success);
-        assert_eq!(vm.registers[3], 0, "broken chain must fail closed");
     }
 
     #[test]

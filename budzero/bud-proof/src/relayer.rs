@@ -18,9 +18,10 @@
 //! regeneration (diverse double compiling), and writes the signed
 //! `relay-status.json` it ships to external watchers.
 
-use crate::adapter::{ExecutionPublicInputs, ProofEnvelope, ProverAdapter, VerifyError};
+use crate::adapter::{ExecutionPublicInputs, ProofEnvelope, VerifyError};
 use crate::canonical_set;
 use crate::transfer_verdict::{verdict_of, TransferVerdict};
+use bud_isa::MainnetActivation;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tiny_keccak::{Hasher, Keccak};
@@ -357,19 +358,23 @@ impl CanonicalRelayReport {
 /// which is what makes the report auditable after the fact. `budcli relay`
 /// passes the live clock (`now_unix`) unless the operator pins the time with
 /// `--verified-at`.
+///
+/// `activation` is the opcode activation state the relay verifies under, and
+/// it is explicit so that no caller opens a staged opcode by omission. The
+/// canonical set contains the storage challenge, which uses `VerifyMerkle`:
+/// under `MainnetActivation::default()` that program is refused with an
+/// `InvalidEnvelope` alarm, and only a relay run with the opcode activated
+/// accepts it.
 pub fn verify_and_report_at(
     envelope: &ProofEnvelope,
     pi: &ExecutionPublicInputs,
     program: &[u64],
+    activation: MainnetActivation,
     at_unix: u64,
 ) -> CanonicalRelayReport {
-    let verified =
-        <crate::plonky3_prover::Plonky3Adapter as ProverAdapter>::verify(envelope, pi, program)
-            .and_then(|_| {
-                crate::plonky3_prover::Plonky3Adapter::verify_canonical_program(
-                    envelope, pi, program,
-                )
-            });
+    let verified = crate::plonky3_prover::Plonky3Adapter::verify_canonical_program_with_activation(
+        envelope, pi, program, activation,
+    );
     CanonicalRelayReport::from_outcome(envelope, pi, verified, at_unix)
 }
 
@@ -454,9 +459,10 @@ pub fn verify_and_report_with_reexecution_at(
     envelope: &ProofEnvelope,
     pi: &ExecutionPublicInputs,
     program: &[u64],
+    activation: MainnetActivation,
     at_unix: u64,
 ) -> CanonicalRelayReport {
-    let mut report = verify_and_report_at(envelope, pi, program, at_unix);
+    let mut report = verify_and_report_at(envelope, pi, program, activation, at_unix);
 
     // A failed verification is already an alarm; the re-execution check must
     // not overwrite that classification.
@@ -545,10 +551,12 @@ pub fn verify_and_report_with_spentset_at(
     envelope: &ProofEnvelope,
     pi: &ExecutionPublicInputs,
     program: &[u64],
+    activation: MainnetActivation,
     spent_set: &dyn SpentSet,
     at_unix: u64,
 ) -> CanonicalRelayReport {
-    let mut report = verify_and_report_with_reexecution_at(envelope, pi, program, at_unix);
+    let mut report =
+        verify_and_report_with_reexecution_at(envelope, pi, program, activation, at_unix);
 
     // A failed verification or a re-execution mismatch is already an alarm;
     // the spent-set check must not overwrite that classification.
@@ -593,6 +601,7 @@ pub fn verify_and_report_with_spentset_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapter::ProverAdapter;
     use crate::plonky3_prover::Plonky3Adapter;
     use bud_isa::{Instruction, Opcode};
     use bud_vm::Vm;
@@ -657,7 +666,13 @@ mod tests {
     #[test]
     fn canonical_proof_produces_ok_report_with_valid_signature() {
         let (envelope, pi, program) = prove_canonical();
-        let report = verify_and_report_at(&envelope, &pi, &program, 1_700_000_000);
+        let report = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         assert_eq!(report.status, RelayStatus::Ok);
         assert!(report.is_canonical);
         assert!(report.alarm.is_none());
@@ -681,13 +696,43 @@ mod tests {
         assert!(receipt.success);
         let pi = dummy_pi(&vm, &program);
         let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).unwrap();
-        let report = verify_and_report_at(&envelope, &pi, &program, 1_700_000_000);
+        let report = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         assert_eq!(report.status, RelayStatus::Alarm);
         assert!(!report.is_canonical);
         let alarm = report.alarm.as_ref().expect("alarm present");
         assert_eq!(alarm.code, AlarmCode::NonCanonicalProgram);
         assert!(report.verify_report_sig(), "alarm reports are signed too");
         assert!(report.relay_token_line().contains("relay-status alarm"));
+    }
+
+    /// A relay on the default activation state does not accept the canonical
+    /// storage challenge: it uses `VerifyMerkle`, which is closed until it is
+    /// activated, and being in the canonical set does not open it.
+    #[test]
+    fn default_activation_refuses_the_canonical_verify_merkle_program() {
+        let (envelope, pi, program) = prove_canonical();
+        let report = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::default(),
+            1_700_000_000,
+        );
+        assert_eq!(report.status, RelayStatus::Alarm);
+        let alarm = report.alarm.as_ref().expect("alarm present");
+        assert_eq!(alarm.code, AlarmCode::InvalidEnvelope);
+        assert!(
+            alarm.detail.contains("VerifyMerkle") && alarm.detail.contains("not activated"),
+            "the alarm names the opcode: {}",
+            alarm.detail
+        );
+        assert!(report.verify_report_sig(), "the refusal is signed too");
     }
 
     #[test]
@@ -697,7 +742,13 @@ mod tests {
         if let Some(b) = envelope.proof_bytes.get_mut(0) {
             *b ^= 0x01;
         }
-        let report = verify_and_report_at(&envelope, &pi, &program, 1_700_000_000);
+        let report = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         assert_eq!(report.status, RelayStatus::Alarm);
         // Flipping the first byte may break postcard deserialization (or
         // produce a structurally valid proof that fails STARK verification) -
@@ -716,8 +767,20 @@ mod tests {
     #[test]
     fn signature_is_deterministic_and_tamper_evident() {
         let (envelope, pi, program) = prove_canonical();
-        let r1 = verify_and_report_at(&envelope, &pi, &program, 1_700_000_000);
-        let r2 = verify_and_report_at(&envelope, &pi, &program, 1_700_000_000);
+        let r1 = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
+        let r2 = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         assert_eq!(r1.report_sig, r2.report_sig, "same input, same signature");
         assert_eq!(r1.relay_token_line(), r2.relay_token_line());
 
@@ -733,7 +796,13 @@ mod tests {
     #[test]
     fn write_report_to_temp_dir_and_reread() {
         let (envelope, pi, program) = prove_canonical();
-        let report = verify_and_report_at(&envelope, &pi, &program, 1_700_000_000);
+        let report = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         let dir = std::env::temp_dir().join(format!("bud-relayer-test-{}", std::process::id()));
         let path = dir.join("relay-report.json");
         report.write_report(&path).expect("write report");
@@ -747,7 +816,13 @@ mod tests {
     #[test]
     fn report_json_roundtrips() {
         let (envelope, pi, program) = prove_canonical();
-        let report = verify_and_report_at(&envelope, &pi, &program, 1_700_000_000);
+        let report = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         let json = report.report_json().expect("relay report serializes");
         let parsed: CanonicalRelayReport = serde_json::from_str(&json).expect("json parses");
         assert_eq!(parsed, report);
@@ -761,7 +836,13 @@ mod tests {
     #[test]
     fn a_non_ascii_hash_field_is_an_error_not_a_panic() {
         let (envelope, pi, program) = prove_canonical();
-        let report = verify_and_report_at(&envelope, &pi, &program, 1_700_000_000);
+        let report = verify_and_report_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         let json = report.report_json().expect("relay report serializes");
         let good = hex32(&report.program_hash);
         let bad = format!("{}{}", "\u{20ac}".repeat(21), "a"); // 64 bytes, 22 chars
@@ -792,7 +873,13 @@ mod tests {
     #[test]
     fn canonical_transfer_passes_reexecution_check() {
         let (envelope, pi, program) = prove_transfer();
-        let report = verify_and_report_with_reexecution_at(&envelope, &pi, &program, 1_700_000_000);
+        let report = verify_and_report_with_reexecution_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         assert_eq!(report.status, RelayStatus::Ok);
         assert!(report.is_canonical);
         assert!(report.alarm.is_none(), "no alarm for the honest specimen");
@@ -820,8 +907,14 @@ mod tests {
             spent: std::collections::HashSet::new(),
             fail: false,
         };
-        let report =
-            verify_and_report_with_spentset_at(&envelope, &pi, &program, &oracle, 1_700_000_000);
+        let report = verify_and_report_with_spentset_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            &oracle,
+            1_700_000_000,
+        );
         assert_eq!(report.status, RelayStatus::Ok);
         assert!(report.alarm.is_none());
     }
@@ -834,8 +927,14 @@ mod tests {
             spent: std::collections::HashSet::from([CANONICAL_CLAIMED_NULLIFIER as u64]),
             fail: false,
         };
-        let report =
-            verify_and_report_with_spentset_at(&envelope, &pi, &program, &oracle, 1_700_000_000);
+        let report = verify_and_report_with_spentset_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            &oracle,
+            1_700_000_000,
+        );
         assert_eq!(report.status, RelayStatus::Alarm);
         let alarm = report.alarm.as_ref().expect("alarm present");
         assert_eq!(alarm.code, AlarmCode::TransferViolation);
@@ -854,8 +953,14 @@ mod tests {
             spent: std::collections::HashSet::new(),
             fail: true,
         };
-        let report =
-            verify_and_report_with_spentset_at(&envelope, &pi, &program, &oracle, 1_700_000_000);
+        let report = verify_and_report_with_spentset_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            &oracle,
+            1_700_000_000,
+        );
         assert_eq!(report.status, RelayStatus::Alarm);
         assert_eq!(
             report.alarm.as_ref().map(|a| a.code),
@@ -880,7 +985,13 @@ mod tests {
         // never read events off the caller, and tampering the bound digest
         // must surface as the verification error it is, not as a verdict.
         pi.event_digest[0] ^= 0x01;
-        let report = verify_and_report_with_reexecution_at(&envelope, &pi, &program, 1_700_000_000);
+        let report = verify_and_report_with_reexecution_at(
+            &envelope,
+            &pi,
+            &program,
+            MainnetActivation::full(),
+            1_700_000_000,
+        );
         assert_eq!(report.status, RelayStatus::Alarm);
         assert_ne!(
             report.status,
