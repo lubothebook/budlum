@@ -56,7 +56,7 @@ Her faz MODEL_ROUTING §2.4 ajanıyla yapılır ve §2.5 beyan satırıyla başl
 1. Keşif: scout ile ilgili yerler. Bütün repo okunmaz (§6).
 2. Bulgu ve plan: finder veya architect. İş en fazla 64 ADIM'lık partilere bölünür, her ADIM tek odaklıdır ve §7 handoff'u taşır.
 3. Kod: handoff'taki ajan, önce başarısız test.
-4. Doğrulama GitHub'a bırakılır. `cargo fmt --check`, `cargo clippy`, `cargo test` ve diğer CI kontrollerini GitHub Actions çalıştırır. Claude bunları yerelde çalıştırmaz. Yalnızca CI'ın göremediği iş (salt okuma, kod okuma, `git`) yerelde yapılır. Bu madde MODEL_ROUTING §6.4, §6.5 ve §9'daki yerel test, fmt ve clippy koşusu şartını bu süre boyunca geçersiz kılar.
+4. Doğrulama GitHub'a bırakılır. `cargo fmt --check`, `cargo clippy`, `cargo test` ve diğer CI kontrollerini GitHub Actions çalıştırır. Claude bunları yerelde çalıştırmaz. Yalnızca CI'ın göremediği iş (salt okuma, kod okuma, `git`) yerelde yapılır. MODEL_ROUTING SERT-5 bununla uyumludur. GitHub'ın zaten yaptığı bir denetimi (fmt, clippy, test, typos, deny, audit, gates ve benzeri) ne Claude ne de bir ajan yinelemez.
 5. Opus doğrulaması: R3'te zorunlu, R2'de 3 dosyadan fazla veya durum geçişi varsa. Her seferinde yeni architect çağrısı.
 6. PR: dal push edilir, PR açılır. Test sayıları dosya başına yazılır.
 7. Devam: push sonrası CI sonucu GitHub'dan okunur (GitHub araçları). Sonraki ADIM beklemeden başlar. Açık PR'ların CI'ı ADIM'lar arasında kontrol edilir. Kırmızı CI Z3 ihlal edilmeden düzeltilir ve yine yerelde değil, push ile GitHub'da doğrulanır.

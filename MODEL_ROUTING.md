@@ -1,6 +1,6 @@
 # MODEL YÖNLENDİRME (Budlum, Claude Code)
 
-Sürüm: SERT-4, 9 Ekim 2026 (sadeleştirildi). Bu dosya her turda bağlama girer, bu yüzden kısadır. Tam metin ve gerekçe: `MODEL_ROUTING_REF.md` (bağlanmaz). Kurulum: `MODEL_ROUTING_KURULUM.md`.
+Sürüm: SERT-5, 9 Ekim 2026 (CI'ı GitHub'a bırakma, CLAUDE.md 1.8 ile uyumlu). Bu dosya her turda bağlama girer, bu yüzden kısadır. Tam metin ve gerekçe: `MODEL_ROUTING_REF.md` (bağlanmaz). Kurulum: `MODEL_ROUTING_KURULUM.md`.
 Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karşılığı olmayan durumda dur, §8 kullan, varsayma.
 
 ## 1. Ajanlar
@@ -98,9 +98,9 @@ Bütün okunmayacak büyük dosyalar (100 KB üstü): `budzero/bud-proof/src/plo
 1. `rg -n "<sembol>" src/` ile bul, `sed -n 'a,bp'` ile yalnızca gerekli aralığı oku.
 2. ARCHITECTURE.md: önce `rg -n '^## '`, sonra ilgili bölüm.
 3. `git diff --stat` önce, tam diff dosya dosya.
-4. Çıktıyı kırp: `cargo test <filtre> 2>&1 | tail -n 40`, `cargo clippy --message-format=short`.
-5. `cargo test` bütün çalışmaz, hedefli çalışır. Tam koşu yalnızca kapanışta ve §8 onayıyla.
-6. `rust-toolchain.toml` sürümüyle çalış, rustfmt ve clippy çıktısı tahmin edilmez.
+4. CI'ın yaptığı iş yerelde yapılmaz: `cargo fmt`, `cargo clippy`, `cargo test`, `cargo check`, typos, cargo-deny, cargo-audit, gates, miri, kani, semgrep. GitHub Actions çalıştırır. Sonuç push sonrası GitHub araçlarıyla okunur, log `get_job_logs` ile yalnızca kırmızı adımdan çekilir ve kırpılır. Ajan bu kontrolleri "doğrulama" diye yinelemez.
+5. Yerelde yalnızca CI'ın göremediği iş kalır: salt okuma, `git`, `rg`. Kod değişikliği, kırmızı CI'ı düzeltmek için push ile doğrulanır.
+6. rustfmt ve clippy çıktısı tahmin edilmez. Emin değilsen push et ve CI sonucunu oku.
 7. `target/` ve `Cargo.lock` okunmaz.
 8. Scout ve dış ajan çıktısı kanıt değildir. Düzenlemeden önce ilgili satırları bizzat oku.
 9. Denetim ajanları parçadan büyük okuma yapmaz: çağrı başına en çok 1500 satır, parça dışında önce `rg`, en çok 80 satır.
@@ -118,7 +118,7 @@ Dosyalar: <yol:satır_aralığı>, ...
 Değişmezler (bozulmayacak): <liste>
 Yapılacak: 1) ... 2) ...
 Yapılmayacak: <kapsam dışı>
-Test komutu: <hedefli komut> (önce başarısız olan test)
+Test: <yazılacak başarısız test adı ve dosyası> (CI'da çalışır, yerelde koşulmaz)
 Karmaşıklık: normal | yüksek | mekanik
 Ajan: coder | coder-deep | coder-lite
 Bitti ölçütü: <gözlemlenebilir>
@@ -144,7 +144,7 @@ C) Dur, ben karar vereyim
 - Rapor PR açıklamasına yazılır, ayrı rapor dosyası açılmaz. Denetim bulguları `docs/audit/` altında tutulur (testnet, CLAUDE.md Z14).
 - Test sayıları dosya başına verilir, tek toplam yazılmaz: `src/registry/x.rs: 14 geçti / 0 kaldı`.
 - Her raporda: değişen dosyalar, çalıştırılan komutlar, çalıştırılamayanlar (neden), açık kararlar (§8 biçimi).
-- "Bitti" için hedefli test, `cargo fmt --check` ve clippy gerçekten çalışmış olmalıdır.
+- "Bitti" için ilgili CI işleri push edilen SHA üzerinde yeşil olmalıdır (Z4). Yerel koşu aranmaz.
 
 ## 10. Oturum başı ve maliyet
 
@@ -173,7 +173,7 @@ Sonra `memanto status` (komut yoksa atla, §11 kullanılmaz).
 2. `ANTHROPIC_API_KEY`, `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_CODE_SUBAGENT_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` tanımlanmaz.
 3. `max` yalnızca finder-max ile ve §5 koşulunda.
 4. Opus ajanları dosya yazmaz, Opus kod yazmaz.
-5. Tüm repo okunmaz, `cargo test` bütün çalışmaz (kapanış hariç, onayla).
+5. Tüm repo okunmaz. Yerelde cargo çalıştırılmaz (CLAUDE.md §4 madde 4).
 6. `.github/*-baseline.txt` dosyalarına dokunulmaz.
 7. Özel anahtar, seed, token ve imzalama anahtarı yolu hiçbir araca (memanto dahil) yazılmaz.
 8. Scout çıktısı kanıt sayılmaz.
