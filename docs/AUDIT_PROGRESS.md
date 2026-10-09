@@ -10,11 +10,11 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P01 | done | 27 (+1 new root cause) | 8 of 27, all confirmed (two Critical, five High, one lowered to Medium) | next: F09 to F27 |
 | P02 | done | 21 | no | |
 | P03 | done | 25 | no | |
-| P04 | done | 25 | no | P04-F01 is a possible Critical: verify first |
-| P05 | started, stopped without a result (usage limit) | n/a | no | rescan from the start |
+| P04 | done | 25 | 4 of 25 (V03): F01 Critical confirmed, F02 and F03 High confirmed, F04 lowered to Medium (partly) | next: F05 to F25; trace S1 to S4 |
+| P05 | rescan running (coder-deep, started in session 2) | n/a | no | |
 | P06 to P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md |
 
-Verification calls done: 2 (V01 for P01 F01 to F04, V02 for P01 F05 to F08). No agent was running when this log was written.
+Verification calls done: 3 (V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
 
 Rules for the next session:
 
