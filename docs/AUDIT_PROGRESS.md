@@ -7,14 +7,14 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09.
 | Part | Scan by Sonnet | Raw findings | Verified by Opus | Note |
 |---|---|---|---|---|
 | P62 | done | 6 | no | invariant scan; Z6, Z12 and Z3 coverage items; nothing about secrets, unsafe, float |
-| P01 | done | 27 | 4 of 27 (all 4 confirmed) | next: F05 to F27 |
+| P01 | done | 27 (+1 new root cause found in verification) | 8 of 27 (all 8 confirmed) | next: F09 to F27 |
 | P02 | done | 21 | no | |
 | P03 | done | 25 | no | |
 | P04 | done | 25 | no | |
 | P05 | running when this log was written | n/a | no | |
 | P06 to P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md |
 
-Verification in flight when this log was written: P01 F05 to F08 (Opus call, result not received).
+Verification done: P01 F01 to F08 (two Opus calls). No verification in flight when this log was written.
 
 Rules for the next session:
 
