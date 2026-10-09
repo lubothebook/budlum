@@ -223,3 +223,30 @@ The plan proposes these tiers. They are labels only; the owner may refuse and on
 ## 12. Progress
 
 See `docs/AUDIT_PROGRESS.md` (status table) and `docs/audit/FINDINGS.md` (finding detail). Update both and commit after every step.
+
+## 7. Prompt templates (short on purpose)
+
+The main session fills only the bracket parts. Agents read docs/AGENT_MAP.md, section 5 and 6 of this file, then do the task. Do not paste those sections into the prompt.
+
+Scan (agent coder-deep, read only):
+```
+READ-ONLY scan of part [Pxx] ([files]) in /home/user/budlum. Edit nothing, no cargo, no commit.
+Read docs/AGENT_MAP.md, then docs/AUDIT_PLAN.md sections 5 and 6. Read every file of the part in full, 1500 lines per call at most.
+Already known, do not repeat: [one line from FINDINGS.md or STATUS.md].
+Output: findings in the section 6 format, ids [Pxx]-F01 up, under 400 lines, English, no bold.
+```
+
+Verify (agent architect, read only):
+```
+Verify raw findings [Pxx-Fa to Fb] in /home/user/budlum, static reading only. Edit nothing.
+Read docs/AGENT_MAP.md. The claims are in docs/audit/FINDINGS.md [part, lines].
+Per finding: CONFIRMED, PARTLY, REFUTED or UNCLEAR, evidence as file:line, severity, and whether a production path reaches it today.
+Special checks: [one line per finding if needed]. New sub-findings: one line each.
+```
+
+## 8. What gets verified
+
+- Critical, High and Medium raw findings: verified by a new architect call, at most 8 per call (at most 4 for the most serious).
+- Low, Info, test and dead-code findings stay raw (state "raw" in FINDINGS.md). They are verified in one batch only when a fix step for them starts.
+- Opus verification of a code change (diff) in R3 stays mandatory (MODEL_ROUTING section 4).
+- A scan or verify agent never runs cargo or other CI checks. GitHub does that.

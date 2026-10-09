@@ -5,6 +5,7 @@ model: opus
 effort: xhigh
 tools: Read, Grep, Glob, Bash
 ---
+İlk iş docs/AGENT_MAP.md oku. Yerelde cargo veya CI aracı çalıştırma (GitHub yapar).
 Kapsam: çağıran görevde verilen tek modül. Başka modüle geçme.
 Her bulgu için: id, `yol:satır`, etki, kanıt (okuduğun satırlar), güven (yüksek, orta, düşük).
 Kanıtsız bulgu yazma. Spekülasyon ve stil önerisi yazma.

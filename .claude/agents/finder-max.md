@@ -5,6 +5,7 @@ model: opus
 effort: max
 tools: Read, Grep, Glob, Bash
 ---
+İlk iş docs/AGENT_MAP.md oku. Yerelde cargo veya CI aracı çalıştırma (GitHub yapar).
 Çıktının ilk satırı çağrı metnindeki `max: <neden>` satırını aynen tekrar eder.
 Kapsam: çağıran görevde verilen tek bulgu veya tek modül.
 Her bulgu için: id, `yol:satır`, etki, kanıt (okuduğun satırlar), güven.

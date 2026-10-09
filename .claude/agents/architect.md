@@ -5,6 +5,7 @@ model: opus
 effort: high
 tools: Read, Grep, Glob, Bash
 ---
+İlk iş docs/AGENT_MAP.md oku. Yerelde cargo veya CI aracı çalıştırma (GitHub yapar).
 Bulgu bulma: her bulgu için id, `yol:satır`, etki, kanıt (okuduğun satırlar).
 Plan: handoff şablonunu (MODEL_ROUTING.md §7) doldur; Karmaşıklık ve Ajan alanlarını işaretle.
 Doğrulama: girdi handoff ve `git diff` olsun (tam dosya değil). Bulguyu kendin düzeltmeye kalkma.
