@@ -1,6 +1,6 @@
-# MODEL YÖNLENDİRME (Budlum, Claude Pro, Claude Code)
+# MODEL YÖNLENDİRME (Budlum, Claude Code)
 
-Sürüm: SERT-3, 8 Ekim 2026. Bu dosya her turda bağlama girer, bu yüzden kısadır. Tam metin ve gerekçe: `MODEL_ROUTING_REF.md` (bağlanmaz, gerekirse okunur). Kurulum: `MODEL_ROUTING_KURULUM.md`.
+Sürüm: SERT-4, 9 Ekim 2026 (sadeleştirildi). Bu dosya her turda bağlama girer, bu yüzden kısadır. Tam metin ve gerekçe: `MODEL_ROUTING_REF.md` (bağlanmaz). Kurulum: `MODEL_ROUTING_KURULUM.md`.
 Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karşılığı olmayan durumda dur, §8 kullan, varsayma.
 
 ## 1. Ajanlar
@@ -9,22 +9,23 @@ Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karş�
 |---|---|---|---|---|
 | scout | Haiku | yok | grep, sembol, dosya haritası, log kırpma | karar, kod, güvenlik yorumu |
 | finder | Opus | xhigh | R3 bulgu avı | kod |
-| architect | Opus | high | plan, handoff, R2 bulgu, diff doğrulama | kod, mekanik iş, keşif |
+| architect | Opus | high | plan, handoff, R2 bulgu, bulgu ve diff doğrulama | kod, mekanik iş, keşif |
 | finder-max | Opus | max | yalnızca §5 istisnası | rutin iş |
-| coder | Sonnet | medium | handoff'a göre kod ve test | mimari karar, bulgu avı |
-| coder-deep | Sonnet | high | R3 kodu, "Karmaşıklık: yüksek" | R3 dışı iş |
+| coder | Sonnet | medium | handoff'a göre kod ve test; denetimde salt okuma | mimari karar |
+| coder-deep | Sonnet | high | R3 kodu, "Karmaşıklık: yüksek"; R3 denetim okuması | R3 dışı kod |
 | coder-lite | Sonnet | low | mekanik iş | davranış değişikliği, R3 |
 
 - Mekanik iş: biçim, yeniden adlandırma, doküman, import düzeni, clippy'nin açıkça önerdiği düzeltme. Davranış değişmez. R3'te mekanik iş yoktur.
 - "Karmaşıklık: yüksek" (architect işaretler): iki veya daha fazla modül, durum geçişi veya imza/doğrulama mantığı değişiyor, ya da değişmezler listesi 3 maddeyi aşıyor.
-- scout yalnızca belirli sembol, çağrı yeri veya dosya bulmak içindir. Toplu Haiku taraması (modül başına 12 kontrol) yapılmaz: 9 grup taraması verimsiz çıktı, doğrulanan ipuçlarının hiçbiri bulgu değildi. Bulgu avı doğrudan Opus ile yapılır.
-- Opus ajanları (finder, architect, finder-max) dosya yazmaz. Opus kod yazmaz.
-- Ana oturum `opusplan`. Plan ve doğrulama `architect` ajanına devredilir, plan moduna güvenilmez.
+- scout yalnızca belirli sembol, çağrı yeri veya dosya bulmak içindir. Toplu Haiku taraması yapılmaz. Bulgu avı Opus ile yapılır.
+- Opus ajanları dosya yazmaz ve ajan başlatmaz. Dosyaları ve ajan başlatmayı ana oturum yapar. Opus kod yazmaz.
+- Ana oturum `opusplan`. Plan ve doğrulama `architect` ajanına devredilir.
+- Aynı anda en çok 3 ajan çalışır.
 - Fable ve "Requires usage credits" yazan model seçilmez.
 
 ## 2. Effort
 
-2.1 Effort'u Claude kendisi seçer. Ayaz `/effort` kullanmaz. Gereken effort ana oturumunkinden farklıysa iş ilgili ajana devredilir, satır içinde yapılmaz.
+2.1 Effort'u Claude kendisi seçer. Ayaz `/effort` kullanmaz. Gereken effort ana oturumunkinden farklıysa iş ilgili ajana devredilir.
 
 2.4 Seçim tablosu.
 
@@ -36,7 +37,7 @@ Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karş�
 | Plan, handoff | R3, R2 | architect |
 | Kod | R3 normal | coder |
 | Kod | R3 Karmaşıklık: yüksek | coder-deep |
-| Kod | R2, R1 | coder (R1'de ana oturum Sonnet satır içi de olur) |
+| Kod | R2, R1 | coder |
 | Mekanik | R2, R1, R0 | coder-lite |
 | Doğrulama | R3 zorunlu, R2 (§3 koşulu) | architect, her seferinde yeni çağrı |
 | İstisna | §5 koşulu | finder-max |
@@ -44,19 +45,17 @@ Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karş�
 2.5 Faz beyanı. Her faz başlamadan önce tek satır yazılır:
 `FAZ: <keşif|bulgu|plan|kod|mekanik|doğrulama> | KADEME: R<0-3> | AJAN: <ad> | EFFORT: <seviye> | NEDEN: <en fazla 8 kelime>`
 
-2.6 Bulgu avı. finder: R3 modülünde ilk tarama, ya da önceki taramadan sonra imza/doğrulama, konsensüs durum makinesi, tokenomics parametresi veya kalıcılık formatı değiştiyse. architect: önceki tarama kaydı STATUS.md veya memanto'da varsa ve yalnızca `git diff <son-taranan-commit>..HEAD` taranıyorsa; ve tüm R2 taramalarında. R1 ve R0'da bulgu avı yapılmaz. Claude bulgu avını Ayaz'dan istemeden başlatır: R3 modülleri sırayla taranır, her seferinde bir finder (§4). Bulgu raporları repoya yazılmaz (§12.10), scratchpad'te tutulur ve özel kanala (docs/SECURITY.md) bildirilir.
+2.6 Bulgu avı. finder: R3 modülünde ilk tarama, ya da önceki taramadan sonra imza/doğrulama, konsensüs durum makinesi, tokenomics parametresi veya kalıcılık formatı değiştiyse. architect: önceki tarama kaydı varsa ve yalnızca `git diff <son-taranan-commit>..HEAD` taranıyorsa; ve tüm R2 taramalarında. R1 ve R0'da bulgu avı yapılmaz. Claude bulgu avını Ayaz'dan istemeden başlatır: R3 modülleri sırayla taranır, her seferinde bir finder. Tam kod denetimi için `docs/AUDIT_PLAN.md` kullanılır. Bulgu raporları repoya yazılmaz (§12.10), scratchpad'te tutulur ve özel kanala (docs/SECURITY.md) bildirilir.
 
 2.7 Handoff'taki "Ajan" alanı bağlayıcıdır. Boşsa Claude tablodan seçer ve beyan eder.
 
 2.8 Opus çözüm verdikten veya doğruladıktan sonra uygulama her zaman Sonnet ajanına döner.
 
-2.9 Bütünlük. Ajan transkriptindeki model ve effort, ajan dosyasıyla eşleşmelidir (kurulum dosyası §2.4). Doğrulama: ilk kurulum, her `claude update`, her ajan dosyası değişikliği. Eşleşmezse dur ve §8 kullan. `CLAUDE_CODE_EFFORT_LEVEL` tanımlıysa tüm effort değerlerini sessizce ezer.
+2.9 Bütünlük. Ajan transkriptindeki model ve effort, ajan dosyasıyla eşleşmelidir. Doğrulama: ilk kurulum, her `claude update`, her ajan dosyası değişikliği. Eşleşmezse dur ve §8 kullan.
 
 2.10 Her finder-max çağrısı STATUS.md "EFFORT LOG" başlığına tek satır yazılır: tarih, görev, ajan, effort, neden.
 
 2.11 Claude kendi başına yapar: ajan seçimi, §5 merdiveni, finder-max. Claude §8 ile sorar: ajan dosyalarında effort değişikliği, R3'te coder-lite, finder'ı high altına indirmek, yeni ajan eklemek.
-
-2.12 `ultrathink` kullanılmaz.
 
 ## 3. Kademeler
 
@@ -92,18 +91,19 @@ finder-max çağrı metninin ilk satırı `max: <neden>` olur ve §2.10'a göre 
 
 ## 6. Okuma kuralları
 
-Yaklaşık 726 `.rs` dosyası, 13,7 MB. Tüm repo okunmaz veya özetlenmez.
+Yaklaşık 747 `.rs` dosyası, 367 bin satır. Tüm repo okunmaz veya özetlenmez.
 
-Bütün okunmayacak dosyalar: `budzero/bud-proof/src/plonky3_prover.rs` (357 KB), `src/chain/blockchain.rs` (354 KB), `src/rpc/server.rs` (284 KB), `src/domain/storage_deal.rs` (284 KB), `src/network/node.rs` (202 KB), `src/chain/chain_actor.rs` (193 KB), `src/ai/mod.rs` (184 KB), `budzero/bud-proof/src/plonky3_air.rs` (150 KB), `src/core/account.rs` (149 KB), `src/execution/executor.rs` (141 KB), `docs/ARCHITECTURE.md` (82 bölüm).
+Bütün okunmayacak büyük dosyalar (100 KB üstü): `budzero/bud-proof/src/plonky3_prover.rs`, `src/chain/blockchain.rs`, `src/rpc/server.rs`, `src/domain/storage_deal.rs`, `src/network/node.rs`, `src/chain/chain_actor.rs`, `src/ai/mod.rs`, `budzero/bud-proof/src/plonky3_air.rs`, `src/core/account.rs`, `src/execution/executor.rs`, `docs/ARCHITECTURE.md`.
 
 1. `rg -n "<sembol>" src/` ile bul, `sed -n 'a,bp'` ile yalnızca gerekli aralığı oku.
 2. ARCHITECTURE.md: önce `rg -n '^## '`, sonra ilgili bölüm.
 3. `git diff --stat` önce, tam diff dosya dosya.
 4. Çıktıyı kırp: `cargo test <filtre> 2>&1 | tail -n 40`, `cargo clippy --message-format=short`.
-5. `cargo test` bütün çalışmaz, hedefli çalışır (`cargo test -p <crate> <filtre>`). Tam koşu yalnızca kapanışta ve §8 onayıyla.
+5. `cargo test` bütün çalışmaz, hedefli çalışır. Tam koşu yalnızca kapanışta ve §8 onayıyla.
 6. `rust-toolchain.toml` sürümüyle çalış, rustfmt ve clippy çıktısı tahmin edilmez.
-7. `target/` ve `Cargo.lock` okunmaz (Read ve Bash ile).
+7. `target/` ve `Cargo.lock` okunmaz.
 8. Scout ve dış ajan çıktısı kanıt değildir. Düzenlemeden önce ilgili satırları bizzat oku.
+9. Denetim ajanları parçadan büyük okuma yapmaz: çağrı başına en çok 1500 satır, parça dışında önce `rg`, en çok 80 satır.
 
 ## 7. Handoff şablonu (architect yazar, en fazla 40 satır, dosya yazmaz)
 
@@ -127,7 +127,8 @@ Opus doğrulaması gerekli mi: evet | hayır
 
 ## 8. Onay şablonu
 
-Dur ve sor: 8 dosyadan fazla değişiklik, tokenomics veya protokol parametresi, `main`'e push, dosya silme, baseline gevşetme, tam güvenlik denetimi, memanto'yu Cloud'a geçirme veya §11 dışında veri yazma, ajan dosyasında effort değişikliği, R3'te coder-lite, "Requires usage credits" modeli, ortam kontrolünde sapma, §2.9 eşleşmezliği.
+Dur ve sor: 8 dosyadan fazla değişiklik, tokenomics veya protokol parametresi, `main`'e push, dosya silme, baseline gevşetme, memanto'yu Cloud'a geçirme, ajan dosyasında effort değişikliği, R3'te coder-lite, "Requires usage credits" modeli, ortam kontrolünde sapma, §2.9 eşleşmezliği.
+Tam kod denetimi için ayrı onay gerekmez, Ayaz'ın talimatı yeterlidir.
 
 ```
 KARAR GEREKİYOR: <başlık>
@@ -140,7 +141,7 @@ C) Dur, ben karar vereyim
 
 ## 9. Raporlama
 
-- Rapor PR açıklamasına yazılır, ayrı rapor dosyası açılmaz.
+- Rapor PR açıklamasına yazılır, ayrı rapor dosyası açılmaz. Güvenlik bulgusu raporu bunun istisnasıdır: repoya girmez (§12.10).
 - Test sayıları dosya başına verilir, tek toplam yazılmaz: `src/registry/x.rs: 14 geçti / 0 kaldı`.
 - Her raporda: değişen dosyalar, çalıştırılan komutlar, çalıştırılamayanlar (neden), açık kararlar (§8 biçimi).
 - "Bitti" için hedefli test, `cargo fmt --check` ve clippy gerçekten çalışmış olmalıdır.
@@ -151,21 +152,19 @@ C) Dur, ben karar vereyim
 ```
 env | cut -d= -f1 | grep -E '^(ANTHROPIC_API_KEY|CLAUDE_CODE_EFFORT_LEVEL|CLAUDE_CODE_SUBAGENT_MODEL|CLAUDE_CODE_SUBAGENT_MODEL_FORCE)$'
 ```
-Sonra `memanto status`. Süre dolmuşsa `memanto agent activate budlum --hours 24`.
+Sonra `memanto status` (komut yoksa atla, §11 kullanılmaz).
 
 - Görev değişince `/clear`. Bağlam yaklaşık yüzde 60 dolunca `/compact <odak>`.
 - Uzun açıklama konuşmada değil STATUS.md'de tutulur.
 - Model ping-pong yok: plan, Sonnet'te uygulama, gerekirse doğrulama için bir kez Opus.
-- Paralel ajan yalnızca bağımsız ve küçük işlerde. Ağır R3 işleri taze limit penceresinin başında yapılır.
-- Ölçüm ve haftalık rapor: bkz. REF §10.
+- Ağır R3 işleri taze limit penceresinin başında yapılır.
 
-## 11. Memanto (yalnızca Bash komutuyla, On-Prem, `connect` yok)
+## 11. Memanto (varsa; yalnızca Bash komutuyla, On-Prem, `connect` yok)
 
 - R2 ve R3 oturum başında bir kez: `memanto recall "<modül>" --limit 5` ve `memanto recall "değişmez" --type instruction --limit 10`. R1'de recall yok.
-- Oturum sonunda en fazla bir kayıt: `memanto remember "<en fazla 3 satır>" --type decision --confidence 0.95`. Tuzak: `--type error`. Değişmez: `--type instruction --confidence 1.0 --tags değişmez`.
-- Saklanır: tasarım kararı, değişmez, ADIM sonucu, tekrar eden tuzak. Saklanmaz: anahtar, seed, imzalama anahtarı yolu, token, düzeltilmemiş güvenlik bulgusu ayrıntısı, kaynak kod.
+- Oturum sonunda en fazla bir kayıt (en fazla 3 satır): `memanto remember "..." --type decision --confidence 0.95`.
+- Saklanır: tasarım kararı, değişmez, ADIM sonucu, tekrar eden tuzak. Saklanmaz: anahtar, seed, token, düzeltilmemiş güvenlik bulgusu ayrıntısı, kaynak kod.
 - Çalıştırılmaz: `upload`, `answer`, `connect`, `serve`, `ui`. Onay ister: `forget`, `edit`, `memory`, `policy`, `schedule`, `conflicts`, `migrate`, `config`.
-- Oturum hatasında `memanto agent activate budlum --hours 24` çalıştırılır, komut bir kez tekrarlanır.
 - Kalıcı karar memanto'da, aktif iş STATUS.md'de. Aynı bilgi iki yerde tutulmaz.
 
 ## 12. Sert yasaklar
