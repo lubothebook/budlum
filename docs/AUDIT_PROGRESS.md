@@ -11,8 +11,8 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P02 | done | 21 | 7 of 21 (V06: F01 to F07; F04 partly, rest confirmed; severities lowered for F02, F05, F06, F07) | next: F08 to F21 |
 | P03 | done | 25 | 7 of 25 (V05: F01, F02, F05, F11, F12, F13, F20, all confirmed, most latent) | next: rest |
 | P04 | done | 25 | 4 of 25 (V03): F01 Critical confirmed, F02 and F03 High confirmed, F04 lowered to Medium (partly) | next: F05 to F25; trace S1 to S4 |
-| P05 | rescan running (coder-deep, started in session 2) | n/a | no | |
-| P06 to P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md |
+| P05 | done (session 2, coder-deep, all 6078 lines read) | 22 | no | P05-F01 is a possible High (supply): verify first, then F02 to F04 |
+| P06 to P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md; P06 and P07 and P60 are next (wave D3) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
 
