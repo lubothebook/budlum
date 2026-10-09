@@ -1,8 +1,8 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.9 (2026-10-09). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızca Ayaz'ın onayıyla yapılır.
-Son değişiklik (Ayaz onayıyla): CI kontrollerini GitHub yapar; ajanlar README yerine `docs/AGENT_MAP.md` okur; direktif sadeleştirildi.
+Sürüm: 1.10 (2026-10-09). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Son değişiklik (Ayaz onayıyla): §9 Mainnet'e giden yol eklendi. Önceki: CI kontrollerini GitHub yapar; ajanlar README yerine `docs/AGENT_MAP.md` okur.
 
 ## 0. Dosyalar
 
@@ -84,5 +84,13 @@ Seviye 2: Dur, MODEL_ROUTING §8 şablonuyla sor, yalnızca: §8 listesi, mimari
 - En az kod. İstenmeyen özellik, tek kullanımlık soyutlama, imkânsız durum için hata işleme yok.
 - Cerrahi değişiklik: yalnızca gerekeni değiştir, komşu kodu "iyileştirme", mevcut stile uy. Ölü kod görürsen söyle, silme. Kendi değişikliğinin yetim bıraktığını temizle.
 - Hedef odaklı: görevi doğrulanabilir hedefe çevir (hata için önce başarısız test), CI yeşil olana kadar döngü kur.
+
+## 9. Mainnet'e giden yol (Ayaz başlıkları, 2026-10-09)
+
+Sıra bağlayıcı değildir. STATUS.md kuyruğu ve kırmızı CI önce gelir (§7). Bu başlıklar §1'deki hedefin somut işleridir.
+
+1. B.U.D. modüllerini bağlamak. Erasure coding, shard yerleşimi ve repair tetikleyici hazır ama gerçek üretim çağrı noktası yok. İlk somut iş bu olabilir.
+2. VerifyMerkle 64 derinlik kapısını üretime almak. Gerçek Proof-of-Storage ve PQ toplama katmanı buna bağlıdır. Tek iş iki engeli birden açar. Kapıyı açmak geri alınamaz işlemdir, §5 gereği önce sorulur.
+3. Domain imza toplama katmanını yazmak. PoW, PoS, BFT ve PoA finality kanıtları Merkle ağacına girer. Tek PQ imza kök üzerinde durur.
 
 @MODEL_ROUTING.md
