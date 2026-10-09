@@ -1,18 +1,20 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.7 (2026-10-09, sadeleştirildi, Z14 eklendi). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Sürüm: 1.8 (2026-10-09, README zorunlu okuma ve CI'ı GitHub'a bırakma eklendi). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızca Ayaz'ın onayıyla yapılır.
 
 ## 0. Dosyalar
 
 | Dosya | Ne zaman okunur |
 |---|---|
 | CLAUDE.md | Her oturum |
+| README.md | Her oturumda ve görev aktarılan her ajan (scout, finder, architect, coder ve diğerleri) işe başlamadan önce. Yapıyı her seferinde baştan çıkarmaya çalışmaz. |
 | MODEL_ROUTING.md | Her oturum (dosya sonundaki `@` satırı) |
 | STATUS.md | Her oturum başı. Aktif iş burada. |
 | docs/AUDIT_PLAN.md, docs/AUDIT_PROGRESS.md, docs/audit/FINDINGS.md | Yalnızca kod denetimi işinde |
 | MODEL_ROUTING_REF.md, MODEL_ROUTING_KURULUM.md, BUD-AI-KAPSAMLI-DIREKTIF.md | Yalnızca gerekirse (bağlanmaz) |
 
+- Her ajan çağrısının görev metni README.md okunmasını söyler. README yapıyı anlatmıyorsa eksik kısım README'ye eklenir, ajan keşfi tekrar etmez.
 - Çelişki: model, effort, ajan, okuma, maliyet, onay konularında MODEL_ROUTING.md geçerlidir. Amaç ve çalışma ritminde CLAUDE.md geçerlidir.
 - Ayaz hedefi koyar (mainnet). Görevleri Claude STATUS.md ve canlı durumdan kendisi çıkarır. Komut beklenmez.
 
@@ -54,10 +56,10 @@ Her faz MODEL_ROUTING §2.4 ajanıyla yapılır ve §2.5 beyan satırıyla başl
 1. Keşif: scout ile ilgili yerler. Bütün repo okunmaz (§6).
 2. Bulgu ve plan: finder veya architect. İş en fazla 64 ADIM'lık partilere bölünür, her ADIM tek odaklıdır ve §7 handoff'u taşır.
 3. Kod: handoff'taki ajan, önce başarısız test.
-4. Yerel doğrulama: hedefli test, `cargo fmt --check`, clippy. Bütün `cargo test` çalışmaz.
+4. Doğrulama GitHub'a bırakılır. `cargo fmt --check`, `cargo clippy`, `cargo test` ve diğer CI kontrollerini GitHub Actions çalıştırır. Claude bunları yerelde çalıştırmaz. Yalnızca CI'ın göremediği iş (salt okuma, kod okuma, `git`) yerelde yapılır. Bu madde MODEL_ROUTING §6.4, §6.5 ve §9'daki yerel test, fmt ve clippy koşusu şartını bu süre boyunca geçersiz kılar.
 5. Opus doğrulaması: R3'te zorunlu, R2'de 3 dosyadan fazla veya durum geçişi varsa. Her seferinde yeni architect çağrısı.
 6. PR: dal push edilir, PR açılır. Test sayıları dosya başına yazılır.
-7. Devam: CI beklenmez, sonraki ADIM başlar. Açık PR'ların CI'ı ADIM'lar arasında kontrol edilir. Kırmızı CI Z3 ihlal edilmeden düzeltilir.
+7. Devam: push sonrası CI sonucu GitHub'dan okunur (GitHub araçları). Sonraki ADIM beklemeden başlar. Açık PR'ların CI'ı ADIM'lar arasında kontrol edilir. Kırmızı CI Z3 ihlal edilmeden düzeltilir ve yine yerelde değil, push ile GitHub'da doğrulanır.
 
 - PR birleştirme onayı Ayaz'ındır, beklenmez. Bekleme için `sleep` döngüsü yok.
 - Bağlam yaklaşık yüzde 60 dolunca `/compact`.
