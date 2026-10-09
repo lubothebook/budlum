@@ -45,7 +45,7 @@ Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karş�
 2.5 Faz beyanı. Her faz başlamadan önce tek satır yazılır:
 `FAZ: <keşif|bulgu|plan|kod|mekanik|doğrulama> | KADEME: R<0-3> | AJAN: <ad> | EFFORT: <seviye> | NEDEN: <en fazla 8 kelime>`
 
-2.6 Bulgu avı. finder: R3 modülünde ilk tarama, ya da önceki taramadan sonra imza/doğrulama, konsensüs durum makinesi, tokenomics parametresi veya kalıcılık formatı değiştiyse. architect: önceki tarama kaydı varsa ve yalnızca `git diff <son-taranan-commit>..HEAD` taranıyorsa; ve tüm R2 taramalarında. R1 ve R0'da bulgu avı yapılmaz. Claude bulgu avını Ayaz'dan istemeden başlatır: R3 modülleri sırayla taranır, her seferinde bir finder. Tam kod denetimi için `docs/AUDIT_PLAN.md` kullanılır. Bulgu raporları repoya yazılmaz (§12.10), scratchpad'te tutulur ve özel kanala (docs/SECURITY.md) bildirilir.
+2.6 Bulgu avı. finder: R3 modülünde ilk tarama, ya da önceki taramadan sonra imza/doğrulama, konsensüs durum makinesi, tokenomics parametresi veya kalıcılık formatı değiştiyse. architect: önceki tarama kaydı varsa ve yalnızca `git diff <son-taranan-commit>..HEAD` taranıyorsa; ve tüm R2 taramalarında. R1 ve R0'da bulgu avı yapılmaz. Claude bulgu avını Ayaz'dan istemeden başlatır: R3 modülleri sırayla taranır, her seferinde bir finder. Tam kod denetimi için `docs/AUDIT_PLAN.md` kullanılır. Testnet aşamasında bulgular `docs/audit/` altında repoya yazılır (CLAUDE.md Z14). Mainnet öncesi özel kanala (docs/SECURITY.md) taşınır.
 
 2.7 Handoff'taki "Ajan" alanı bağlayıcıdır. Boşsa Claude tablodan seçer ve beyan eder.
 
@@ -141,7 +141,7 @@ C) Dur, ben karar vereyim
 
 ## 9. Raporlama
 
-- Rapor PR açıklamasına yazılır, ayrı rapor dosyası açılmaz. Güvenlik bulgusu raporu bunun istisnasıdır: repoya girmez (§12.10).
+- Rapor PR açıklamasına yazılır, ayrı rapor dosyası açılmaz. Denetim bulguları `docs/audit/` altında tutulur (testnet, CLAUDE.md Z14).
 - Test sayıları dosya başına verilir, tek toplam yazılmaz: `src/registry/x.rs: 14 geçti / 0 kaldı`.
 - Her raporda: değişen dosyalar, çalıştırılan komutlar, çalıştırılamayanlar (neden), açık kararlar (§8 biçimi).
 - "Bitti" için hedefli test, `cargo fmt --check` ve clippy gerçekten çalışmış olmalıdır.
@@ -178,4 +178,4 @@ Sonra `memanto status` (komut yoksa atla, §11 kullanılmaz).
 7. Özel anahtar, seed, token ve imzalama anahtarı yolu hiçbir araca (memanto dahil) yazılmaz.
 8. Scout çıktısı kanıt sayılmaz.
 9. `to_bytes()` içindeki `unwrap_or_default()` kalıbı odaklı ADIM'lara karıştırılmaz.
-10. Düzeltilmemiş güvenlik bulguları halka açık issue, PR, commit, memanto veya repo dosyasına yazılmaz. `docs/SECURITY.md` özel kanalı kullanılır.
+10. Düzeltilmemiş güvenlik bulguları memanto'ya ve halka açık issue veya PR'a yazılmaz. Testnet aşamasında repoda yalnızca `docs/audit/` altında tutulabilir (CLAUDE.md Z14). Mainnet öncesi `docs/SECURITY.md` özel kanalı kullanılır.

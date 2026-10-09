@@ -1,6 +1,6 @@
 # Full code audit plan
 
-Base commit for the plan: 25ede0b. Plan written by the architect agent (Opus) on 2026-10-09 and copied here so that a new session can run it without the old session. This file holds the method only. It holds no finding. Findings are never written to the repository (MODEL_ROUTING 12.10).
+Base commit for the plan: 25ede0b. Plan written by the architect agent (Opus) on 2026-10-09 and copied here so that a new session can run it without the old session. This file holds the method only. Findings live in `docs/audit/FINDINGS.md` (testnet phase, owner decision, rule Z14 in CLAUDE.md). Before mainnet they move to the private channel.
 
 ## 1. Scope and numbers
 
@@ -197,10 +197,10 @@ After each wave the main session runs `git status --porcelain`. It must be empty
 
 ## 9. Report layout and where it lives
 
-- One merged report. It is NOT committed. Keep it in the session scratchpad (or another private place) and file Critical and High items through the private channel in docs/SECURITY.md. Reason: MODEL_ROUTING 9 and 12.10.
-- Part files: findings/Pxx.md in the scratchpad.
-- Report layout: 1 summary table (tier by severity, confirmed only; mainnet blockers) | 2 coverage table (part, planned lines, ranges read, ranges not read, agent, verification call, status) | 3 confirmed findings (by severity, then part; extra field "Verification: call number, lines read") | 4 invariant table (Z3 Z6 Z7 Z8 Z9 Z12 LABEL-12.9) | 5 integration table (parts not wired) | 6 uncertain findings | 7 rejected findings with reason and evidence | 8 merged findings | 9 open decisions (section 8 template).
-- The trigger step of a security finding lives only in the private report. Memanto may get only: audit done, SHA, count.
+- During the testnet phase the findings are committed to `docs/audit/FINDINGS.md` after every scan and every verification step (rule Z14 in CLAUDE.md). Part files and verification notes may stay in the scratchpad but must be copied into that file before the session ends.
+- Report layout: summary table (tier by severity, confirmed only; mainnet blockers) | coverage table | confirmed findings (by severity, then part, with the verification call) | invariant table (Z3 Z6 Z7 Z8 Z9 Z12 LABEL-12.9) | integration table (parts not wired) | uncertain | rejected with reason | merged | open decisions (section 8 template).
+- Findings text must be English (the tree_is_english gate fails Turkish text, even without diacritics).
+- Before mainnet: file open items through the private channel in docs/SECURITY.md and remove the detail from `docs/audit/`.
 
 ## 10. Stop and deviation rules
 
@@ -220,11 +220,6 @@ The plan proposes these tiers. They are labels only; the owner may refuse and on
 - budzero/bud-vm, bud-isa, bud-state, verifier-registry: R3 (ZK soundness).
 - src/network files other than node.rs: R2. bud/src (B.U.D.): R2. budzero/bud-compiler: R2. src/mempool and src/light_client: R2.
 
-## 12. Progress at the time of writing (2026-10-09)
+## 12. Progress
 
-- Done by the Sonnet agents in the old session: P62, P01, P02, P03. P04 and P05 were running and are NOT counted as done.
-- The Opus verification had started for P01 only. Nothing else was verified.
-- The findings and the verification notes were kept in the old session scratchpad. They are not in this repository on purpose. A new session must treat every part as NOT done unless a private report exists. If the owner kept the private report, start from the first part with no verified result.
-- Ask the owner first: file the earlier results through the private channel in docs/SECURITY.md before any rescan.
-- Z12 note for the owner: some public files still use the banned term (README and docs text). The P62 scan lists them. Fixing LICENSE or NOTICE text needs an owner decision.
-- Tooling note: the `memanto` command was not installed in that container, so no recall was done.
+See `docs/AUDIT_PROGRESS.md` (status table) and `docs/audit/FINDINGS.md` (finding detail). Update both and commit after every step.

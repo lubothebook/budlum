@@ -1,7 +1,7 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.6 (2026-10-09, sadeleştirildi). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Sürüm: 1.7 (2026-10-09, sadeleştirildi, Z14 eklendi). Durum: Bağlayıcı. Bu dosyada değişiklik yalnızca Ayaz'ın onayıyla yapılır.
 
 ## 0. Dosyalar
 
@@ -10,7 +10,7 @@ Sürüm: 1.6 (2026-10-09, sadeleştirildi). Durum: Bağlayıcı. Bu dosyada değ
 | CLAUDE.md | Her oturum |
 | MODEL_ROUTING.md | Her oturum (dosya sonundaki `@` satırı) |
 | STATUS.md | Her oturum başı. Aktif iş burada. |
-| docs/AUDIT_PLAN.md | Yalnızca kod denetimi işinde |
+| docs/AUDIT_PLAN.md, docs/AUDIT_PROGRESS.md, docs/audit/FINDINGS.md | Yalnızca kod denetimi işinde |
 | MODEL_ROUTING_REF.md, MODEL_ROUTING_KURULUM.md, BUD-AI-KAPSAMLI-DIREKTIF.md | Yalnızca gerekirse (bağlanmaz) |
 
 - Çelişki: model, effort, ajan, okuma, maliyet, onay konularında MODEL_ROUTING.md geçerlidir. Amaç ve çalışma ritminde CLAUDE.md geçerlidir.
@@ -45,6 +45,7 @@ Z10. Harici kod kopyalanmaz. Harici projeler yalnızca yöntem ilhamıdır.
 Z11. PoA/kurumsal akış izinsiz kullanıcı akışından ayrı kalır.
 Z12. Kamu metinlerinde "L1" veya "Layer 1" yok. Doğru ad "Budlum Evrensel Mutabakat Katmanı".
 Z13. Yorum, commit ve PR kısa sade cümlelerle yazılır (ASD-STE100). Uzun tire ve markdown kalın işareti yok. Repo metni İngilizcedir (README.tr.md ve bu direktif dosyaları hariç).
+Z14. Testnet aşaması (Ayaz kararı, 2026-10-09): denetim bulguları ayrıntısıyla repoda `docs/audit/` altında tutulur ve her adımda commitlenir. MODEL_ROUTING §2.6, §9 ve §12.10 bu süre boyunca bu kuralla geçersizdir. Mainnet öncesi açık bulgular özel kanala (docs/SECURITY.md) taşınır ve `docs/audit/` içindeki ayrıntı silinir. Bu karar Ayaz geri alana kadar sürer.
 
 ## 4. Çalışma döngüsü
 
