@@ -18,7 +18,8 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P08 | done (2026-10-11) | 13 (3 High, 3 Medium, 5 Low, 2 Info) | 6 of 13 (V12: F01 to F06 confirmed) | F07 on stay raw (Low and Info) |
 | P09 | done (2026-10-11) | 11 (1 High, 4 Medium, 6 Low) | 5 of 11 (V13: F01 High confirmed, cheap trigger about 43k BUD; F03 confirmed; F02, F04, F05 partly and lowered) | F06 on stay raw |
 | P10 | done (2026-10-11) | 11 (+F12 High vote griefing) | 5 of 11 + F12 (V14: F01, F02, F04, F05, F12 confirmed; F03 partly, not reached because F01 keeps finalized_height at 0) | F06 on stay raw; trace F12 report path to the slash |
-| P11 on, P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md; P07 and P60 are next (wave D3) |
+| P11 | done (2026-10-11) | 12 (1 Critical, 3 Medium, 8 Low); F01 read and confirmed by the main session | F01 only | verify F02 to F04 next |
+| P12 on, P61 | P12 scan running | n/a | no | follow the wave order in AUDIT_PLAN.md; P07 and P60 are next (wave D3) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
 
