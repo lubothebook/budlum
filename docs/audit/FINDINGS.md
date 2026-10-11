@@ -677,6 +677,21 @@ Scan by finder agent (Opus, medium), 2026-10-11, written by the main session fro
 - P60-F08 Low dead code (Certain). BFV:142-145, 147-148, 156, 166-168: ten items declared and unused (PRECOMPILE_BLS_G1ADD, G1MSM, G2ADD, G2MSM, MAP_FP_TO_G1, MAP_FP2_TO_G2, PRECOMPILE_P256, GAS_MLDSA_VERIFY, GAS_P256_VERIFY, GAS_P256_SOLIDITY). The comment at 153-155 promises a P256 probe that does not exist. ChallengeWindowOpen(digest, 0) serves as the error for both a closed window (375) and re-verify (318).
 - P60-F09 Info (Certain on proto3 semantics). protocol.proto:200, 222, 268 and buf.yaml:14-20: enum zero values carry meaning (ETHEREUM, BRIDGE_LOCK, SOCIAL_FI); documented and intended. Rust handling not checked.
 
+## Verification V10 (P07 F01 to F08, architect agent, 2026-10-11)
+
+Written by the main session from the agent reply. Static reading. F01, F02, F04, F07 CONFIRMED. F03, F05, F06, F08 PARTLY.
+
+- P07-F01 CONFIRMED, High, reachable. rpc/server.rs:1712-1730 has no require_operator call; every sibling has one (1654, 1806, 1920; check at 443). main.rs:1348-1357 starts the Public listener with the same method set. submitter is a plain unsigned field (spec.rs:123-125); the bond is looked up by it (registry.rs:411, 692). blockchain.rs:2951 persists on every call (db.rs:1068-1070). Precondition: an operator registered a domain.
+- P07-F02 CONFIRMED, High (code facts). ethereum.rs:399-405 checks a fixed signing root against key and signature from the payload; intake.rs:121-128 single pairing; next_committee_root (237) and finalized_root (233) parsed and unused. Same root cause as P06-F01 and F02.
+- P07-F03 PARTLY, lowered to Medium. registry.rs:452-466: any refusal moves an Admitted or Active domain to Faulted; an unbonded caller is enough (UnknownProver, 692). Faulted blocks nothing (F04), so today the effect is a false label in the RPC profile and digest, made permanent by F05.
+- P07-F04 CONFIRMED, Medium. NotServing (registry.rs:52) is never built; check() (638-754) never reads the state; nothing honours Faulted. "Must stop serving" is at registry.rs:611.
+- P07-F05 PARTLY, Medium. registry.rs:354-360 refuses an equal digest and admit() is deterministic (selftest.rs:214-231, 377-417), so readmit always fails on the same binary. registry.rs:83-85 suggests a new probe set is the intended exit. No test calls readmit.
+- P07-F06 PARTLY, lowered to Low, operator only. RPC refuses threshold 0 and max < threshold (server.rs:1954-1959). Still accepted: threshold 1, threshold at or below half of max (first group wins, intake_quorum.rs:300-302), threshold above bonded count (ends Disputed, 342-347), max = usize::MAX. Stored policies are not re-checked.
+- P07-F07 CONFIRMED, Medium, reachable (with F01 one attacker is enough). Rounds keyed by prover chosen declared_height (intake_quorum.rs:261-271); refusals count as votes (291, 389-397); AgreedRefusal makes honest evidence fail with RoundClosed (272-275) until the sweep (359-362, ROUND_RETENTION_BLOCKS 10_000 at 222). state_digest serializes the whole intake (intake.rs:595-597).
+- P07-F08 PARTLY, Medium. policy.now is set only at registration (intake.rs:348-355). ethereum.rs:417-424: slots after now saturate age to 0, so Stale never fires for them. Very old updates are still refused.
+
+New sub-findings: N1 ethereum.rs:233 finalized_root never compared (feeds F02). N2 registry.rs:67 vs 355-356: AdmissionDigestMismatch fires when digests are equal, text says the opposite (Low). N3 registry.rs:437, 546: a successful submit on a Faulted domain records the attestation but stays Faulted (Low). N4 only the RPC validates quorum numbers (server.rs:1954); IntakeState::set_quorum_policy accepts anything (Low).
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
