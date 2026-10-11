@@ -1,8 +1,8 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.13 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
-Son değişiklik (Ayaz onayıyla): sessizlik kuralı (§4A.8), alt ajan effort medium zorunlu (§4A.1).
+Sürüm: 1.14 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Son değişiklik (Ayaz onayıyla): sessizlik kuralı netleştirildi (§4A.8), tarama kapsamı kuralı (§4A.10), alt ajan effort medium zorunlu (§4A.9).
 
 ## 1. Amaç ve rol
 
@@ -74,8 +74,14 @@ Ajan kuralları (token kuralları §4A):
 5. Alt ajan en fazla 5 satır döner: durum (bitti/sorun), değişen dosyalar, tek cümle sonuç. Kod, log, diff yapıştırılmaz. Ayrıntı `notes/` veya `docs/audit/` altına dosya olarak yazılır.
 6. Ayaz'a son cevap en fazla 5 satır. Süreç anlatılmaz, özet tekrarlanmaz. Mümkünse yazılmaz, yalnızca denetim ve yönetim yapılır.
 7. Emin değilsen tek kısa soru sor. Tahmin yürütüp dosya taratma. Denetimin amacı yanlış kodlamayı bulmak ve düzenlemektir.
-8. Sessizlik (Ayaz, 2026-10-11): Ayaz'ın cevaplaması gereken bir karar yoksa ana oturum yazmaz. Bulgu, süreç, özet ve ilerleme anlatılmaz. Bulgular yalnızca `docs/audit/` ve commit içine yazılır. Ayaz'a yalnızca iki şey gider: karar sorusu (§5 şablonu) ve iş ataması. Ayaz sorarsa en fazla 5 satır.
+8. Sessiz çalışma (Ayaz, 2026-10-11). Ana oturum Ayaz'a yalnızca üç türde mesaj yazar:
+   a) Karar sorusu: Ayaz'ın cevaplaması gereken bir konu varsa, §5 şablonuyla, tek mesajda, A/B/C ve bir öneriyle.
+   b) İş ataması: Ayaz'ın yapması gereken bir işlem varsa, tek cümle ve gereken dosya veya ayar adı.
+   c) Ayaz'ın doğrudan sorusuna cevap, en fazla 5 satır.
+   Bunların dışında mesaj yazılmaz: süreç, bulgu özeti, ilerleme, tamamlanma bildirimi ve alt ajan raporu aktarımı yoktur. Bulgular ve sonuçlar yalnızca `docs/audit/`, `docs/AUDIT_PROGRESS.md` ve commit mesajlarına yazılır. Bildirilecek karar veya iş yoksa tur çıktısı boş bırakılır.
 9. Alt ajan effort'u her çağrıda medium. `effort` alanı verilmez, ajan dosyasındaki medium geçerli kalır. Yüksek effort, `finder-max` ve `xhigh` yasak (Ayaz izni olmadan). Hız için: aynı anda 3 tarama, küçük parçalar birleştirilir, çıktı bulgu başına en çok 3 satır.
+
+10. Tarama kapsamı (Ayaz, 2026-10-11). Ana oturum yalnızca Ayaz'ın verdiği veya çalışan taramaları yürütür. Çalışan taramalar bitince sonuçlar kaydedilir ve commitlenir, kendiliğinden yeni tarama veya doğrulama başlatılmaz. Sıradaki parçayı Ayaz belirler.
 
 ## 5. Ne zaman sorulur
 
