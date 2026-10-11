@@ -663,6 +663,20 @@ New sub-findings:
 - P06-F01a High if confirmed. submit_verified_domain_commitment writes state.anchor_external_root from an RPC call, outside block execution (blockchain.rs:1603). Open: is external_roots part of the state root? Same class as P05-F06a.
 - P06-F01b Medium. The external domain bridge path skips the registry prover bond and refusal counter checks of submit_external_evidence (domain_bridge.rs:121 vs intake.rs:403).
 
+## Part 10. Raw findings P60 (Solidity verifier, proto, buf)
+
+Scan by finder agent (Opus, medium), 2026-10-11, written by the main session from the agent reply. Not verified. Contract: contracts/external-domain/BudlumFinalityVerifier.sol (BFV). Proto and buf.yaml: no defect; ProtoBlockHeader matches Rust BlockHeader (src/core/block.rs:25-46).
+
+- P60-F01 Critical (Certain, verify first). BFV:100-111, 438-471. No trusted key or message is fixed in the contract. The caller supplies all four pairing points including the generator, and the ML-DSA public key (111). root is unused inside _verifyBls (456-462). Trigger shape: in verify (302) pass H as the G1 generator, PK as any G2 point P, negSig as -P, plus a self-made ML-DSA key signing signingRoot(a). e(H,P)*e(G,-P) = 1, so blsOk and pqOk are true and any stateRoot is accepted with no window (339-341). Settles the open question in P06-F11.
+- P60-F02 High (Certain). BFV:339-357, 397-411. With precompiles present and verification failed, verify opens a challenge window instead of reverting; settle accepts the digest after the window unless a fraud proof arrives. Contradicts the doc at 293.
+- P60-F03 Medium (Likely; missing step: run the probe on an EIP-2537 node). BFV:237, 509-515. Pairing probe has 5000 gas but EIP-2537 charges 70300 for k = 1, so hasBlsPrecompile stays false on real chains and every attestation takes the optimistic path.
+- P60-F04 Medium (Certain). BFV:267-288. signingRoot hashes g1HashedMessage and g2NegSignature, so the BLS signature cannot sign the root. Only ML-DSA binds height, stateRoot and epoch.
+- P60-F05 Medium integration (Certain). No Rust encoder exists for the Solidity encodings (BFV:248-260, 270-285); evm_hybrid.rs builds no attestationDigest or signingRoot preimage. The parity check in the plan cannot pass. Pair layout (443, 459-461) matches neither BLS variant.
+- P60-F06 Medium (Certain). BFV:185, 302-358, 415. accepted is keyed by digest only, verify has no access control, no one-root-per-height rule. Two roots for one height can both settle.
+- P60-F07 Medium test (Certain). The contract is never compiled or tested in CI (only xtask/tools/src/audit_guard.rs:43 names the path). No negative test for F01 to F06.
+- P60-F08 Low dead code (Certain). BFV:142-145, 147-148, 156, 166-168: ten items declared and unused (PRECOMPILE_BLS_G1ADD, G1MSM, G2ADD, G2MSM, MAP_FP_TO_G1, MAP_FP2_TO_G2, PRECOMPILE_P256, GAS_MLDSA_VERIFY, GAS_P256_VERIFY, GAS_P256_SOLIDITY). The comment at 153-155 promises a P256 probe that does not exist. ChallengeWindowOpen(digest, 0) serves as the error for both a closed window (375) and re-verify (318).
+- P60-F09 Info (Certain on proto3 semantics). protocol.proto:200, 222, 268 and buf.yaml:14-20: enum zero values carry meaning (ETHEREUM, BRIDGE_LOCK, SOCIAL_FI); documented and intended. Rust handling not checked.
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
