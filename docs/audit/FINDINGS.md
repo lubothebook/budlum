@@ -867,3 +867,19 @@ Scan by coder-deep style agent (Sonnet, medium), 2026-10-11, condensed by the ma
 - P14-F06 Low test (Certain). 7522-7578. Non-writing rd forgery runs only for Store and Push; Jmp, Jnz, Assert have no reason given for the skip.
 - P14-F07 Info (Certain). Stale docs and names: diagnose_verify_merkle_matrix_chain says ignored but is not; rejects_verify_merkle_with_incorrect_root asserts acceptance (10634); trace length comment says 2 expansion rows, trace has 64 (9801). Literal "0.5.2" in plonky3_prover.rs 1898 and 32 sites while Cargo.toml pins p3 =0.7.0, and fri_params_id "test_fri_params" is required: envelope labels are not true metadata.
 - P14-F08 Low integration (Certain). benches/canonical_programs.rs:59-155 re-implements the matmul emitter and checks only length 90, not the canonical program hash; storage challenge bench runs with an empty VM. Bench allow attributes are Known (suppressions_are_justified.rs).
+
+## Part 18. Raw findings P13 (ZK tests A)
+
+Scan by Sonnet agent (medium), 2026-10-11, condensed by the main session. Read in full: plonky3_prover.rs 2020-6371, trace_layout_tests.rs, tests/compiled_branching.rs, tests/fiat_shamir_binding.rs, tests/soundness_negatives.rs. No ignore, unsafe, float or key hit. None verified yet.
+
+- P13-F01 High (Likely; missing step: build two initial memory read lists with equal fold and show Plonky3Adapter::verify accepts a proof against the other root). plonky3_prover.rs:2688-2709; production fold adapter.rs:111-127, constants plonky3_air.rs:125-126. The initial memory image commitment (initial_state_root) is a linear fold with fixed public BETA and GAMMA into one Goldilocks element; a colliding address and value pair is solved in one field step. The test records this and passes green, no red test tracks it. Not in STATUS.md or FINDINGS.md.
+- P13-F02 Medium test (Certain). 2716-2746. The register fold test reads MEM_INIT_BETA, never REG_INIT_BETA or REG_INIT_GAMMA (plonky3_air.rs:671-672), calls no production fold. Same weakness for the register file has no tracking test.
+- P13-F03 Medium test (Certain). 5540-5570, 5622-5661. rejects_tampered_program and rejects_invalid_proof_bytes use zero program_hash or zero public_inputs_hash, so they are refused at 1922 or 1908 before proof decoding. No test feeds garbage bytes behind a valid envelope.
+- P13-F04 Medium test (Certain). 4034-4125. Test meant to pin the Program CTL bound for jump targets uses a Load row, so the sequential next_pc rule refuses first. Removing the Program CTL bound keeps it green.
+- P13-F05 Medium test (Certain). tests/fiat_shamir_binding.rs:170-260. Text order tests do not pin that the aux (LogUp) commitment is observed before alpha (prover.rs:209, verifier.rs:453), nor the randomization commitment before zeta (prover.rs:356, verifier.rs:466). Deleting the aux observe keeps all tests green. Stale line citations.
+- P13-F06 Medium test (Certain). 4964-5089, mutation at 5038-5043. No test strips the aux trace (commitment and openings together); this is the P15-F01 shape. No regression test exists for the fix. Only 4 shape mutations; quotient chunk lengths, FRI counts, preprocessed openings are untested.
+- P13-F07 Low test. tests/soundness_negatives.rs:138-165. gas_limit is never tampered; refusal comes from the hash check at 1908.
+- P13-F08 Low test. tests/compiled_branching.rs:49-93. receipt.success is never read; only three program shapes; no negative test.
+- P13-F09 Low test. trace_layout_tests.rs:26-380. Hand kept mirror table of column ranges, not derived from COL_* constants; a gap is not detected.
+- P13-F10 Info. Turkish identifiers and strings in tests (5020, 5039, 5240), term "L1" at 4939 (Z12), stale line citations, misplaced doc at 4931-4947 and garbled doc at 2814-2819.
+- Related (P12/P15 side): fri_params_id "test_fri_params" and p3_version "0.5.2" are required by verify (see P14-F07).
