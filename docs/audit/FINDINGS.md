@@ -911,3 +911,13 @@ Scan by Sonnet agent (medium), 2026-10-11, condensed by the main session. All fi
 - P16-F21 Low test. registry.rs:1010-1113. No test for the negative paths of F08, F10, F11, F13.
 - P16-F22 Info (Z3, unchecked). trace_fixtures.rs:1-3 inner allow of unwrap and expect, commit e7e3a45; budget not compared.
 - P16-F23 Info. bud-isa/src/lib.rs:595-616 reads another crate source with include_str!; stale "4-round Poseidon" comments (lib.rs:1048, 1630, 1636). Known: idle-code-baseline.txt:808-810.
+
+## Verification V18 (P13 F01 to F04, architect agent, Opus, 2026-10-11)
+
+Written by the main session from the agent reply. Static reading only; no collision proof was built or run.
+
+- P13-F01 CONFIRMED, High, reachable today and wider than reported. The fold is linear with fixed public constants (adapter.rs:111-127; plonky3_air.rs:125-126, 2423-2445). Two read lists (a1,v1) and (a2, v1+(a1-a2)*GAMMA) give the same term; the test at plonky3_prover.rs:2698-2716 shows it and the comments at plonky3_air.rs:113-121 and ai/execution/verify.rs:94-109 admit it. The AIR ties the trace fold only to the public root, so verify accepts either memory against one root. Consumer: AiAttachExecutionProof (executor.rs:2089, active AI_OPERATOR) takes initial_state_root from the prover's claimed inputs (executor.rs:2146-2194) and nothing recomputes it. expected_initial_state_root (verify.rs:110-127) is the documented defence but has no production caller (tests verify.rs:549-619 and a re-export mod.rs:33). So an operator needs no collision: it can claim any root and prove a run on any weights or input. The weak fold matters fully once the verifier recomputes the root.
+- New P13-F01a High (R3): wire expected_initial_state_root into executor.rs before the STARK. The request carries only an input commitment (guest.rs:368-372), so the fix needs the input supplied or another binding, plus Fiat-Shamir BETA and GAMMA.
+- P13-F02 CONFIRMED, lowered Medium to Low. Register fold has the same root cause as F01 and merges under it; only the missing weakness test remains (REG_INIT_BETA and REG_INIT_GAMMA used at plonky3_air.rs:2256-2257 and prover.rs:1305).
+- P13-F03 CONFIRMED, lowered Medium to Low. Both tests are refused at 1908 or 1922 before decoding (1959 on). Structured tampered real proofs are covered elsewhere (5470-5530, 3167, 4107); only random bytes behind a valid envelope are untested.
+- P13-F04 CONFIRMED, Medium test, unchanged. Fixture row 0 is a Load, so the sequential next_pc rule refuses first; removing the Program CTL bound keeps it green. Fix: a Jmp row with an out of range imm.
