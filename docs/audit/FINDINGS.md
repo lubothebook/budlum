@@ -883,3 +883,31 @@ Scan by Sonnet agent (medium), 2026-10-11, condensed by the main session. Read i
 - P13-F09 Low test. trace_layout_tests.rs:26-380. Hand kept mirror table of column ranges, not derived from COL_* constants; a gap is not detected.
 - P13-F10 Info. Turkish identifiers and strings in tests (5020, 5039, 5240), term "L1" at 4939 (Z12), stale line citations, misplaced doc at 4931-4947 and garbled doc at 2814-2819.
 - Related (P12/P15 side): fri_params_id "test_fri_params" and p3_version "0.5.2" are required by verify (see P14-F07).
+
+## Part 19. Raw findings P16 (ZK surroundings: bud-vm, bud-isa, bud-state, verifier-registry)
+
+Scan by Sonnet agent (medium), 2026-10-11, condensed by the main session. All files of the part read in full except Poseidon constant tables (bud-vm/src/lib.rs 1108-1439, 1576-1617; pinned by a fingerprint test). The AIR was not read, so findings that depend on it are Likely. None verified yet. Z7: all four crates forbid unsafe. No Z9, LABEL-12.9 hit.
+
+- P16-F01 Medium (Likely; missing step: how the AIR constrains Syscall 6 and Eq/Lt on a non reduced value). bud-vm/src/lib.rs:538-547, 363-367, 453-487. Syscall imm 6 returns an unreduced u64 sum; Load returns any 8 bytes; Eq and Lt compare raw u64, while the AIR works in the field. A register r >= P and r - P compare unequal in the VM, equal in the field. Entry: ContractCall bytecode (executor.rs:547, zkvm.rs:154). Honest trace may not satisfy the AIR (unprovable call), or a prover may prove the field result that differs from node execution.
+- P16-F02 Medium (mainnet blocker while verify_merkle_enabled is false; Critical if opened). bud-vm/src/lib.rs:1034-1046, 581-615. VerifyMerkle node hash is one round, 7(a+c0)^7 + (b+c1)^7, no capacity; x^7 is a bijection, so the last sibling can be solved by a 7th root and any root is hit. Consistent with P12-F01. The gate comment in bud-isa:119-141 does not name this.
+- P16-F03 Low (Likely). lib.rs:196-228, 53-70; zkvm.rs:209. Vm::new defaults mainnet_mode false; prove_bytecode_with_memory hard codes false, so closed opcodes 0x1E and 0x1F decode there. ContractCall path is gated correctly.
+- P16-F04 Low (Certain). lib.rs:521, 685-695, 1052-1055. Poseidon opcode, PrivacyCommit and nullifier use the same permutation with zero capacity and no tag, so Poseidon(a,b) = PrivacyCommit(a,b,0) and nullifier(s) = Poseidon(s, D). The comment claiming domain separation is false.
+- P16-F05 Low (Likely; missing step: measure size_of Step). lib.rs:107-143, 727-752. Every Step holds a 256 byte register copy; trace capped only by gas (DEFAULT_CONTRACT_GAS_LIMIT 1,000,000), so about 0.4 to 0.5 GB per ContractCall estimated.
+- P16-F06 Info. bud-isa/src/lib.rs:215-268. Bits 55..63 of an instruction word are ignored on decode: several encodings per program.
+- P16-F07 Low dead code. bud-isa/src/lib.rs:59-61, 271-309. is_experimental is always false, IsaProfile check unreachable. Known: idle-code-baseline.txt:764-767.
+- P16-F08 Medium (Likely; verifier path unwired by the crate note). verifier-registry/src/evidence.rs:140-216, 64-71. Provenance flag, spam threshold and liveness window come from the reporter; threshold 1 count 1 passes; missed = 0 passes. slash_from_report (registry.rs:553) acts without any signature or hash check. Known: idle-code-baseline.txt:821-824.
+- P16-F09 Low. evidence.rs:174-176. Block hashes compared as raw strings ("AA", "aa", "0xaa" differ).
+- P16-F10 Medium (Certain for this crate; twin src/registry/permissionless.rs not read). registry.rs:463-551. Slashed is terminal for any slash, even 1%; withdraw, begin_unbonding and register refuse it. Remaining stake locked for good and all roles of the address jailed.
+- P16-F11 Medium (Certain). registry.rs:392-427. upsert_stake with 0 removes an Active or Unbonding registration without the unbonding lock, so later evidence finds NotRegistered and slash_from_report returns Ok(None). No production caller in this crate; twin at src/core/account.rs:672-771 not read.
+- P16-F12 Low. registry.rs:273-287, 445-461; params.rs:70-87. RegistryParams::validate has no production caller; unbonding_epochs 0 or min_stake 0 accepted.
+- P16-F13 Low. registry.rs:429-441, 553-572. add_stake ignores status and clips on overflow; slash_from_report maps every error to Ok(None); cross role slashes not recorded in history. Known: idle-code-baseline.txt:826.
+- P16-F14 Low. registry.rs:671-692. state_root hashes registrations only; params and slashing_history excluded.
+- P16-F15 Low integration. No crate depends on verifier-registry; the cited parity test slash_expression_is_the_same_in_both_workspaces does not exist (only the gate slash_expression.rs). Known: idle-code-baseline.txt:821-830.
+- P16-F16 Low. bud-state/src/lib.rs:242-254. commit pops the backup before save_atomic; a failed save leaves memory ahead of disk and rollback is a no-op. Consumer: bud-cli only.
+- P16-F17 Low. bud-state/src/lib.rs:158-193. Unbounded read_to_string, fixed temp name, no format version, no parent fsync; tests leave files in the working directory.
+- P16-F18 Low integration. bud-state/src/note.rs:85-112. NoteRegistry has no production caller; insert and spend do not tie nullifier to commitment; doc field order wrong. Known: idle-code-baseline.txt:802-807.
+- P16-F19 Low test. trace_fixtures.rs:256-258; lib.rs:2433-2447. The only Store, Load, SWrite, SRead and Log fixture runs only with feature experimental, which no workflow enables; vm_hash_still_matches_the_air_round_count compares VM constants only. No negative test for non canonical values, negative slot, negative jump target, VerifyMerkle forging, stack limit.
+- P16-F20 Low (Likely; missing step: AIR tie of storage slot to COL_IMM). lib.rs:498-519, 969; plonky3_prover.rs:288-325, 781-812. Dynamic slot truncates src2_val to i32; negative slot embedded as 2^64-|slot| while Load and PrivacyCommit use P-|imm|.
+- P16-F21 Low test. registry.rs:1010-1113. No test for the negative paths of F08, F10, F11, F13.
+- P16-F22 Info (Z3, unchecked). trace_fixtures.rs:1-3 inner allow of unwrap and expect, commit e7e3a45; budget not compared.
+- P16-F23 Info. bud-isa/src/lib.rs:595-616 reads another crate source with include_str!; stale "4-round Poseidon" comments (lib.rs:1048, 1630, 1636). Known: idle-code-baseline.txt:808-810.
