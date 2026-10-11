@@ -54,6 +54,7 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P42 | done (2026-10-11), detail notes/P42-scan.md | 26 (2 High, 7 Medium, 16 Low, 1 Info) | no | F01 vault reaches_walk unbounded recursion, F02 Pollen guard checks content_id but gateway serves storage_root, F03 EVM submit always retries |
 | P43 | done (2026-10-11), detail notes/P43-scan.md (crates/budscan/Cargo.lock not readable) | 23 (5 Medium, 16 Low, 2 Info) | no | F01 budscan checks wrong identity, F02 and F03 Pollen gate and purchase unwired, F04 DataAsset ownership not proven |
 | P45 | done (2026-10-11), detail notes/P45-scan.md | 17 (8 Medium, 7 Low, 2 Info) | no | F01 Pollen digests lack chain_id, F02 negatives pass for any reason, F04 vacuous chaos tests |
+| P44 | done (2026-10-11), detail notes/P44-scan.md | 20 (8 Medium, 8 Low, 4 Info) | no | see notes/P44-scan.md F01 to F06 |
 | P32 on | not started | n/a | no | rolling start (CLAUDE.md 4A.10) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
