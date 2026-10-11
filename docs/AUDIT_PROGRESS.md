@@ -65,6 +65,7 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P53 | done (2026-10-11), detail notes/P53-scan.md | 27 (13 Medium, 14 Low) | no | F14 StorageRegistry.dictionaries not in registry state root, F12 authorize_read unwired, F26 regen_health ordering pin vacuous |
 | P54 | done (2026-10-11), detail notes/P54-scan.md | 23 (12 Medium, 9 Low, 2 Info) | no | F01 semver gate cannot go red, F04 required_tests always OK, F10 regeneration gate compares file with itself |
 | P55 | done (2026-10-11), detail notes/P55-scan.md | 23 (6 Medium, 15 Low, 2 Info) | no | F01 udeps ratchet has no baseline so it skips, F03 suppressions gate skips crates and bud, F05 slash_penalty clamp direction |
+| P57 | done (2026-10-11), detail notes/P57-scan.md | 19 (5 Medium, 12 Low, 2 Info) | no | F01 audit_guard misses inline pull_request_target, F02 xtask/tools tests never run in CI, F04 smoke DB path delete |
 | P32 on | not started | n/a | no | rolling start (CLAUDE.md 4A.10) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
