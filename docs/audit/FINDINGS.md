@@ -219,6 +219,15 @@ Scope: all 15 files read in full (6078 lines), plus small call-site spans in oth
 - F21 Info. Allow attributes: bridge.rs:349, bridge_relayer.rs:123, bud_to_eth.rs:1 and 91 (add date unknown, shallow history). Z13: non-English text (receipt.rs:21, 71; mpt.rs:126 and others; rlp.rs:102, 449) and bold markers (21 matches). relayer.rs:6 names Blockchain::submit_relay, which does not exist (only submit_relay_proof).
 - F22 Info. Merkle proof index high bits are ignored (merkle_tree.rs:255-260), so one proof verifies with many index values and ledger proof_hash (relayer.rs:333-335) depends on which variant a node got. enqueue_relay stores source_event without checking it equals the message (relayer.rs:244-252). Default verify_observation takes its root from the same result (chain_adapter.rs:142).
 
+## Verification V07 (P05 F01 to F04, main session, 2026-10-11)
+
+Method: main session read the cited spans. No agent. Not an Opus call; a second check by a fresh architect is still open for F01.
+
+- P05-F01 CONFIRMED, High. blockchain.rs:2252-2260 debits the owner at lock. executor.rs:1191-1198 mints the recipient at mint (lock and mint are balanced). bridge.rs:529-585 burn only sets Burned, no debit. executor.rs:1265 and the RPC unlock path credit the owner again. Net per cycle: plus one transfer amount. Test settlement_prod.rs:1840-1870 runs lock, burn, unlock and asserts no supply. Fix direction: debit the recipient at burn (balance check first) or hold the minted amount in escrow; test first: total supply before equals after a full cycle. Needs an owner decision on the model (STATUS 5).
+- P05-F02 CONFIRMED, High. bridge.rs:736 sweep releases only Locked. A Burned row whose burn message expires unrelayed has no exit.
+- P05-F03 CONFIRMED, Medium. mpt.rs:187 uses keccak256(key) as path for every proof. Ethereum receiptsRoot is a plain trie keyed by rlp(index). Fails closed.
+- P05-F04 CONFIRMED, Medium. header.rs:131-158 checks parent hash and number only. Severity stays Medium while no on-chain path calls it.
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
