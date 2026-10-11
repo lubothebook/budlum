@@ -15,7 +15,7 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P06 | done (2026-10-11) | 16 (2 High, 9 Medium, 4 Low, 1 Info) | 8 of 16 (V09: F01 to F08 confirmed, F04 partly, F05 raised to High; new F01a, F01b, F04a) | next: F09 on; check whether external_roots feeds the state root |
 | P07 | done (2026-10-11) | 21 (3 High, 8 Medium, 8 Low, 2 Info) | 8 of 21 (V10: F01, F02, F04, F07 confirmed; F03, F05, F06, F08 partly) | next: F09 on (Medium first) |
 | P60 | done (2026-10-11) | 9 (1 Critical, 1 High, 5 Medium, 1 Low, 1 Info) | 2 of 9 (V11: F01 and F02 confirmed, both latent: contract not deployed) | next: F03 to F07 |
-| P08 | done (2026-10-11) | 13 (3 High, 3 Medium, 5 Low, 2 Info) | no | verify F01 to F06 next |
+| P08 | done (2026-10-11) | 13 (3 High, 3 Medium, 5 Low, 2 Info) | 6 of 13 (V12: F01 to F06 confirmed) | F07 on stay raw (Low and Info) |
 | P09 | done (2026-10-11) | 11 (1 High, 4 Medium, 6 Low) | no | verify F01 first (chain halt) |
 | P10 on, P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md; P07 and P60 are next (wave D3) |
 

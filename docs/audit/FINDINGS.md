@@ -734,6 +734,17 @@ Scan by finder agent (Opus, medium), 2026-10-11, condensed by the main session. 
 - P09-F10 Low (Likely). blockchain.rs:3949-3960. import_qc_blob stores the blob, then returns Err when a pending cert at that height fails, so node.rs:2768-2772 reports an honest peer.
 - P09-F11 Low test (Certain). storage_economics_tests.rs:150-197 scans source text (include_str) instead of running the persist failure path.
 
+## Verification V12 (P08 F01 to F06, architect agent, 2026-10-11)
+
+Written by the main session from the agent reply. Static reading. All six CONFIRMED.
+
+- P08-F01 CONFIRMED, High (mainnet only, not reached today). The tokenomics split has no validator share (tokenomics/mod.rs:366-372) and sums to exactly BUD_TOTAL_SUPPLY = 1e14 base units (mod.rs:33, 211-212; genesis.rs:344). build_state mints it all (genesis.rs:623-626), then add_validator adds Mainnet min_stake 1_000_000 per validator (genesis.rs:580-582, 651-653; chain_config.rs:129) with no debit (account.rs:658-665); total_bud_committed counts staked supply (account.rs:2036-2040, 2063-2068). With the required 4 validators committed = 1e14 + 4_000_000 > cap, and nothing in validate_consensus_ceremony (376-469) checks it. supply_capacity_remaining() = 0, so every ensure_mint_headroom fails: bridge mints (blockchain.rs:2139/2154, 3311/3323; executor.rs:1171/1191). Block reward mints nothing (executor.rs:2541-2544). Testnet and devnet have bud_tokenomics None (genesis.rs:759, 776). Hits the first real mainnet genesis.
+- P08-F02 CONFIRMED, High, production startup path. blockchain.rs:587-597 with 523-526, 659-683. apply_transaction_checked has no nonce check, so the outcome is doubled effects with a wrong root, or exit(1) at 676 when a re-applied debit fails.
+- P08-F03 CONFIRMED, High. blockchain.rs:1343-1344, 1378-1381, 1595, 1603; account.rs:1894. Public listener (server.rs:2616-2633, no require_operator; guard at 443) and P2P gossip (node.rs:2832-2848, rebroadcasts on Ok). Caveat: the adapter must still accept the old proof (blockchain.rs:1660 on), for example when the validator set has not rotated.
+- P08-F04 CONFIRMED, Medium. blockchain.rs:1542-1550 vs 1350-1371; the commitment inserted at 1436 stays in memory unpersisted. Reached via public RPC and gossip.
+- P08-F05 CONFIRMED core, Medium, possibly High. Gossip feeds the pool and rebroadcasts (node.rs:2281-2293); pool copied into the next block (4626-4627), cleared only after commit (4709-4711). Unproven: a 1 MB block limit (consensus/mod.rs:44, 188) may reject the oversized block before commit, so the pool never clears and block production stalls. To confirm.
+- P08-F06 CONFIRMED, Medium. Public RPC (server.rs:3050-3054, no operator guard). Side note: the proof fee is debited from state outside a block (blockchain.rs:2697).
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
