@@ -24,7 +24,8 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P14 | done (2026-10-11) | 8 (2 Medium, 5 Low, 1 Info; all test quality) | 2 of 8 (V19: F01 confirmed, F02 lowered to Low) | F03 on stay raw |
 | P13 | done (2026-10-11) | 10 (1 High, 5 Medium, 3 Low, 1 Info) | 6 of 10 (V18: F01 High confirmed and reachable via AiAttachExecutionProof, new F01a; F02, F03 lowered to Low; F04 confirmed. V19: F05, F06 confirmed) | F07 on stay raw |
 | P16 | done (2026-10-11) | 23 (5 Medium, 16 Low, 2 Info) | 5 of 23 (V20: F10, F11 confirmed and reached in production via the twin, new F11a; F02 confirmed latent; F01, F08 lowered to Low) | F03 on stay raw |
-| P17 on, P58, P59, P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md; P07 and P60 are next (wave D3) |
+| P17 | done (2026-10-11) | 19 (1 High, 10 Medium, 6 Low, 2 Info) | no | F01 first (64 bit commitment), then F08, F09 |
+| P18 on, P58, P59, P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md; P07 and P60 are next (wave D3) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
 
