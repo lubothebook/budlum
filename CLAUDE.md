@@ -1,8 +1,8 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.11 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
-Son değişiklik (Ayaz onayıyla): sadeleştirme, akış şeması, ana oturum yönetici rolü, alt ajan effort medium.
+Sürüm: 1.12 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Son değişiklik (Ayaz onayıyla): sadeleştirme, akış şeması, ana oturum yönetici rolü, alt ajan effort medium, token tasarrufu kuralları (§4A).
 
 ## 1. Amaç ve rol
 
@@ -61,12 +61,19 @@ Keşif -> Bulgu ve plan -> Kod -> GitHub CI -> Opus doğrulama -> Push -> CI oku
 
 Her faz MODEL_ROUTING §2.5 beyan satırıyla başlar.
 
-Ajan kuralları:
-- En fazla 3 ajan paralel. Her ajana tek görev ve okuyacağı dosyalar verilir.
-- Ajan dönüşü en fazla 5 satırdır: durum, değişen dosyalar, tek cümle sonuç. Ayrıntı dosyaya yazılır (`docs/audit/` veya `notes/`).
-- Alt ajan effort değeri medium'dur (Ayaz, 2026-10-11). Daha yüksek effort için önce Ayaz'a sorulur.
+Ajan kuralları (token kuralları §4A):
 - Skill ve araç kurulumunu yalnızca ana oturum yapar, ajanlar kurmaz.
 - Bağlam yaklaşık yüzde 60 dolunca `/compact`. PR birleştirme onayı Ayaz'ındır, beklenmez. Bekleme için `sleep` yok.
+
+## 4A. Token tasarrufu (bağlayıcı, Ayaz 2026-10-11)
+
+1. Effort medium kullanılır (ana oturum ve alt ajanlar). Yüksek effort yalnızca Ayaz'ın izniyle.
+2. Repo gezilmez. Yalnızca adı verilen dosyalar okunur. Gerekirse `rg` ile aranır, yalnızca ilgili satırlar açılır.
+3. Aynı dosya tekrar okunmaz. Tüm testler değil, yalnızca ilgili test çalıştırılır (CI hariç, §4).
+4. En fazla 3 alt ajan. Her birine tek görev ve okuyacağı dosyalar verilir.
+5. Alt ajan en fazla 5 satır döner: durum (bitti/sorun), değişen dosyalar, tek cümle sonuç. Kod, log, diff yapıştırılmaz. Ayrıntı `notes/` veya `docs/audit/` altına dosya olarak yazılır.
+6. Ayaz'a son cevap en fazla 5 satır. Süreç anlatılmaz, özet tekrarlanmaz. Mümkünse yazılmaz, yalnızca denetim ve yönetim yapılır.
+7. Emin değilsen tek kısa soru sor. Tahmin yürütüp dosya taratma. Denetimin amacı yanlış kodlamayı bulmak ve düzenlemektir.
 
 ## 5. Ne zaman sorulur
 
