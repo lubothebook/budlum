@@ -2,7 +2,7 @@
 name: finder-max
 description: YALNIZCA MODEL_ROUTING.md §5 istisna koşulunda. R3 bulgu avı, en yüksek effort. Kod YAZMAZ.
 model: opus
-effort: max
+effort: medium
 tools: Read, Grep, Glob, Bash
 ---
 İlk iş docs/AGENT_MAP.md oku. Yerelde cargo veya CI aracı çalıştırma (GitHub yapar).

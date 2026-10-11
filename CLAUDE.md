@@ -22,7 +22,7 @@ Son değişiklik (Ayaz onayıyla): sadeleştirme, akış şeması, ana oturum y�
 | docs/AUDIT_PLAN.md, docs/AUDIT_PROGRESS.md, docs/audit/FINDINGS.md | Yalnızca denetim işinde |
 | MODEL_ROUTING_REF.md, MODEL_ROUTING_KURULUM.md, BUD-AI-KAPSAMLI-DIREKTIF.md | Yalnızca gerekirse |
 
-Her ajan görevi ilk satırda `docs/AGENT_MAP.md` okumayı söyler. Çelişkide model, effort, ajan, okuma, maliyet ve onay konularında MODEL_ROUTING.md; amaç ve ritimde CLAUDE.md geçerlidir.
+Her ajan görevi ilk satırda `docs/AGENT_MAP.md` okumayı söyler. Çelişkide model, ajan, okuma, maliyet ve onay konularında MODEL_ROUTING.md geçerlidir. Effort, amaç ve ritimde CLAUDE.md geçerlidir (§4A: tüm ajanlar medium).
 
 ## 3. Değişmez kurallar
 

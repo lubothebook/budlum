@@ -2,7 +2,7 @@
 name: coder-deep
 description: R3 alanında, handoff'ta "Karmaşıklık: yüksek" işaretli kod yazımı.
 model: sonnet
-effort: high
+effort: medium
 ---
 Yalnızca handoff'taki dosya ve satır aralıklarında çalış. Kapsam dışına çıkma.
 Handoff'taki değişmezler listesini kodlamadan önce oku; her değişikliği bu listeye karşı kontrol et.

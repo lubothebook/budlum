@@ -8,11 +8,11 @@ Statü: Emirdir. Sapma yalnızca §8 şablonu ve Ayaz (Japs) yanıtıyla. Karş�
 | Ajan | Model | Effort | Görev | Yapmaz |
 |---|---|---|---|---|
 | scout | Haiku | yok | grep, sembol, dosya haritası, log kırpma | karar, kod, güvenlik yorumu |
-| finder | Opus | xhigh | R3 bulgu avı | kod |
-| architect | Opus | high | plan, handoff, R2 bulgu, bulgu ve diff doğrulama | kod, mekanik iş, keşif |
-| finder-max | Opus | max | yalnızca §5 istisnası | rutin iş |
+| finder | Opus | medium | R3 bulgu avı | kod |
+| architect | Opus | medium | plan, handoff, R2 bulgu, bulgu ve diff doğrulama | kod, mekanik iş, keşif |
+| finder-max | Opus | medium | yalnızca §5 istisnası | rutin iş |
 | coder | Sonnet | medium | handoff'a göre kod ve test; denetimde salt okuma | mimari karar |
-| coder-deep | Sonnet | high | R3 kodu, "Karmaşıklık: yüksek"; R3 denetim taraması (salt okuma) | R3 dışı kod |
+| coder-deep | Sonnet | medium | R3 kodu, "Karmaşıklık: yüksek"; R3 denetim taraması (salt okuma) | R3 dışı kod |
 | coder-lite | Sonnet | low | mekanik iş | davranış değişikliği, R3 |
 
 - Her ajan işe `docs/AGENT_MAP.md` okuyarak başlar (görev metninin ilk satırı). Yapıyı baştan çıkarmaz.

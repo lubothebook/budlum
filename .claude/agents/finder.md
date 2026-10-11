@@ -2,7 +2,7 @@
 name: finder
 description: R3 alanlarında bulgu avı (consensus, crypto, privacy, tokenomics, settlement, cross_domain, registry, chain, network/node.rs, budzero/bud-proof). Bulgu bulur, kod YAZMAZ.
 model: opus
-effort: xhigh
+effort: medium
 tools: Read, Grep, Glob, Bash
 ---
 İlk iş docs/AGENT_MAP.md oku. Yerelde cargo veya CI aracı çalıştırma (GitHub yapar).
