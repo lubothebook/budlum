@@ -812,6 +812,15 @@ Scan by finder agent (Opus, medium), 2026-10-11, condensed by the main session. 
 - P12-F06 Low (Certain, completeness). prover.rs:1104-1111. final_merkle.wrapping_sub(root) gives a wrong inverse witness when final < root (the same bug was fixed for NullifierCheck at 902-908); an honest mismatch step cannot be proved.
 - P12-F07 Low (Certain, completeness). prover.rs:393-397, 1388; air.rs:685, 703-706, 2858-2863. The ROM side holds pc 0..degree-2 only and the last row is never counted; a short trace that jumps to pc >= degree-1 cannot balance the program LogUp (prover side DoS, not soundness).
 
+## Verification V15 (P12 F01 to F03, architect agent, 2026-10-11)
+
+Written by the main session from the agent reply. Static reading plus a python3 check. Note: the file is plonky3_air.rs.
+
+- P12-F01 CONFIRMED, High, latent. The path hash is one round: RC0[0..2] = 0xdd5743e7f2a5a5d9, 0xcb3a864e58ada44b, MDS_ROW_0 = [7,1] (plonky3_air.rs:1371-1384); S-box x^7 (1397-1415); out = 7*sbox0 + sbox1 (1418), chained per row (1428-1432) and closed (1513-1517). The VM function merkle_poseidon_round (bud-vm lib.rs:1031-1045) is the same and its comment says "Single-round". python3: gcd(7, p-1) = 1 and 7^-1 mod (p-1) = 10540996611094048183, so x^7 is a bijection with an exact inverse. At the last level s = (R - 7*(cur+rc0)^7)^d - rc1 (direction bit 1: ((R - (cur+rc1)^7)/7)^d - rc0). One free sibling hits any root: a full forgery, not just a second preimage. Users: only the VM (bud-vm lib.rs:611/613, 808/810) and the prover (plonky3_prover.rs:2364, 2392/2394). Gate default off (zkvm.rs:470-480) but switchable by config (cli/commands.rs:563), and B.U.D. storage proofs (storage_deal.rs:1920 on, 3101) are built to rely on it. Closing the gate does not fix the hash.
+- P12-F02 CONFIRMED, Medium, latent behind the same gate. plonky3_air.rs:1233-1275 is field arithmetic only; patterns n >= p alias k = n - p for every k <= 2^32 - 2. The canonicity witnesses at 463-505 and 2882 cover the ALU decompositions, not this chain. Matters after F01 is fixed.
+- P12-F03 CONFIRMED, Medium, latent (no live consumer depends on the limbs). First row pin covers limb 0 only (1928-1932); none of the 18 when_first_row sites touches limbs 1..7; prover.rs:1769-1774 packs public[41..46] from event_digest bytes 8..31 and hard codes public[47] = 0. Comments prover.rs:1767 and adapter.rs:85-86 are wrong. The only negative test (prover.rs:10387-10398) sets all 32 bytes, so it fails on limb 0 and never tests limbs 1..7. zkvm.rs:318-325 recomputes the digest itself; storage_deal.rs:3145 does not (gated today).
+- Fix order: F01 (full Poseidon2 permutation in AIR and VM), then F02 (canonicity check on the key bits), then F03 (pin limbs 1..7 at the first row or assert public[41..47] = 0). Each is R3: forgery test first, Opus check on the diff. PROOF_FORMAT_VERSION bump belongs to R8.
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
