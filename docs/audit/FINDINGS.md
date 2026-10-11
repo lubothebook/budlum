@@ -718,6 +718,22 @@ Scan by finder agent (Opus, medium), 2026-10-11, condensed by the main session. 
 - P08-F12 Info. fee_market.rs: whole module off the live path (header lines 3-5); arithmetic sound, no floats. Known: idle-code-baseline.txt:1221-1228, 1326.
 - P08-F13 Info (Z13). genesis.rs:90, 168 non-English comments.
 
+## Part 12. Raw findings P09 (chain B: blockchain.rs 3440-6836, storage economics tests)
+
+Scan by finder agent (Opus, medium), 2026-10-11, condensed by the main session. Not verified. Read in full: blockchain.rs 3440-6836 (non-test). Skimmed: tests from 6837 and storage_economics_tests.rs. Not repeated: P01-F05b, P01-F22, P04-F01, F24, P05-F05, F06a.
+
+- P09-F01 High (Likely; to verify: deal open allows total_fee(1) about 1e7 to 1e13 since deal_open.rs:270-297 has no upper bound on fee_per_byte_epoch; mempool TTL 3600 s). blockchain.rs:4571-4573, 6216-6266. The boost share is multiplied by each active deal's per epoch fee weight with checked_mul (6241-6243); overflow returns Err, which fails apply_block_effects for the whole block (4645-4649), though collect_block_transactions (4274) still includes the boost tx. produce_block returns None on every node while the tx sits in the mempool: chain halt. Trigger: open a deal with weight W, payer and operator the attacker (escrow returns), then one NftBoost with 0.04*A*W > 1.8e19 (for example W = 1e13, A = 4.6e7).
+- P09-F02 Medium (Likely; to verify: a reorg crossing a checkpoint with a QC blob; chain_actor.rs:3587 path open). blockchain.rs:5751-5767, 3685-3691, 5237-5239. handle_finality_cert never compares blob.checkpoint_hash with cert.checkpoint_hash or the local hash; qc.rs:197-237 does not either. try_reorg drops blobs from memory only, so get_qc_blob returns the old fork blob from disk. A new fork checkpoint can be finalized with a PQ blob that signs another block.
+- P09-F03 Medium (Certain in code; needs a disk error or the PoA stamp mismatch of STATUS 4.2). blockchain.rs:5253-5254, 5361-5396. try_reorg swaps memory, deletes old fork blocks from disk (5363), then re-commits new blocks with `?` (5395). A failure midway leaves memory on the new chain and disk with neither fork from the fork point on; last_hash not updated.
+- P09-F04 Medium (Certain). blockchain.rs:5321-5329. After a reorg the replayed message_registry is overwritten from disk; message_root is in the state root (P05-F06a), so the next block fails with State root mismatch (4960). Same class as STATUS 4.2 bridge_state item, not listed there.
+- P09-F05 Medium (Certain). blockchain.rs:5332-5333, 3664-3669, 622-630. After a reorg memory keeps only the current epoch snapshot, so past epoch certs, QC blobs and fault proofs are refused until restart; disk is not cleared, so a restart reloads old fork validator sets.
+- P09-F06 Low (Certain). blockchain.rs:5349-5359. A reorg rebuilds the mempool with MempoolConfig::default() (not the per network config, 685-688), keeps the top 1000 txs, and does not re-add txs of orphaned blocks.
+- P09-F07 Low (Likely; both steps unreachable today). blockchain.rs:4497-4500, 3822-3834, 5678-5680. commit_block_durable stores a pending, possibly unverified cert as a finality cert; invalidate_finality_from_height adopts any stored cert without verification or hash comparison; try_reorg keeps FINALITY_CERT and QC_BLOB at reorged heights. Known partly: P01-F22, dead-pub-api-baseline.txt:71.
+- P09-F08 Low (Certain in code; reach limited by P01-F22). blockchain.rs:3847-3877, 3963-3970. QC fault verdict slashes stake directly in self.state outside block execution and drops the result (3869). Entry points: node.rs:2797 gossip and server.rs:3179 public RPC. Stake is in the state root: consensus split if a proof can pass.
+- P09-F09 Low (Certain; not wired). blockchain.rs:5564-5585, 5641-5650. Snapshot apply requires only that the block at snapshot.height exists, not that it is the tip; state can be replaced by an older state.
+- P09-F10 Low (Likely). blockchain.rs:3949-3960. import_qc_blob stores the blob, then returns Err when a pending cert at that height fails, so node.rs:2768-2772 reports an honest peer.
+- P09-F11 Low test (Certain). storage_economics_tests.rs:150-197 scans source text (include_str) instead of running the persist failure path.
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
