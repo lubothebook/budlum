@@ -51,6 +51,7 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P40 | done (2026-10-11), detail notes/P40-scan.md | 29 (9 Medium, 17 Low, 3 Info) | no | F01 zk witness hashes only lengths, F02 any prover stdout counts as ProvenExternally, F03 timeseries decode reserves 1.6 GB |
 | P39 | done (2026-10-11), detail notes/P39-scan.md | 29 (17 Medium, 11 Low, 1 Info) | no | F04 QR place_data loses bits, F01 to F03 qrvideo decoder no integrity, F08 scrub domain tag mismatch, F05 PoR tag ignores nonce |
 | P41 | done (2026-10-11), detail notes/P41-scan.md | 20 (8 Medium, 10 Low, 2 Info) | no | F01 bud tx send fixed devnet chain id, F02 relayer scan RPC arg mismatch, F12 relay full signs without activation state |
+| P42 | done (2026-10-11), detail notes/P42-scan.md | 26 (2 High, 7 Medium, 16 Low, 1 Info) | no | F01 vault reaches_walk unbounded recursion, F02 Pollen guard checks content_id but gateway serves storage_root, F03 EVM submit always retries |
 | P32 on | not started | n/a | no | rolling start (CLAUDE.md 4A.10) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
