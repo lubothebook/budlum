@@ -692,6 +692,14 @@ Written by the main session from the agent reply. Static reading. F01, F02, F04,
 
 New sub-findings: N1 ethereum.rs:233 finalized_root never compared (feeds F02). N2 registry.rs:67 vs 355-356: AdmissionDigestMismatch fires when digests are equal, text says the opposite (Low). N3 registry.rs:437, 546: a successful submit on a Faulted domain records the attestation but stays Faulted (Low). N4 only the RPC validates quorum numbers (server.rs:1954); IntakeState::set_quorum_policy accepts anything (Low).
 
+## Verification V11 (P60 F01 and F02, architect agent, 2026-10-11)
+
+Written by the main session from the agent reply. Static reading of BFV in full.
+
+- P60-F01 CONFIRMED in code. Severity Critical inside the contract, but LATENT: nothing compiles, deploys or calls it (no solc, forge, hardhat config; no Rust code builds attestationDigest or signingRoot or calls isAccepted; searched src, budzero, crates, ops, .github, config). Path: verify (BFV:302) gate is only chainId == budlumChainId (303-305); signingRoot (321) hashes caller fields; _verifyBls checks lengths only (444-455) and never uses root (456-462); pairing input (g1HashedMessage, g2Pubkey, g1Generator, g2NegSignature) (459-461). With g1HashedMessage = g1Generator = X, g2Pubkey = P, g2NegSignature = -P the product is 1, so blsOk is true. mlDsaPubkey is caller supplied (111), so a self made key signs root. Line 339 holds and accepted[digest] = true (340) for any stateRoot. Needs both precompiles present at construction (326, 335); EIP-8051 is a proposal (BFV:18) and P60-F03 says the BLS probe fails on real chains. Without the precompiles the same forgery takes the F02 path.
+- P60-F02 CONFIRMED, High, latent. If blsOk && pqOk is false (339) verify does not revert; it opens a window (345-357), even when both precompiles are present. settle (397-411) accepts the digest after the window with no access control. Contradicts docs at 293 and 299-301. Only defence: fraudProofVerifier, an arbitrary contract checked only for non-zero (225).
+- Effective impact today: zero. Must fix before any deployment. Fix direction: F01 fix the committee G2 key, G1 generator and ML-DSA key in immutables and derive the G1 point from root (or bind through the circuit). F02 revert when a precompile is present and verification fails; open a window only when a precompile is missing. Complexity medium, coder-deep, Opus check on the diff.
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
