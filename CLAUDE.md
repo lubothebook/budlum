@@ -1,8 +1,8 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.15 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
-Son değişiklik (Ayaz onayıyla): sessizlik kuralı netleştirildi (§4A.8), tarama sürekliliği kuralı (§4A.10), alt ajan effort medium zorunlu (§4A.9).
+Sürüm: 1.16 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Son değişiklik (Ayaz onayıyla): skill ve görev verme kuralları (§4B), sessizlik kuralı netleştirildi (§4A.8), tarama sürekliliği kuralı (§4A.10), alt ajan effort medium zorunlu (§4A.9).
 
 ## 1. Amaç ve rol
 
@@ -82,6 +82,20 @@ Ajan kuralları (token kuralları §4A):
 9. Alt ajan effort'u her çağrıda medium. `effort` alanı verilmez, ajan dosyasındaki medium geçerli kalır. Yüksek effort, `finder-max` ve `xhigh` yasak (Ayaz izni olmadan). Hız için: aynı anda 3 tarama, küçük parçalar birleştirilir, çıktı bulgu başına en çok 3 satır.
 
 10. Tarama sürekliliği (Ayaz, 2026-10-11). `docs/AUDIT_PLAN.md` içindeki tüm parçalar (P01 ile P62) taranana kadar ana oturum durmaz ve Ayaz'a sormaz. Her tarama bitince sonuç kaydedilir, commitlenir ve dalga sırasındaki sıradaki parça (boş slot başına bir tane, en fazla 3 eşzamanlı) hemen başlatılır. Tüm parçalar tarandıktan sonra durulur. Doğrulama çağrıları (Opus) ancak Ayaz isterse başlatılır.
+
+## 4B. Skiller ve görev verme (bağlayıcı, Ayaz 2026-10-11)
+
+Skiller:
+1. Skill kurulumunu ve güncellemesini yalnızca ana oturum yapar. Alt ajanlar skill kurmaz, görev metninde bu yasak yazılıdır.
+2. Kurulu skiller `.claude/skills/` altındadır: `security-audit` (denetim ve tarama işleri), `steward` (PR olayı: CI, inceleme, çatışma), `doc-coauthoring` (yalnızca belge yazımı). Hangi iş için hangisi okunur bu listeden seçilir, sorulmaz.
+3. Yeni skill yalnızca Z6 (betik yok), Z10 (harici kod kopyalanmaz) ve Z7 geçerse kurulur. Kaynak önce okunur. Betik, hook veya ağ çağrısı içeren skill kurulmaz. Karar gerekirse §5 şablonu, kurulumu kaydeden satır STATUS.md "Installed skills" bölümüne yazılır.
+4. Kurulum ve kaldırma için Ayaz'a soru sorulmaz. Seviye 1 işidir, yapılır ve kaydedilir.
+
+Görev verme:
+5. Alt ajana verilen her görev tek mesajda şu alanları taşır: ilk satır `docs/AGENT_MAP.md` okuma, parça kimliği ve dosya aralıkları, taban commit, ek kontroller, bilinen (tekrarlanmayacak) kalemler, çıktı kuralı, "salt okunur, skill veya araç kurma yok". Ortak kurallar bir şablon dosyasında tutulur ve göreve yol olarak verilir.
+6. Her ajan çağrısında model sonnet (tarama, kod) veya opus (doğrulama, plan), effort alanı verilmez (§4A.9). Tarama işi `general-purpose` ile, repo ajanları (`coder`, `architect`, `finder`) oturumda tanımlıysa onlarla verilir.
+7. Görev verirken Ayaz'a sorulmaz. Sorulabilecek tek durumlar §5 Seviye 2 listesidir. Dosya yolu, sıra, kapsam, ajan seçimi, commit ve push Seviye 1 işidir: karar verilir, kaydedilir, devam edilir.
+8. Sonuç alındığında sırasıyla: `docs/audit/FINDINGS.md` ve `docs/AUDIT_PROGRESS.md` güncellenir, commit, PR #3 dalına push, sonraki iş başlatılır (§4A.10).
 
 ## 5. Ne zaman sorulur
 
