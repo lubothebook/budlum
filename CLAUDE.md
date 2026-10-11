@@ -1,8 +1,8 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.14 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
-Son değişiklik (Ayaz onayıyla): sessizlik kuralı netleştirildi (§4A.8), tarama kapsamı kuralı (§4A.10), alt ajan effort medium zorunlu (§4A.9).
+Sürüm: 1.15 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Son değişiklik (Ayaz onayıyla): sessizlik kuralı netleştirildi (§4A.8), tarama sürekliliği kuralı (§4A.10), alt ajan effort medium zorunlu (§4A.9).
 
 ## 1. Amaç ve rol
 
@@ -81,7 +81,7 @@ Ajan kuralları (token kuralları §4A):
    Bunların dışında mesaj yazılmaz: süreç, bulgu özeti, ilerleme, tamamlanma bildirimi ve alt ajan raporu aktarımı yoktur. Bulgular ve sonuçlar yalnızca `docs/audit/`, `docs/AUDIT_PROGRESS.md` ve commit mesajlarına yazılır. Bildirilecek karar veya iş yoksa tur çıktısı boş bırakılır.
 9. Alt ajan effort'u her çağrıda medium. `effort` alanı verilmez, ajan dosyasındaki medium geçerli kalır. Yüksek effort, `finder-max` ve `xhigh` yasak (Ayaz izni olmadan). Hız için: aynı anda 3 tarama, küçük parçalar birleştirilir, çıktı bulgu başına en çok 3 satır.
 
-10. Tarama kapsamı (Ayaz, 2026-10-11). Ana oturum yalnızca Ayaz'ın verdiği veya çalışan taramaları yürütür. Çalışan taramalar bitince sonuçlar kaydedilir ve commitlenir, kendiliğinden yeni tarama veya doğrulama başlatılmaz. Sıradaki parçayı Ayaz belirler.
+10. Tarama sürekliliği (Ayaz, 2026-10-11). `docs/AUDIT_PLAN.md` içindeki tüm parçalar (P01 ile P62) taranana kadar ana oturum durmaz ve Ayaz'a sormaz. Her tarama bitince sonuç kaydedilir, commitlenir ve dalga sırasındaki sıradaki parça (boş slot başına bir tane, en fazla 3 eşzamanlı) hemen başlatılır. Tüm parçalar tarandıktan sonra durulur. Doğrulama çağrıları (Opus) ancak Ayaz isterse başlatılır.
 
 ## 5. Ne zaman sorulur
 
