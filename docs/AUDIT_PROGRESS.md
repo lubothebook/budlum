@@ -35,7 +35,8 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P23 | done (2026-10-11) | 17 (1 High, 9 Medium, 7 Low) + Info | no | F01 bond and fee lost on prune, F08 huge epochs lock challenges |
 | P24 | done (2026-10-11) | 8 (5 Medium, 2 Low, 1 Info) | no | F05 maintenance outside blocks (Known), F01 ledger brick |
 | P25 | done (2026-10-11) | 11 (1 High, 5 Medium, 4 Low, 1 Info) | no | F01 PoW finality too cheap on bridge enabled domain 1 |
-| P26 | scan running | n/a | no | next: P27 on (owner assigns) |
+| P26 | done (2026-10-11) | 13 (5 Medium, 8 Low) + Info | no | F01 prune without snapshot, F02 delete_block leaves indexes |
+| P27 on | not started | n/a | no | owner assigns the next part (CLAUDE.md 4A.10) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
 
