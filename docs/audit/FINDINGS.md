@@ -854,3 +854,16 @@ Written by the main session from the agent reply. Static reading only; no forger
 2. Decide the owner questions K1 and K3 (STATUS.md:102) before any handoff.
 3. Fix K4 (the try_reorg suffix bug) first: it is plain wiring and it blocks every reorg test.
 4. Continue the audit from P05 on the wave order in docs/AUDIT_PLAN.md.
+
+## Part 17. Raw findings P14 (ZK tests B)
+
+Scan by coder-deep style agent (Sonnet, medium), 2026-10-11, condensed by the main session. Read in full: plonky3_prover.rs 6372-11079, benches/proof_baseline.rs, benches/canonical_programs.rs. No Z3/Z7/Z8/Z9/LABEL-12.9 hit. All findings are test quality, none verified yet.
+
+- P14-F01 Medium test (Certain). plonky3_prover.rs:10205, 10477. rejects_trace_with_non_halt_termination and rejects_tampered_poseidon_sbox use program_hash [0;32]; verify returns PublicInputsMismatch at 1922 before the AIR runs, so both pass whatever the AIR does. The Poseidon test also writes column 290, but COL_POSEIDON_X2_BASE is 498 (plonky3_air.rs:197-198). Halt-termination and Poseidon S-box constraints may have no effective negative test.
+- P14-F02 Medium test (Certain). plonky3_prover.rs:10336-10422. Seven rejects_tampered_* tests (final_state_root, initial_state_root, gas_limit, trace_len, event_digest, exit_code, chain_id) mutate pi after proving; the envelope hash check at 1908 refuses first. None bakes the wrong value in before proving, none asserts the error variant. Public inputs binding to the AIR is not exercised for these fields.
+- P14-F03 Low test (Likely; missing step: remove the expansion flag rule and rerun). 10888-10932. Filler test keeps a 0x1F row, which the AIR already refuses, so the flag rule is masked.
+- P14-F04 Low test (Certain). 8017-8022, 8371-8376, 8455-8459. Three memory table rules (active flag booleanity, m_same inverse, table id range) are each shadowed by a second rule; docs admit mutation checks were not run (Known, STATUS.md R4a-2). Most forgery tests only assert is_err.
+- P14-F05 Low test (Certain). 9107-9158, 9259-9284, 9408-9453. catch_unwind tests pass on any panic or Err; the comment that proving panics inside Plonky3 is wrong for aux trace paths (bud_stark/prover.rs:44-47 skips check_constraints). VerifyMerkle is gated off in production.
+- P14-F06 Low test (Certain). 7522-7578. Non-writing rd forgery runs only for Store and Push; Jmp, Jnz, Assert have no reason given for the skip.
+- P14-F07 Info (Certain). Stale docs and names: diagnose_verify_merkle_matrix_chain says ignored but is not; rejects_verify_merkle_with_incorrect_root asserts acceptance (10634); trace length comment says 2 expansion rows, trace has 64 (9801). Literal "0.5.2" in plonky3_prover.rs 1898 and 32 sites while Cargo.toml pins p3 =0.7.0, and fri_params_id "test_fri_params" is required: envelope labels are not true metadata.
+- P14-F08 Low integration (Certain). benches/canonical_programs.rs:59-155 re-implements the matmul emitter and checks only length 90, not the canonical program hash; storage challenge bench runs with an empty VM. Bench allow attributes are Known (suppressions_are_justified.rs).
