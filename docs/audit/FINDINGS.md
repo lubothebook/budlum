@@ -645,6 +645,24 @@ Description: The module headline "Wired through intake" is true for call sites b
 Impact: None beyond the known blocker class.
 Known: STATUS.md section 4.5 (external roots)
 
+## Verification V09 (P06 F01 to F08, architect agent, 2026-10-11)
+
+Result written by the main session (the agent has no write tool). Static reading. Admission gate for F01, F02, F05: only the node operator can admit an EthereumSync or ZkVm domain, on their own node, with two calls on the loopback operator RPC (bud_registerExternalDomain server.rs:1654 to intake.rs:305-358; bud_registerConsensusDomain server.rs:1625 to blockchain.rs:1712-1757). No genesis or P2P path fills external_intake (blockchain.rs:709, 845). The admit() self-test runs on operator supplied samples, so it cannot tell a real Ethereum committee from a self-made key. After admission, bud_submitVerifiedDomainCommitment is on the public RPC with no operator gate (server.rs:2616-2633).
+
+- P06-F01 CONFIRMED, High. Verifier uses the pubkey from the payload (ethereum.rs:399-406); next_committee_root parsed (:237) and never used; the adapter never does the membership check (intake.rs:60-63, 121-127). The bridge calls adapter.verify directly (domain_bridge.rs:121-126), skipping the prover bond check. Anyone reaching the public RPC can forge the anchored state_root of an admitted domain.
+- P06-F02 CONFIRMED, High. One constant signing root per adapter (ethereum.rs:257, 401; intake.rs:177). No finality branch, no link to state_root; depth from payload (:410).
+- P06-F03 CONFIRMED, Medium. require_slashable declared (spec.rs:324), read nowhere; now fixed at policy build (spec.rs:335-342); max_age default 0. Config weakness.
+- P06-F04 PARTLY, Medium. Bridge binds only height and state_root (domain_bridge.rs:138-148); validator_set_hash and parent hash are bound elsewhere (blockchain.rs:1329-1336, 1542).
+- P06-F05 CONFIRMED, raised to High. Program comes from the payload (zkvm_proof.rs:242-246); no program pin, chain_id or continuity check; bud-proof adapter.rs:303-305 says plain verify accepts any well formed program. Reachable once an operator admits a ZkVm domain.
+- P06-F06 CONFIRMED, Medium. All three EVM adapter stubs return Err (evm/adapter.rs:166-171, 332-336, 348); no live end to end path (worker.rs:733-736, executor.rs:1034-1039).
+- P06-F07 CONFIRMED, Medium. Production always builds the proof with sync_attestation None (evm/adapter.rs:253); DepositProofPackage has no attestation field (verify.rs:193-204). Not reachable today.
+- P06-F08 CONFIRMED, Medium. verify_execution_block_finality has no finality branch; rotate_period swaps committees with no proof (sync_committee.rs:420-446); docs overclaim (:20-22). Not reachable today.
+
+New sub-findings:
+- P06-F04a Medium. domain_block_hash is free, so the first submitter at a height can make a later honest commitment look like equivocation and freeze the domain (blockchain.rs:1338-1350).
+- P06-F01a High if confirmed. submit_verified_domain_commitment writes state.anchor_external_root from an RPC call, outside block execution (blockchain.rs:1603). Open: is external_roots part of the state root? Same class as P05-F06a.
+- P06-F01b Medium. The external domain bridge path skips the registry prover bond and refusal counter checks of submit_external_evidence (domain_bridge.rs:121 vs intake.rs:403).
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
