@@ -1,8 +1,8 @@
 # BUDLUM KODLAMA DİREKTİFİ
 
 Uygulayıcı: Claude (Claude Code). Sahip ve karar mercii: Ayaz (MODEL_ROUTING dosyalarında "Japs").
-Sürüm: 1.12 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
-Son değişiklik (Ayaz onayıyla): sadeleştirme, akış şeması, ana oturum yönetici rolü, alt ajan effort medium, token tasarrufu kuralları (§4A).
+Sürüm: 1.13 (2026-10-11). Durum: Bağlayıcı. Değişiklik yalnızca Ayaz'ın onayıyla yapılır.
+Son değişiklik (Ayaz onayıyla): sessizlik kuralı (§4A.8), alt ajan effort medium zorunlu (§4A.1).
 
 ## 1. Amaç ve rol
 
@@ -74,6 +74,8 @@ Ajan kuralları (token kuralları §4A):
 5. Alt ajan en fazla 5 satır döner: durum (bitti/sorun), değişen dosyalar, tek cümle sonuç. Kod, log, diff yapıştırılmaz. Ayrıntı `notes/` veya `docs/audit/` altına dosya olarak yazılır.
 6. Ayaz'a son cevap en fazla 5 satır. Süreç anlatılmaz, özet tekrarlanmaz. Mümkünse yazılmaz, yalnızca denetim ve yönetim yapılır.
 7. Emin değilsen tek kısa soru sor. Tahmin yürütüp dosya taratma. Denetimin amacı yanlış kodlamayı bulmak ve düzenlemektir.
+8. Sessizlik (Ayaz, 2026-10-11): Ayaz'ın cevaplaması gereken bir karar yoksa ana oturum yazmaz. Bulgu, süreç, özet ve ilerleme anlatılmaz. Bulgular yalnızca `docs/audit/` ve commit içine yazılır. Ayaz'a yalnızca iki şey gider: karar sorusu (§5 şablonu) ve iş ataması. Ayaz sorarsa en fazla 5 satır.
+9. Alt ajan effort'u her çağrıda medium. `effort` alanı verilmez, ajan dosyasındaki medium geçerli kalır. Yüksek effort, `finder-max` ve `xhigh` yasak (Ayaz izni olmadan). Hız için: aynı anda 3 tarama, küçük parçalar birleştirilir, çıktı bulgu başına en çok 3 satır.
 
 ## 5. Ne zaman sorulur
 
