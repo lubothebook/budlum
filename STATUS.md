@@ -73,6 +73,14 @@ Answers 2026-10-08: Q1 A deletion waits for an open audit. Q2 A bridge messages 
 3. Audit work (4.1). Ask the pending decisions (section 5) in one message.
 4. At the end of the round rewrite this file.
 
+
+## Installed skills (main session, 2026-10-11)
+
+- security-audit (cloudflare): `.claude/skills/security-audit`, project scope, already on PR #3.
+- steward: `.claude/skills/steward`, Budlum PR guide, already on PR #3.
+- doc-coauthoring (anthropics/skills): `.claude/skills/doc-coauthoring/SKILL.md`. Source read first: text only, no scripts, no hooks, no dashes. For design notes and audit reports.
+- Not installed: skill-creator (Python scripts, Rust and BudL only rule Z6), autoharness (owner decision first), the other Anthropic skills (not relevant to the Rust core). Karpathy principles stay as the short section 8 of CLAUDE.md.
+
 ## EFFORT LOG
 
 (no finder-max calls)
