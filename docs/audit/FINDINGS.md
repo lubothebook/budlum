@@ -228,6 +228,15 @@ Method: main session read the cited spans. No agent. Not an Opus call; a second 
 - P05-F03 CONFIRMED, Medium. mpt.rs:187 uses keccak256(key) as path for every proof. Ethereum receiptsRoot is a plain trie keyed by rlp(index). Fails closed.
 - P05-F04 CONFIRMED, Medium. header.rs:131-158 checks parent hash and number only. Severity stays Medium while no on-chain path calls it.
 
+## Verification V08 (P05 F05 to F12, architect agent, 2026-10-11)
+
+Full text: notes/V08-P05-F05-F12.md. F05, F06, F07, F08, F09, F10, F12 CONFIRMED. F11 CONFIRMED for the order, PARTLY reachable (only the burn half runs in production, operator RPC).
+Reachable today: F05 (operator RPC), F06 and F07 (public RPC and gossip, no gate), F11 burn half. F08, F09, F10 are idle code.
+
+- P05-F06a High (Likely, main session checked the missing step). Any peer can push messages into the message registry outside block execution. The registry root feeds the state root (account.rs:2450, message_root). Block validation compares the state root (blockchain.rs:4960, 5179, 5389). Nodes with different registry content then reject the same block: a consensus split. Known class: STATUS 4.5 (consensus state written outside blocks), now with a concrete entry point.
+- P05-F05a Medium. The relay path changes balances outside blocks on one node.
+- P05-F11a Low. Bridge state is saved to disk before the message is accepted.
+
 ## Suggested next steps
 
 1. Verify P04-F01 first (possible Critical). Then P04-F02 to F04 (stake and slash arithmetic), P01-F09, P03-F20, P02-F03.
