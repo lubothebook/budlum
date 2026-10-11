@@ -94,3 +94,10 @@ Sıra bağlayıcı değildir. STATUS.md kuyruğu ve kırmızı CI önce gelir (�
 3. Domain imza toplama katmanını yazmak. PoW, PoS, BFT ve PoA finality kanıtları Merkle ağacına girer. Tek PQ imza kök üzerinde durur.
 
 @MODEL_ROUTING.md
+
+## 10. ECC (affaan-m/ECC)
+
+- Kurulum: `npx ecc-universal@2.2.3 install --profile minimal --target claude-project` (proje içi `.claude/`, sürüm sabit). Durum: `.claude/ecc/install-state.json`.
+- Kaynak: https://github.com/affaan-m/ECC.git. Yalnızca ana oturum kurar ve günceller, alt ajanlar kurmaz.
+- Kullanım: yalnızca Rust ve denetimle ilgili skill ve ajanlar (code-reviewer, context-budget, repo-scan). Diğer dil ajanları çağrılmaz.
+- `.claude/settings.json` ECC tarafından değiştirilirse geri alınır, `includeCoAuthoredBy` eklenmez.
