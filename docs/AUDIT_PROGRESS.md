@@ -60,6 +60,7 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P48 | done (2026-10-11), detail notes/P48-scan.md | 20 (4 Medium, 10 Low, 6 Info) | no | F01 qcblob quorum tests never reach quorum check, F03 privacy_mainnet_disabled untested, F04 relayer slash with fake provenance |
 | P49 | done (2026-10-11), detail notes/P49-scan.md | 17 (1 High, 5 Medium, 6 Low, 5 Info) | no | F01 settlement_prod.rs cfg(false) compiles out about 45 tests, F05 test pins manifest_id collision, F02 supply cap proptest cannot fail |
 | P50 | done (2026-10-11), detail notes/P50-scan.md | 24 (11 Medium, 11 Low, 2 Info) | no | F01 air_selectors gate does not check the assert, F02 and F03 ci_workflow_guards substring match, F05 cfg(test) item hides next function |
+| P52 | done (2026-10-11), detail notes/P52-scan.md (Cargo.lock not readable) | 23 (9 Medium, 13 Low, 1 Info) | no | F03 module-coverage baseline file missing so gate always skips, F02 wallet-core root wrong, F01 minting gate skips one-line fns |
 | P32 on | not started | n/a | no | rolling start (CLAUDE.md 4A.10) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
