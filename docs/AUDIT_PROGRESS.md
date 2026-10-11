@@ -44,6 +44,7 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P33 | done (2026-10-11), detail notes/P33-scan.md | 19 (7 Medium, 11 Low, 1 Info) | no | F01 Bridge::start unwired, F07 PromptWallet negative rate mints funds, F04 served name check weak |
 | P34 | done (2026-10-11), detail notes/P34-scan.md | 18 (10 Medium, 7 Low, 1 Info) | no | F01 to F04 redact.rs masking gaps, F05 ai-knowledge unwired, F07 output lock digest gaps |
 | P32 | done (2026-10-11), detail notes/P32-scan.md | 18 (3 High, 6 Medium, 8 Low, 1 Info) | no | F01 prune_expired loses max_fee escrow, F02 STARK uses prover public inputs (latent), F03 junk envelope passes require_proof |
+| P36 | done (2026-10-11), detail notes/P36-scan.md | 19 (2 High, 6 Medium, 8 Low, 3 Info) | no | F01 AiModelRegister fields missing from proto, F02 vote and blob tokens never refill, F08 peer table fill |
 | P32 on | not started | n/a | no | rolling start (CLAUDE.md 4A.10) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
