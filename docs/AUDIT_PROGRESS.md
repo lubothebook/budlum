@@ -21,9 +21,9 @@ Base commit of the audit: 25ede0b. Date of the first session: 2026-10-09. The cl
 | P11 | done (2026-10-11) | 12 (1 Critical, 3 Medium, 8 Low) | F01 (main session), F02 to F04 (V16: F02, F03 confirmed, F04 partly lowered) | F05 on stay raw |
 | P12 | done (2026-10-11) | 7 (1 High, 2 Medium, 4 Low) | 3 of 7 (V15: F01 to F03 confirmed, latent) | F04 on stay raw |
 | P15 | done (2026-10-11) | 5 (+F06 DoS lead) | F01 CONFIRMED Critical (V17), F06 confirmed Medium/High | F02 to F05 stay raw |
-| P14 | done (2026-10-11) | 8 (2 Medium, 5 Low, 1 Info; all test quality) | no | F01 and F02 first: tests that pass without reaching the AIR |
-| P13 | done (2026-10-11) | 10 (1 High, 5 Medium, 3 Low, 1 Info) | no | F01 first: fixed constant fold of initial memory image; then F05, F06 |
-| P16 | done (2026-10-11) | 23 (5 Medium, 16 Low, 2 Info) | no | verify the Medium ones; F02 links to P12-F01 |
+| P14 | done (2026-10-11) | 8 (2 Medium, 5 Low, 1 Info; all test quality) | 2 of 8 (V19: F01 confirmed, F02 lowered to Low) | F03 on stay raw |
+| P13 | done (2026-10-11) | 10 (1 High, 5 Medium, 3 Low, 1 Info) | 6 of 10 (V18: F01 High confirmed and reachable via AiAttachExecutionProof, new F01a; F02, F03 lowered to Low; F04 confirmed. V19: F05, F06 confirmed) | F07 on stay raw |
+| P16 | done (2026-10-11) | 23 (5 Medium, 16 Low, 2 Info) | 5 of 23 (V20: F10, F11 confirmed and reached in production via the twin, new F11a; F02 confirmed latent; F01, F08 lowered to Low) | F03 on stay raw |
 | P17 on, P58, P59, P61 | not started | n/a | no | follow the wave order in AUDIT_PLAN.md; P07 and P60 are next (wave D3) |
 
 Verification calls done: 6 (V06 for P02 F01 to F07, V05 for P03 seven findings, V04 for P01 F09 to F16, V01 for P01 F01 to F04, V02 for P01 F05 to F08, V03 for P04 F01 to F04). No agent was running when this log was written.
