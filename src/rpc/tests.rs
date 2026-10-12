@@ -1332,4 +1332,20 @@ mod rpc_tests {
             .expect_err("public listener must refuse storage_answer_challenge");
         assert_eq!(refused.code(), -32004);
     }
+
+    /// The re-encode check refuses a body over the shared 1 MiB cap before
+    /// it decodes or encodes anything.
+    #[tokio::test]
+    async fn rpc_tests_verify_encoding_refuses_oversized_body() {
+        let (server, _chain) = setup().await;
+        let manifest =
+            crate::storage::ContentManifest::from_bytes_sliced(b"small body", 16).unwrap();
+        let big = "00".repeat(crate::storage::emit::MAX_PREVIEW_CONTENT_BYTES + 1);
+        let refused = server
+            .storage_verify_encoding(big, manifest)
+            .await
+            .expect_err("oversized body must be refused");
+        assert_eq!(refused.code(), -32602);
+        assert!(refused.message().contains("verify cap"));
+    }
 }

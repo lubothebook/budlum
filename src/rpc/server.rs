@@ -3326,10 +3326,31 @@ impl BudlumApiServer for RpcServer {
             ));
         }
         let hex = data_hex.strip_prefix("0x").unwrap_or(data_hex.as_str());
+        // Same cap as the QR feed calls: the re-encode below is a full
+        // erasure encode, so the body size bounds its CPU cost.
+        if hex.len() / 2 > crate::storage::emit::MAX_PREVIEW_CONTENT_BYTES {
+            return Err(ErrorObjectOwned::owned(
+                -32602,
+                format!(
+                    "body over verify cap {}",
+                    crate::storage::emit::MAX_PREVIEW_CONTENT_BYTES
+                ),
+                None::<()>,
+            ));
+        }
         let data = hex::decode(hex).map_err(|e| {
             ErrorObjectOwned::owned(-32602, format!("data_hex decode failed: {e}"), None::<()>)
         })?;
-        crate::storage::verify_object_encoding(&data, &manifest).map_err(|e| {
+        // The encode is CPU bound: keep it off the async workers.
+        let (manifest, verdict) = tokio::task::spawn_blocking(move || {
+            let verdict = crate::storage::verify_object_encoding(&data, &manifest);
+            (manifest, verdict)
+        })
+        .await
+        .map_err(|e| {
+            ErrorObjectOwned::owned(-32603, format!("verify_encoding task failed: {e}"), None::<()>)
+        })?;
+        verdict.map_err(|e| {
             ErrorObjectOwned::owned(-32602, format!("verify_encoding failed: {e}"), None::<()>)
         })?;
         Ok(serde_json::json!({
