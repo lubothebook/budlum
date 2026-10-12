@@ -1585,9 +1585,23 @@ impl Blockchain {
         proof: FinalityProof,
     ) -> Result<(), String> {
         self.verify_domain_commitment_finality(&commitment, &proof)?;
+        self.accept_verified_domain_commitment(commitment)
+    }
+
+    /// The step after finality proof verification. Split out so the anchor
+    /// rule can be tested without a real finality proof.
+    fn accept_verified_domain_commitment(
+        &mut self,
+        commitment: DomainCommitment,
+    ) -> Result<(), String> {
         let domain_id = commitment.domain_id;
         let domain_height = commitment.domain_height;
         let state_root = commitment.state_root;
+        let height_before = self
+            .domain_registry
+            .get(domain_id)
+            .map(|domain| domain.last_committed_height)
+            .ok_or_else(|| format!("Unknown consensus domain {domain_id}"))?;
         // AR-GE-6: a zero state root anchors nothing, and the relayer gate
         // already rejects zero roots on the result side, so such a
         // commitment could only advance a domain that can never satisfy the
@@ -1598,6 +1612,12 @@ impl Blockchain {
             ));
         }
         self.accept_domain_commitment(commitment)?;
+        // An idempotent resubmission of an old commitment returns Ok without
+        // advancing the domain. It must not move the anchor back to that
+        // commitment's older state root (BLG-0169).
+        if domain_height <= height_before {
+            return Ok(());
+        }
         // AR-GE-6: the only production writer of the consensus-owned
         // external-root registry. The anchor lands only after the domain's
         // own adapter has proven finality AND the commitment was accepted,
@@ -6949,6 +6969,50 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    /// BLG-0169: resubmitting an old accepted commitment must not rewind the
+    /// external root anchor to that commitment's state root.
+    #[test]
+    fn resubmitted_old_commitment_does_not_rewind_the_anchor() {
+        use crate::domain::plugin::default_domain;
+        use crate::domain::ConsensusKind;
+
+        let mut bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            None,
+            45262,
+            None,
+        );
+        let domain = default_domain(1, ConsensusKind::PoW, 45262, "pow-header-chain-v1", 1);
+        bc.register_consensus_domain(domain.clone()).unwrap();
+
+        let mut block1 = Block::new(1, "00".repeat(32), vec![]);
+        block1.state_root = "11".repeat(32);
+        block1.tx_root = block1.calculate_tx_root();
+        block1.hash = block1.calculate_hash();
+        let mut block2 = Block::new(2, block1.hash.clone(), vec![]);
+        block2.state_root = "22".repeat(32);
+        block2.tx_root = block2.calculate_tx_root();
+        block2.hash = block2.calculate_hash();
+        let root = [0u8; 32];
+        let c1 =
+            crate::domain::DomainCommitment::from_block(&domain, &block1, root, [0u8; 32], 0)
+                .unwrap();
+        let c2 =
+            crate::domain::DomainCommitment::from_block(&domain, &block2, root, [0u8; 32], 1)
+                .unwrap();
+        let root1 = c1.state_root;
+        let root2 = c2.state_root;
+        assert_ne!(root1, root2);
+
+        bc.accept_verified_domain_commitment(c1.clone()).unwrap();
+        bc.accept_verified_domain_commitment(c2).unwrap();
+        assert_eq!(bc.state.external_roots.get(&1), Some(&root2));
+
+        // The idempotent branch returns Ok, and the anchor must stay at root2.
+        bc.accept_verified_domain_commitment(c1).unwrap();
+        assert_eq!(bc.state.external_roots.get(&1), Some(&root2));
+    }
 
     /// BLG-0168: a snapshot that is ahead of the stored chain must not stay
     /// as the replay base. Startup falls back to the genesis state.
