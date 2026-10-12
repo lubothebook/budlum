@@ -4050,21 +4050,28 @@ mod tests {
     /// otherwise reopen arbitrary control flow without editing a line that
     /// looks like it has anything to do with jumps.
     ///
-    /// The fixture's first row is a `Load`, not a jump, so the sequential
-    /// `next_pc` rule (a row that does not branch, stop or return must have
-    /// `next_pc == pc + 1`) also refuses it. The Program CTL remains the
-    /// defence for a real jump, whose `next_pc == pc + imm` is a rule the
-    /// jump keeps; `rejects_a_fall_through_that_skips_an_instruction` pins the
-    /// sequential rule on its own.
+    /// The fixture's first row is a real `Jmp` with `imm = 5`, so the jump
+    /// rule `next_pc == pc + imm` and the sequential rule both hold. Only the
+    /// Program CTL refuses the Halt row at pc 5.
+    /// `rejects_a_fall_through_that_skips_an_instruction` pins the sequential
+    /// rule on its own.
     #[test]
     fn rejects_a_jump_past_the_end_of_the_program() {
+        // A real jump whose target is past the program end. The VM refuses
+        // to step at pc 5, so `run_receipt` ends the trace with a synthetic
+        // Halt row at that pc. The jump row keeps `next_pc == pc + imm`, so
+        // the sequential rule has nothing to say and only the Program CTL
+        // can object to the Halt row at pc 5.
         let program = vec![
-            inst(Opcode::Load, 1, 0, 0, 7),
+            inst(Opcode::Jmp, 0, 0, 0, 5),
             inst(Opcode::Halt, 0, 0, 0, 0),
         ];
         let mut vm = Vm::new(64);
         let receipt = vm.run_receipt(&program);
-        assert!(receipt.success);
+        assert!(
+            !receipt.success,
+            "the VM must refuse the out of range pc, or the fixture is not a bad jump"
+        );
 
         let program_bytes: Vec<u8> = program
             .iter()
@@ -4096,15 +4103,13 @@ mod tests {
             state_writes_digest: [0u8; 32],
         };
 
-        let (mut matrix, n_cpu) = trace_matrix(&vm.trace, &program, &pi);
+        let (matrix, n_cpu) = trace_matrix(&vm.trace, &program, &pi);
         assert!(n_cpu >= 2, "the fixture needs at least two CPU rows");
-
-        // Send the first row's successor outside the program and move the
-        // second row to match, so the `nxt_pc == next_pc` transition still
-        // holds and only the Program CTL has anything to object to.
-        let outside = program.len() as u64 + 5;
-        matrix.values[COL_NEXT_PC] = Goldilocks::new(outside);
-        matrix.values[TRACE_WIDTH + COL_PC] = Goldilocks::new(outside);
+        assert_eq!(
+            matrix.values[COL_NEXT_PC].as_canonical_u64(),
+            5,
+            "the first row must jump to the out of range pc"
+        );
 
         let matrix = RowMajorMatrix::new(matrix.values, TRACE_WIDTH);
         let air = BudAir {
