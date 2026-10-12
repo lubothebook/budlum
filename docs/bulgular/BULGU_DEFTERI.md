@@ -639,14 +639,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P38 | BLG-0631 | bud/src/bud_format_exepdf.rs:7-13, 66-103, 128-148 | P38-F29: notes/P38-scan.md:376; ham önem Info | AÇIK |  |  |
 | P38 | BLG-0632 | 18 files: matrix (12 hits), lowrank (20), hardening (9), guardian (5), fidelityg | P38-F30: notes/P38-scan.md:383; ham önem Info | AÇIK |  |  |
 | P38 | BLG-0633 | bud/src/bud_format_genomic.rs:42-99 | P38-F31: notes/P38-scan.md:390; ham önem Info | AÇIK |  |  |
-| P39 | BLG-0634 | bud/src/bud_format_qrvideo.rs:250-264, 267-288, 290-314, 371-385, 218-222, 553-566 | P39-F01: notes/P39-scan.md:25; ham önem Medium | AÇIK |  |  |
-| P39 | BLG-0635 | bud/src/bud_format_qrvideo.rs:267-288, 318-343 | P39-F02: notes/P39-scan.md:41; ham önem Medium | AÇIK |  |  |
-| P39 | BLG-0636 | bud/src/bud_format_qrvideo.rs:1-11, 169-203, 132-146, 402-409 | P39-F03: notes/P39-scan.md:56; ham önem Medium | AÇIK |  |  |
-| P39 | BLG-0637 | bud/src/bud_format_qrmatrix.rs:97-137, 1-13 | P39-F04: notes/P39-scan.md:69; ham önem Medium | AÇIK |  |  |
-| P39 | BLG-0638 | bud/src/bud_format_por.rs:44-51, 56-66, 72-81, 87-106 | P39-F05: notes/P39-scan.md:84; ham önem Medium | AÇIK |  |  |
-| P39 | BLG-0639 | bud/src/bud_format_pcap.rs:21, 62-95, 82-83, 146-150, 246-247, 371 | P39-F06: notes/P39-scan.md:99; ham önem Medium | AÇIK |  |  |
-| P39 | BLG-0640 | bud/src/bud_format_office.rs:33-64, 71-78, 83-100, 104-198, 11-13, 230-232 | P39-F07: notes/P39-scan.md:113; ham önem Medium | AÇIK |  |  |
-| P39 | BLG-0641 | bud/src/bud_format_scrub.rs:36-44, 76-84 | P39-F08: notes/P39-scan.md:128; ham önem Medium | AÇIK |  |  |
+| P39 | BLG-0634 | bud/src/bud_format_qrvideo.rs:250-264, 267-288, 290-314, 371-385, 218-222, 553-566 | P39-F01: notes/P39-scan.md:25; ham önem Medium | CI BEKLİYOR | 25496cc |  |
+| P39 | BLG-0635 | bud/src/bud_format_qrvideo.rs:267-288, 318-343 | P39-F02: notes/P39-scan.md:41; ham önem Medium | CI BEKLİYOR | cf0ebec |  |
+| P39 | BLG-0636 | bud/src/bud_format_qrvideo.rs:1-11, 169-203, 132-146, 402-409 | P39-F03: notes/P39-scan.md:56; ham önem Medium | CI BEKLİYOR | b99fce9 |  |
+| P39 | BLG-0637 | bud/src/bud_format_qrmatrix.rs:97-137, 1-13 | P39-F04: notes/P39-scan.md:69; ham önem Medium | CI BEKLİYOR | 029fb30 |  |
+| P39 | BLG-0638 | bud/src/bud_format_por.rs:44-51, 56-66, 72-81, 87-106 | P39-F05: notes/P39-scan.md:84; ham önem Medium | CI BEKLİYOR | 0af74ea |  |
+| P39 | BLG-0639 | bud/src/bud_format_pcap.rs:21, 62-95, 82-83, 146-150, 246-247, 371 | P39-F06: notes/P39-scan.md:99; ham önem Medium | CI BEKLİYOR | a836012 |  |
+| P39 | BLG-0640 | bud/src/bud_format_office.rs:33-64, 71-78, 83-100, 104-198, 11-13, 230-232 | P39-F07: notes/P39-scan.md:113; ham önem Medium / kısmi: DEFLATE çözücü yeni crate KARAR | KODLANIYOR | 0aa9b34 |  |
+| P39 | BLG-0641 | bud/src/bud_format_scrub.rs:36-44, 76-84 | P39-F08: notes/P39-scan.md:128; ham önem Medium | CI BEKLİYOR | 0ff89df |  |
 | P39 | BLG-0642 | bud/src/bud_format_recipe_record.rs:74-96, 99-106 | P39-F09: notes/P39-scan.md:141; ham önem Medium | AÇIK |  |  |
 | P39 | BLG-0643 | bud/src/bud_format_recipe_record.rs:44-49, 65-70, 115-126 | P39-F10: notes/P39-scan.md:155; ham önem Medium | AÇIK |  |  |
 | P39 | BLG-0644 | bud/src/bud_format_ratioconsensus.rs:44-52, 71-135, 157-180, 208-243 | P39-F11: notes/P39-scan.md:170; ham önem Medium | AÇIK |  |  |
@@ -766,14 +766,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P43 | BLG-0758 | crates/budscan/src/light_client.rs:124-156 | P43-F21: notes/P43-scan.md:367; ham önem Low | AÇIK |  |  |
 | P43 | BLG-0759 | crates/budscan/src/name_rule.rs:51-54 | P43-F22: notes/P43-scan.md:381; ham önem Info | AÇIK |  |  |
 | P43 | BLG-0760 | src/pollen/data_rights.rs:142, 400, 440 | P43-F23: notes/P43-scan.md:398; ham önem Info | AÇIK |  |  |
-| P44 | BLG-0761 | fuzz/fuzz_targets/zk_verifier.rs:65-87,119 | P44-F01: notes/P44-scan.md:60; ham önem Medium | AÇIK |  |  |
-| P44 | BLG-0762 | fuzz/fuzz_targets/block_deserialize.rs:6 | P44-F02: notes/P44-scan.md:79; ham önem Medium | AÇIK |  |  |
-| P44 | BLG-0763 | fuzz/fuzz_targets/consensus_validate.rs:46-80 | P44-F03: notes/P44-scan.md:97; ham önem Medium | AÇIK |  |  |
-| P44 | BLG-0764 | fuzz/fuzz_targets/consensus_state_transition.rs:16-17,69-95,111-112 | P44-F04: notes/P44-scan.md:110; ham önem Medium | AÇIK |  |  |
-| P44 | BLG-0765 | kani/src/lib.rs:304-326,463-490 | P44-F05: notes/P44-scan.md:128; ham önem Medium | AÇIK |  |  |
-| P44 | BLG-0766 | kani/src/lib.rs:20-28,41-80,132-238 | P44-F06: notes/P44-scan.md:146; ham önem Medium | AÇIK |  |  |
-| P44 | BLG-0767 | kani/src/lib.rs:181-222,279-291,456-461,454-490 | P44-F07: notes/P44-scan.md:163; ham önem Low | AÇIK |  |  |
-| P44 | BLG-0768 | kani/src/lib.rs:341-434 | P44-F08: notes/P44-scan.md:179; ham önem Low | AÇIK |  |  |
+| P44 | BLG-0761 | fuzz/fuzz_targets/zk_verifier.rs:65-87,119 | P44-F01: notes/P44-scan.md:60; ham önem Medium | CI BEKLİYOR | 7fb60f9 |  |
+| P44 | BLG-0762 | fuzz/fuzz_targets/block_deserialize.rs:6 | P44-F02: notes/P44-scan.md:79; ham önem Medium | CI BEKLİYOR | aaac757 |  |
+| P44 | BLG-0763 | fuzz/fuzz_targets/consensus_validate.rs:46-80 | P44-F03: notes/P44-scan.md:97; ham önem Medium | CI BEKLİYOR | 0994450 |  |
+| P44 | BLG-0764 | fuzz/fuzz_targets/consensus_state_transition.rs:16-17,69-95,111-112 | P44-F04: notes/P44-scan.md:110; ham önem Medium | CI BEKLİYOR | ac76979 |  |
+| P44 | BLG-0765 | kani/src/lib.rs:304-326,463-490 | P44-F05: notes/P44-scan.md:128; ham önem Medium | CI BEKLİYOR | 2e66431 |  |
+| P44 | BLG-0766 | kani/src/lib.rs:20-28,41-80,132-238 | P44-F06: notes/P44-scan.md:146; ham önem Medium / kısmi: gerçek düzeltme KARAR (kani/Cargo bağımlılığı, sınırlı yeniden ifade) | KARAR BEKLİYOR | 11d24a7 |  |
+| P44 | BLG-0767 | kani/src/lib.rs:181-222,279-291,456-461,454-490 | P44-F07: notes/P44-scan.md:163; ham önem Low | CI BEKLİYOR | 0179e65 |  |
+| P44 | BLG-0768 | kani/src/lib.rs:341-434 | P44-F08: notes/P44-scan.md:179; ham önem Low / kısmi: gerçek düzeltme KARAR (kani/Cargo bağımlılığı, sınırlı yeniden ifade) | KARAR BEKLİYOR | 295db29 |  |
 | P44 | BLG-0769 | benches/domain_throughput.rs:557-604,497-517 | P44-F09: notes/P44-scan.md:194; ham önem Low | AÇIK |  |  |
 | P44 | BLG-0770 | benches/micro/timing_safe.rs:51-62,442-481 | P44-F10: notes/P44-scan.md:212; ham önem Low | AÇIK |  |  |
 | P44 | BLG-0771 | crates/bpqs/examples/dudect_poseidon2.rs:73-80,370-393,535-560,626-643 | P44-F11: notes/P44-scan.md:229; ham önem Medium | AÇIK |  |  |
