@@ -2798,10 +2798,11 @@ impl Blockchain {
                 // progress (the gate above), and when other surfaces (bridge
                 // verification) read the domain's root they see the final root of
                 // the last accepted proof.
-                if let Some(d) = self.domain_registry.get_mut(claimed_domain) {
-                    d.last_committed_height = key.target_height;
-                    d.last_committed_hash = final_state_root;
-                }
+                self.advance_domain_to_proof_claim(
+                    claimed_domain,
+                    key.target_height,
+                    final_state_root,
+                )?;
                 if let Some(store) = &self.storage {
                     store
                         .save_proof_claim_registry(&self.proof_claims)
@@ -2828,6 +2829,28 @@ impl Blockchain {
         // A valid or duplicate submission consumes its fee. The fee is burned
         // Until a canonical transaction-scoped reward pool is introduced.
         Ok(outcome)
+    }
+
+    /// Moves a domain's progress to an accepted proof claim and persists the
+    /// domain, so a restart does not revert the progress while the claim stays
+    /// in the claim registry (BLG-0172).
+    fn advance_domain_to_proof_claim(
+        &mut self,
+        domain_id: DomainId,
+        target_height: u64,
+        final_state_root: crate::domain::types::Hash32,
+    ) -> Result<(), String> {
+        let Some(domain) = self.domain_registry.get_mut(domain_id) else {
+            return Ok(());
+        };
+        domain.last_committed_height = target_height;
+        domain.last_committed_hash = final_state_root;
+        if let Some(store) = &self.storage {
+            store
+                .save_consensus_domain(domain)
+                .map_err(|e| format!("Failed to persist consensus domain: {e}"))?;
+        }
+        Ok(())
     }
 
     /// Drive the liveness tracker over a synthetic epoch. Used by
@@ -7009,6 +7032,31 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    /// BLG-0172: the domain progress a proof claim causes must be on disk.
+    #[test]
+    fn proof_claim_domain_progress_is_persisted() {
+        use crate::domain::plugin::default_domain;
+        use crate::domain::ConsensusKind;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("chain.db");
+        let storage = Storage::new(db_path.to_str().unwrap()).unwrap();
+        let mut bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            Some(storage),
+            45262,
+            None,
+        );
+        let domain = default_domain(1, ConsensusKind::Zk, 45262, "zk-proof-verification", 1);
+        bc.register_consensus_domain(domain).unwrap();
+        bc.advance_domain_to_proof_claim(1, 7, [0x33; 32]).unwrap();
+
+        let stored = bc.storage.as_ref().unwrap().load_consensus_domains().unwrap();
+        let stored = stored.iter().find(|d| d.id == 1).unwrap();
+        assert_eq!(stored.last_committed_height, 7);
+        assert_eq!(stored.last_committed_hash, [0x33; 32]);
+    }
 
     fn double_sign_evidence(
         keys: &crate::crypto::primitives::ValidatorKeys,
