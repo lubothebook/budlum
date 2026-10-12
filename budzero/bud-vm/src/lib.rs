@@ -1690,9 +1690,18 @@ mod tests {
     /// The assert fires before the allocation, so this is safe to run.
     #[cfg(target_pointer_width = "64")]
     #[test]
-    #[should_panic(expected = "memory size")]
     fn with_gas_limit_refuses_one_byte_above_the_maximum() {
-        let _ = Vm::with_gas_limit(MAX_MEMORY_BYTES as usize + 1, 1);
+        let outcome =
+            std::panic::catch_unwind(|| Vm::with_gas_limit(MAX_MEMORY_BYTES as usize + 1, 1));
+        let Err(payload) = outcome else {
+            panic!("one byte above the maximum must be refused");
+        };
+        let message = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        assert!(message.contains("memory size"), "got {message:?}");
     }
 
     /// `Load rd, r0, imm` copies the immediate as a field element. A negative

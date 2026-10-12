@@ -724,6 +724,11 @@ mod tests {
             MainnetActivation::default(),
             1_700_000_000,
         );
+        assert_ne!(
+            report.status,
+            RelayStatus::Ok,
+            "the closed opcode must not be accepted"
+        );
         assert_eq!(report.status, RelayStatus::Alarm);
         let alarm = report.alarm.as_ref().expect("alarm present");
         assert_eq!(alarm.code, AlarmCode::InvalidEnvelope);
