@@ -724,11 +724,14 @@ impl ProofMarketState {
             .ok_or("Receipt index out of bounds")?;
 
         let reward = receipt.reward_claimed;
-        receipt.mark_paid()?;
-        self.total_rewards_paid = self
+        // The total is computed before the receipt changes state, so an
+        // overflow refusal leaves the receipt payable.
+        let total_rewards_paid = self
             .total_rewards_paid
             .checked_add(reward)
             .ok_or_else(|| "ProofMarketState total_rewards_paid overflow".to_string())?;
+        receipt.mark_paid()?;
+        self.total_rewards_paid = total_rewards_paid;
         Ok(reward)
     }
 
@@ -1027,6 +1030,18 @@ mod tests {
         let reward = market.pay_receipt(0).unwrap();
         assert_eq!(reward, 3_000);
         assert_eq!(market.total_rewards_paid, 3_000);
+    }
+
+    #[test]
+    fn a_failed_payment_leaves_the_receipt_pending() {
+        let mut market = ProofMarketState::new();
+        market.total_rewards_paid = u64::MAX;
+        market
+            .pending_receipts
+            .push(ProofReceipt::new([1u8; 32], test_address(2), 20, [3u8; 32], 5_000));
+        assert!(market.pay_receipt(0).unwrap_err().contains("overflow"));
+        assert!(market.pending_receipts[0].is_payable());
+        assert_eq!(market.total_rewards_paid, u64::MAX);
     }
 
     #[test]
