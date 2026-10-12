@@ -644,6 +644,16 @@ impl ProofMarketState {
             {
                 return Err("ProofMarketState duplicate task".into());
             }
+            // A completed task leaves `active_tasks`, so the check above no
+            // longer sees it. While its receipt is still held, the same task
+            // fields must not open a second job and earn a second receipt.
+            if self
+                .pending_receipts
+                .iter()
+                .any(|receipt| receipt.task_id == task.task_id)
+            {
+                return Err("ProofMarketState task already completed".into());
+            }
             self.active_tasks.push(task);
         }
         Ok(())
@@ -1002,6 +1012,23 @@ mod tests {
         let reward = market.pay_receipt(0).unwrap();
         assert_eq!(reward, 3_000);
         assert_eq!(market.total_rewards_paid, 3_000);
+    }
+
+    #[test]
+    fn a_completed_task_cannot_be_added_again_while_its_receipt_is_held() {
+        let mut market = ProofMarketState::new();
+        let mut task = task_with(task_kind(), test_address(1), 1, 100, 1_000);
+        let again = task.clone();
+        let task_id = task.task_id;
+        task.assign(test_address(2), 0, 10).unwrap();
+        market.add_task(task).unwrap();
+        let receipt = ProofReceipt::new(task_id, test_address(2), 20, [5u8; 32], 1_000);
+        market.complete_task(task_id, receipt, |_| Ok(())).unwrap();
+        assert!(market
+            .add_task(again)
+            .unwrap_err()
+            .contains("already completed"));
+        assert!(market.active_tasks.is_empty());
     }
 
     #[test]
