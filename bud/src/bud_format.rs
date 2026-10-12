@@ -436,6 +436,12 @@ impl BudFile {
         } else {
             out.extend_from_slice(&0u16.to_le_bytes());
         }
+        // Optional trailing field: the PQ verification key. It is written only
+        // when present, so a file without a key keeps its old bytes.
+        if let Some(pk) = &self.pq_public_key {
+            out.extend_from_slice(&(pk.len() as u16).to_le_bytes());
+            out.extend_from_slice(pk);
+        }
         out
     }
 
@@ -587,7 +593,22 @@ impl BudFile {
                 return Err("K-BUD: token");
             }
             let t = String::from_utf8_lossy(&data[off..off + tok_len]).to_string();
+            off += tok_len;
             Some(t)
+        } else {
+            None
+        };
+        let pq_pk = if off < data.len() {
+            if data.len() < off + 2 {
+                return Err("K-BUD: pklen");
+            }
+            let pk_len = u16::from_le_bytes([data[off], data[off + 1]]) as usize;
+            off += 2;
+            if pk_len == 0 || data.len() < off + pk_len {
+                return Err("K-BUD: pk");
+            }
+            let k = data[off..off + pk_len].to_vec();
+            Some(k)
         } else {
             None
         };
@@ -614,7 +635,7 @@ impl BudFile {
             chunks,
             merkle_root: merkle,
             pq_signature: pq_sig,
-            pq_public_key: None,
+            pq_public_key: pq_pk,
             encryption_key_wrapped: kw,
             pollen_consent_token: token,
             files: vec![],
@@ -939,6 +960,16 @@ mod tests {
         f.chunks[0].hash = [7u8; 32];
         f.merkle_root = [7u8; 32];
         assert!(f.decode().is_err());
+    }
+    #[test]
+    fn a_pq_signed_file_survives_serialisation() {
+        let sk = ml_dsa::SigningKey::<ml_dsa::MlDsa87>::from_seed(&[5u8; 32].into());
+        let mut f = one_chunk_file();
+        f.header.flags = BudFlags(BudFlags::PQ_SIGNED);
+        f.sign_pq(&sk).unwrap();
+        let back = BudFile::from_bytes(&f.to_bytes()).unwrap();
+        assert_eq!(back.pq_public_key, f.pq_public_key);
+        assert_eq!(back.decode().unwrap(), b"abc");
     }
     #[test]
     fn generative_removed() {
