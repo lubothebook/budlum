@@ -42,14 +42,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P01 | BLG-0034 | consensus/mod.rs:88 | P01-F25: FINDINGS.md:87; ham önem Low | AÇIK |  |  |
 | P01 | BLG-0035 | - | P01-F26: FINDINGS.md:88; ham önem Info | AÇIK |  |  |
 | P01 | BLG-0036 | - | P01-F27: FINDINGS.md:89; ham önem Info | AÇIK |  |  |
-| P02 | BLG-0037 | src/crypto/pkcs11.rs:116-134, 417-418, 554-566 | P02-F01: FINDINGS.md:95; ham önem Medium; CONFIRMED | AÇIK |  |  |
-| P02 | BLG-0038 | - | P02-F02: FINDINGS.md:96; ham önem Low; CONFIRMED | AÇIK |  |  |
-| P02 | BLG-0039 | - | P02-F03: FINDINGS.md:97; ham önem Medium; CONFIRMED | AÇIK |  |  |
-| P02 | BLG-0040 | .github/workflows/ci.yml | P02-F04: FINDINGS.md:98; ham önem Medium; PARTLY | AÇIK |  |  |
-| P02 | BLG-0041 | settlement/mod.rs:27-28 | P02-F05: FINDINGS.md:99; ham önem Low; CONFIRMED | AÇIK |  |  |
-| P02 | BLG-0042 | crates/bpqs/src/wots.rs:26-32, 63-69, 137-148 | P02-F06: FINDINGS.md:100; ham önem Low; CONFIRMED | AÇIK |  |  |
-| P02 | BLG-0043 | src/crypto/primitives.rs:505-518, 677-689 | P02-F07: FINDINGS.md:101; ham önem Low; CONFIRMED | AÇIK |  |  |
-| P02 | BLG-0044 | src/crypto/mainnet_policy.rs:119-124, 90-136 | P02-F08: FINDINGS.md:102; ham önem Medium | AÇIK |  |  |
+| P02 | BLG-0037 | src/crypto/pkcs11.rs:116-134, 417-418, 554-566 | P02-F01: FINDINGS.md:95; ham önem Medium; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P02 | BLG-0038 | - | P02-F02: FINDINGS.md:96; ham önem Low; CONFIRMED / BAĞIMLI: src/main.rs:659-677 (etiket constructor'a geçmeli) | AÇIK |  |  |
+| P02 | BLG-0039 | - | P02-F03: FINDINGS.md:97; ham önem Medium; CONFIRMED / gp/P02-A:3c7f4b2 | KODLANIYOR |  |  |
+| P02 | BLG-0040 | .github/workflows/ci.yml | P02-F04: FINDINGS.md:98; ham önem Medium; PARTLY / BAĞIMLI: ci.yml bpqs işi; BLG-1047 (P58-F01) ile aynı kök | AÇIK |  |  |
+| P02 | BLG-0041 | settlement/mod.rs:27-28 | P02-F05: FINDINGS.md:99; ham önem Low; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P02 | BLG-0042 | crates/bpqs/src/wots.rs:26-32, 63-69, 137-148 | P02-F06: FINDINGS.md:100; ham önem Low; CONFIRMED / gp/P02-A:2a5a113 | KODLANIYOR |  |  |
+| P02 | BLG-0043 | src/crypto/primitives.rs:505-518, 677-689 | P02-F07: FINDINGS.md:101; ham önem Low; CONFIRMED / gp/P02-A:e7f02f6 kısmi: keygen create_new kısmı main.rs:341-362,452-459 BAĞIMLI | KODLANIYOR |  |  |
+| P02 | BLG-0044 | src/crypto/mainnet_policy.rs:119-124, 90-136 | P02-F08: FINDINGS.md:102; ham önem Medium / gp/P02-A:a78996d | KODLANIYOR |  |  |
 | P02 | BLG-0045 | - | P02-F09: FINDINGS.md:103; ham önem Medium | AÇIK |  |  |
 | P02 | BLG-0046 | - | P02-F10: FINDINGS.md:104; ham önem Low | AÇIK |  |  |
 | P02 | BLG-0047 | - | P02-F11: FINDINGS.md:105; ham önem Low | AÇIK |  |  |
@@ -1073,15 +1073,15 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P59 | BLG-1065 | bud/Cargo.toml | P59-F07: FINDINGS.md:999; ham önem Low | AÇIK |  |  |
 | P59 | BLG-1066 | crates/wallet-core/Cargo.toml:47 | P59-F08: FINDINGS.md:1000; ham önem Low | AÇIK |  |  |
 | P59 | BLG-1067 | - | P59-F09: FINDINGS.md:1001; ham önem Info | AÇIK |  |  |
-| P60 | BLG-1068 | - | P60-F01: FINDINGS.md:670; ham önem Critical | AÇIK |  |  |
-| P60 | BLG-1069 | - | P60-F02: FINDINGS.md:671; ham önem High | AÇIK |  |  |
-| P60 | BLG-1070 | - | P60-F03: FINDINGS.md:672; ham önem Medium | AÇIK |  |  |
-| P60 | BLG-1071 | - | P60-F04: FINDINGS.md:673; ham önem Medium | AÇIK |  |  |
-| P60 | BLG-1072 | - | P60-F05: FINDINGS.md:674; ham önem Medium | AÇIK |  |  |
-| P60 | BLG-1073 | - | P60-F06: FINDINGS.md:675; ham önem Medium | AÇIK |  |  |
-| P60 | BLG-1074 | xtask/tools/src/audit_guard.rs:43 | P60-F07: FINDINGS.md:676; ham önem Medium | AÇIK |  |  |
-| P60 | BLG-1075 | - | P60-F08: FINDINGS.md:677; ham önem Low | AÇIK |  |  |
-| P60 | BLG-1076 | - | P60-F09: FINDINGS.md:678; ham önem Info | AÇIK |  |  |
+| P60 | BLG-1068 | - | P60-F01: FINDINGS.md:670; ham önem Critical / kanıt: zaten düzeltilmiş (03ec495); BudlumFinalityVerifier.sol:331-339 ve 487-501 anahtarlar constructor'da sabit, H(root) kontratta türetilir | YANLIŞ POZİTİF |  |  |
+| P60 | BLG-1069 | - | P60-F02: FINDINGS.md:671; ham önem High / gp/P60-A:a90594b | KODLANIYOR |  |  |
+| P60 | BLG-1070 | - | P60-F03: FINDINGS.md:672; ham önem Medium / gp/P60-A:d3af635 | KODLANIYOR |  |  |
+| P60 | BLG-1071 | - | P60-F04: FINDINGS.md:673; ham önem Medium / kanıt: zaten düzeltilmiş (2988db9); BudlumFinalityVerifier.sol:287-298 imza noktalarını hash'lemez | YANLIŞ POZİTİF |  |  |
+| P60 | BLG-1072 | - | P60-F05: FINDINGS.md:674; ham önem Medium / BAĞIMLI: evm_hybrid.rs (P06 sahibi); kodlama özeti /tmp/ledger/notes/BLG-1072.txt | AÇIK |  |  |
+| P60 | BLG-1073 | - | P60-F06: FINDINGS.md:675; ham önem Medium / gp/P60-A:0821fb7 | KODLANIYOR |  |  |
+| P60 | BLG-1074 | xtask/tools/src/audit_guard.rs:43 | P60-F07: FINDINGS.md:676; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P60 | BLG-1075 | - | P60-F08: FINDINGS.md:677; ham önem Low / gp/P60-A:e0be240 | KODLANIYOR |  |  |
+| P60 | BLG-1076 | - | P60-F09: FINDINGS.md:678; ham önem Info / kanıt: bilinçli ve belgeli; buf.yaml:9-19, protocol.proto:198-211 | YANLIŞ POZİTİF |  |  |
 | P61 | BLG-1077 | config/archive.toml:5-7 | P61-F01: FINDINGS.md:1027; ham önem High | AÇIK |  |  |
 | P61 | BLG-1078 | src/rpc/server.rs:128-135 | P61-F02: FINDINGS.md:1028; ham önem High | AÇIK |  |  |
 | P61 | BLG-1079 | ops/docker-compose.yml:23-45, 63-68 | P61-F03: FINDINGS.md:1029; ham önem Medium | AÇIK |  |  |
