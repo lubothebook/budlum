@@ -276,10 +276,10 @@ fn decode_png_grey(png: &[u8]) -> Result<(usize, usize, Vec<u8>), String> {
         let mut lb = [0u8; 4];
         lb.copy_from_slice(len_bytes);
         let len = u32::from_be_bytes(lb) as usize;
-        let ty = png
+        let chunk_kind = png
             .get(off + 4..off + 8)
             .ok_or_else(|| "png ty".to_string())?;
-        let data = png
+        let chunk_body = png
             .get(off + 8..off + 8 + len)
             .ok_or_else(|| "png chunk".to_string())?;
         let crc_end = off
@@ -289,19 +289,21 @@ fn decode_png_grey(png: &[u8]) -> Result<(usize, usize, Vec<u8>), String> {
         let crc_bytes = png
             .get(crc_end - 4..crc_end)
             .ok_or_else(|| "png chunk".to_string())?;
+        // PNG CRC-32 (spec, ISO 3309) runs over type then data with no length
+        // between them. This is a fixed external format, not a Budlum digest.
         let mut crc = flate2::Crc::new();
-        crc.update(ty);
-        crc.update(data);
+        crc.update(chunk_kind);
+        crc.update(chunk_body);
         if crc.sum().to_be_bytes() != crc_bytes {
             return Err("png crc".into());
         }
         off = crc_end;
-        if ty == b"IHDR" {
-            if data.len() < 13 {
+        if chunk_kind == b"IHDR" {
+            if chunk_body.len() < 13 {
                 return Err("ihdr".into());
             }
-            let depth = data.get(8).copied().unwrap_or(0);
-            let color = data.get(9).copied().unwrap_or(0);
+            let depth = chunk_body.get(8).copied().unwrap_or(0);
+            let color = chunk_body.get(9).copied().unwrap_or(0);
             if depth != 8 {
                 return Err("png bit depth".into());
             }
@@ -313,21 +315,21 @@ fn decode_png_grey(png: &[u8]) -> Result<(usize, usize, Vec<u8>), String> {
                 3 => return Err("png palette".into()),
                 _ => return Err("png color type".into()),
             };
-            if data.get(10).copied() != Some(0) || data.get(11).copied() != Some(0) {
+            if chunk_body.get(10).copied() != Some(0) || chunk_body.get(11).copied() != Some(0) {
                 return Err("png method".into());
             }
-            if data.get(12).copied() != Some(0) {
+            if chunk_body.get(12).copied() != Some(0) {
                 return Err("png interlace".into());
             }
             let mut wb = [0u8; 4];
             let mut hb = [0u8; 4];
-            wb.copy_from_slice(data.get(0..4).ok_or_else(|| "w".to_string())?);
-            hb.copy_from_slice(data.get(4..8).ok_or_else(|| "h".to_string())?);
+            wb.copy_from_slice(chunk_body.get(0..4).ok_or_else(|| "w".to_string())?);
+            hb.copy_from_slice(chunk_body.get(4..8).ok_or_else(|| "h".to_string())?);
             width = u32::from_be_bytes(wb);
             height = u32::from_be_bytes(hb);
-        } else if ty == b"IDAT" {
-            idat.extend_from_slice(data);
-        } else if ty == b"IEND" {
+        } else if chunk_kind == b"IDAT" {
+            idat.extend_from_slice(chunk_body);
+        } else if chunk_kind == b"IEND" {
             break;
         }
     }
@@ -869,6 +871,14 @@ mod tests {
         let frame = b"own-png-roundtrip-002".to_vec();
         let png = crate::storage::qr_png::frame_to_qr_png(&frame).unwrap();
         assert_eq!(png_to_optical_frame(&png).unwrap(), frame);
+    }
+
+    #[test]
+    fn png_crc_is_the_standard_unprefixed_crc32() {
+        // The IEND chunk CRC is the well known constant AE 42 60 82. A length
+        // prefix in the CRC input would change it and break every PNG reader.
+        let iend = chunk(b"IEND", &[]);
+        assert_eq!(iend.get(8..12), Some(&[0xAE, 0x42, 0x60, 0x82][..]));
     }
 
     #[test]
