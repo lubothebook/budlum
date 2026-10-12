@@ -147,6 +147,15 @@ pub fn open_payload(key: &PayloadKey, sealed: &[u8]) -> Result<Vec<u8>, SealErro
     if sealed.len() < SEALED_HEADER_LEN + 16 {
         return Err(SealError::BadBlob);
     }
+    // The same cap as on seal: a blob that no seal could have produced is
+    // refused before any key or cipher work.
+    let max_blob = SEALED_HEADER_LEN + MAX_SEAL_PLAINTEXT + 16;
+    if sealed.len() > max_blob {
+        return Err(SealError::TooLarge {
+            len: sealed.len() - SEALED_HEADER_LEN - 16,
+            max: MAX_SEAL_PLAINTEXT,
+        });
+    }
     let magic = sealed.get(0..4).ok_or(SealError::BadBlob)?;
     if magic != SEALED_MAGIC {
         return Err(SealError::BadBlob);
@@ -297,5 +306,18 @@ mod tests {
         let (kind, body) = unpack_payload(&packed).unwrap();
         assert_eq!(kind, PayloadKind::EncryptedContent);
         assert!(open_payload(&key, &body).unwrap().is_empty());
+    }
+
+    /// P27-F08 (b): open refuses a blob larger than any seal can produce.
+    #[test]
+    fn open_refuses_a_blob_past_the_seal_cap() {
+        let key = PayloadKey::derive(b"cap");
+        let mut blob = vec![0u8; SEALED_HEADER_LEN + MAX_SEAL_PLAINTEXT + 17];
+        blob[0..4].copy_from_slice(&SEALED_MAGIC);
+        blob[4] = SEALED_VERSION;
+        assert!(matches!(
+            open_payload(&key, &blob),
+            Err(SealError::TooLarge { .. })
+        ));
     }
 }
