@@ -4147,6 +4147,23 @@ impl Blockchain {
         Ok(())
     }
 
+    /// A stored QC blob must sign the same checkpoint block as the certificate.
+    /// After a reorg `get_qc_blob` can still return the blob of the old fork
+    /// from disk, and a certificate of the new fork must not be finalized with
+    /// it (BLG-0181).
+    fn ensure_blob_matches_checkpoint(
+        blob: &QcBlob,
+        checkpoint_hash: &str,
+    ) -> Result<(), String> {
+        if blob.checkpoint_hash != checkpoint_hash {
+            return Err(format!(
+                "QC blob checkpoint hash {} does not match certificate hash {} at height {}",
+                blob.checkpoint_hash, checkpoint_hash, blob.checkpoint_height
+            ));
+        }
+        Ok(())
+    }
+
     pub fn handle_qc_fault_proof(&mut self, proof: QcFaultProof) -> Result<(), String> {
         let blob = self
             .get_qc_blob(proof.checkpoint_height)
@@ -6070,6 +6087,7 @@ impl Blockchain {
                 ));
             }
         };
+        Self::ensure_blob_matches_checkpoint(&blob, &cert.checkpoint_hash)?;
         let signer_indices = cert.signer_indices(snapshot.validators.len());
         blob.verify_against_snapshot(
             &snapshot,
@@ -7156,6 +7174,23 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    /// BLG-0181: a QC blob of another fork must not back a certificate.
+    #[test]
+    fn qc_blob_of_another_checkpoint_hash_is_refused() {
+        let blob = QcBlob {
+            epoch: 1,
+            checkpoint_height: 10,
+            checkpoint_hash: "aa".repeat(32),
+            pq_signatures: vec![],
+            merkle_root: String::new(),
+            created_epoch: 1,
+        };
+        assert!(Blockchain::ensure_blob_matches_checkpoint(&blob, &"aa".repeat(32)).is_ok());
+        let error = Blockchain::ensure_blob_matches_checkpoint(&blob, &"bb".repeat(32))
+            .unwrap_err();
+        assert!(error.contains("does not match certificate hash"));
+    }
 
     /// BLG-0173: a decode error in the stored proof claim registry must stop
     /// startup, as it does for the bridge state, and not fall back to empty.
