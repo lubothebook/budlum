@@ -1432,8 +1432,23 @@ impl AccountState {
             return Some(0);
         }
 
-        let penalty = slash_penalty(validator.stake, slash_ratio_fixed);
+        let mut penalty = slash_penalty(validator.stake, slash_ratio_fixed);
         validator.stake = validator.stake.saturating_sub(penalty);
+
+        // Stake in the unbonding queue is still at risk. Without this cut a
+        // validator could unstake before the proof arrives and keep it all.
+        for entry in self
+            .unbonding_queue
+            .iter_mut()
+            .filter(|entry| entry.address == *address)
+        {
+            let cut = slash_penalty(entry.amount, slash_ratio_fixed);
+            entry.amount = entry.amount.saturating_sub(cut);
+            penalty = penalty.saturating_add(cut);
+        }
+        self.unbonding_queue
+            .retain(|entry| entry.address != *address || entry.amount > 0);
+
         validator.slashed = true;
         validator.active = false;
         validator.jailed = true;
@@ -2783,6 +2798,63 @@ mod tests {
         assert!(!released.jailed);
         assert!(released.slashed);
         assert!(!released.active);
+    }
+
+    /// Stake that sits in the unbonding queue is still at risk. A validator
+    /// that unstakes before the proof arrives must not keep that amount.
+    #[test]
+    fn slashing_cuts_the_unbonding_queue_of_the_offender() {
+        let validator = test_addr_from_byte(7u8);
+        let other = test_addr_from_byte(8u8);
+        let mut state = AccountState::new();
+        state.add_validator(validator, 1_000);
+        state.get_validator_mut(&validator).unwrap().stake = 400;
+        for (address, amount) in [(validator, 600), (validator, 200), (other, 500)] {
+            state.unbonding_queue.push(UnbondingEntry {
+                address,
+                amount,
+                release_epoch: 99,
+            });
+        }
+
+        let penalty = state
+            .slash_validator(
+                &validator,
+                crate::core::chain_config::FIXED_POINT_SCALE / 10,
+                "test",
+            )
+            .unwrap();
+
+        assert_eq!(state.get_validator(&validator).unwrap().stake, 360);
+        assert_eq!(state.unbonding_queue[0].amount, 540);
+        assert_eq!(state.unbonding_queue[1].amount, 180);
+        assert_eq!(state.unbonding_queue[2].amount, 500);
+        assert_eq!(penalty, 40 + 60 + 20);
+    }
+
+    /// A full slash empties the queue entries of the offender and drops them.
+    #[test]
+    fn full_slash_removes_emptied_unbonding_entries() {
+        let validator = test_addr_from_byte(7u8);
+        let mut state = AccountState::new();
+        state.add_validator(validator, 1_000);
+        state.get_validator_mut(&validator).unwrap().stake = 0;
+        state.unbonding_queue.push(UnbondingEntry {
+            address: validator,
+            amount: 1_000,
+            release_epoch: 99,
+        });
+
+        let penalty = state
+            .slash_validator(
+                &validator,
+                crate::core::chain_config::FIXED_POINT_SCALE,
+                "test",
+            )
+            .unwrap();
+
+        assert_eq!(penalty, 1_000);
+        assert!(state.unbonding_queue.is_empty());
     }
 
     #[test]
