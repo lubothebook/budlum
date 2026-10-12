@@ -743,9 +743,13 @@ impl AiVerifierQos {
         self.avg_response_blocks = if total == 0 {
             response_blocks
         } else {
-            (self.avg_response_blocks * total + response_blocks) / (total + 1)
+            // Widen to u128: the product can pass u64 range. The quotient is at
+            // most max(old_avg, new_value), so it always fits back into u64.
+            let sum = u128::from(self.avg_response_blocks) * u128::from(total)
+                + u128::from(response_blocks);
+            u64::try_from(sum / (u128::from(total) + 1)).unwrap_or(u64::MAX)
         };
-        self.total_results_submitted = total + 1;
+        self.total_results_submitted = total.saturating_add(1);
         self.last_active_block = current_block;
     }
 
@@ -977,12 +981,12 @@ impl AiAgentReputation {
     /// Calculate the agent's trust score (0.0 - 1.0).
     /// Factors in payment reliability, inference quality, and equivocation rate.
     pub fn trust_score(&self) -> f64 {
-        if self.payments_completed + self.payments_defaulted == 0 && self.results_submitted == 0 {
+        let total_payments = self.payments_completed.saturating_add(self.payments_defaulted);
+        if total_payments == 0 && self.results_submitted == 0 {
             return 0.0;
         }
 
         // Payment reliability (0.0 - 1.0)
-        let total_payments = self.payments_completed + self.payments_defaulted;
         let payment_reliability = if total_payments > 0 {
             self.payments_completed as f64 / total_payments as f64
         } else {
@@ -1263,6 +1267,23 @@ mod tests {
         assert!(serde_json::from_str::<BoundedBytes>(&ok).is_ok());
         let big = serde_json::to_string(&vec![1u8; MAX_INFERENCE_REF_BYTES + 1]).unwrap();
         assert!(serde_json::from_str::<BoundedBytes>(&big).is_err());
+    }
+
+    #[test]
+    fn qos_average_and_trust_score_do_not_overflow() {
+        let mut q = AiVerifierQos::new(addr(1));
+        q.avg_response_blocks = u64::MAX;
+        q.total_results_submitted = 2;
+        q.record_result(0, 5);
+        let expected = u64::try_from(u128::from(u64::MAX) * 2 / 3).unwrap();
+        assert_eq!(q.avg_response_blocks, expected);
+        assert_eq!(q.total_results_submitted, 3);
+
+        let mut r = AiAgentReputation::new(addr(2));
+        r.payments_completed = u64::MAX;
+        r.payments_defaulted = 1;
+        let score = r.trust_score();
+        assert!((0.0..=1.0).contains(&score));
     }
 
     fn addr(b: u8) -> Address {
