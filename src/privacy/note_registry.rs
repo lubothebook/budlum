@@ -81,7 +81,8 @@ impl L1NoteRegistry {
             return Err("note commitment already live".into());
         }
         if self.spent_nullifiers.contains(&commitment) {
-            // Defensive: commitment hash space must not collide with nullifiers in use
+            // Commitment hash space must not collide with nullifiers in use.
+            return Err("note commitment collides with a spent nullifier".into());
         }
         // Bounded live commitment set - fail-closed
         if self.live_commitments.len() >= MAX_LIVE_COMMITMENTS {
@@ -111,7 +112,7 @@ impl L1NoteRegistry {
     }
 
     /// Apply transfer with nullifier derivation proofs.
-    /// Each `proof[i]` must satisfy: `nullifier[i] == Poseidon(commitment[i], proof[i])`.
+    /// Each `proof[i]` must satisfy: `nullifier[i] == derive_nullifier(commitment[i], proof[i])`, a domain-separated SHA-256.
     /// If proofs is empty, falls back to legacy behavior (no binding check).
     pub fn apply_transfer_with_proofs(
         &mut self,
@@ -154,6 +155,9 @@ impl L1NoteRegistry {
             }
             if self.live_commitments.contains(c) {
                 return Err("output commitment already live".into());
+            }
+            if self.spent_nullifiers.contains(c) {
+                return Err("output commitment collides with a spent nullifier".into());
             }
         }
         // Every remaining refusal, decided before a single note moves.
@@ -352,6 +356,23 @@ mod tests {
         assert!(err.contains("duplicate nullifier"));
         assert!(r.contains_commitment(&a) && r.contains_commitment(&b));
         assert_eq!(r.spent_count(), 0);
+    }
+
+    /// A commitment equal to a spent nullifier is not a note.
+    #[test]
+    fn a_commitment_equal_to_a_spent_nullifier_is_refused() {
+        let c = budlum_note_packing::hash_from_field(21);
+        let n = budlum_note_packing::hash_from_field(0x9000_0001);
+        let out = budlum_note_packing::hash_from_field(0x9100_0001);
+        let mut r = L1NoteRegistry::new();
+        r.insert_note(c).unwrap();
+        r.apply_transfer(&[c], &[n], &[out]).unwrap();
+        assert!(r.insert_note(n).is_err());
+        let spare = budlum_note_packing::hash_from_field(22);
+        let next_n = budlum_note_packing::hash_from_field(0x9000_0002);
+        r.insert_note(spare).unwrap();
+        assert!(r.apply_transfer(&[spare], &[next_n], &[n]).is_err());
+        assert!(r.contains_commitment(&spare));
     }
 
     /// A transfer cannot grow the live set past MAX_LIVE_COMMITMENTS.
