@@ -957,6 +957,13 @@ fn preflight_response(origin: &str) -> HttpResponse {
     response
 }
 
+/// Upper bound for one `social_get_feed` page, whatever limit the caller asks for.
+const MAX_SOCIAL_FEED_LIMIT: usize = 200;
+
+fn clamp_feed_limit(limit: usize) -> usize {
+    limit.min(MAX_SOCIAL_FEED_LIMIT)
+}
+
 fn is_per_ip_rate_limited(
     config: &RpcSecurityConfig,
     per_ip_rates: &Arc<Mutex<HashMap<IpAddr, VecDeque<Instant>>>>,
@@ -4850,7 +4857,7 @@ impl BudlumApiServer for RpcServer {
     }
 
     async fn social_get_feed(&self, limit: usize) -> Result<serde_json::Value, ErrorObjectOwned> {
-        let nfts = self.chain.nft_get_feed(limit).await;
+        let nfts = self.chain.nft_get_feed(clamp_feed_limit(limit)).await;
         let list: Vec<_> = nfts
             .into_iter()
             .map(|nft| {
@@ -7130,6 +7137,12 @@ mod tests {
             .as_bool()
             .unwrap_or(true));
         assert_eq!(stats["economy"]["status"], "decision_locked_not_wired");
+    }
+
+    #[test]
+    fn feed_limit_is_clamped() {
+        assert_eq!(clamp_feed_limit(usize::MAX), MAX_SOCIAL_FEED_LIMIT);
+        assert_eq!(clamp_feed_limit(5), 5);
     }
 
     #[test]
