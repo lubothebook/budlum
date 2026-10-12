@@ -365,7 +365,15 @@ impl Codegen {
                 // Wildcard (otherwise the chain has no fall-through
                 // Termination, which is undefined).
                 let scrutinee_reg = self.generate_expr(scrutinee, scope, storage);
-                self.next_reg = saved_reg;
+                // A temporary scrutinee register (storage read, call result,
+                // arithmetic) sits at or above `saved_reg`. Keep it reserved
+                // for the whole chain, or the pattern Load would overwrite it.
+                let arm_base = if scrutinee_reg >= saved_reg {
+                    scrutinee_reg + 1
+                } else {
+                    saved_reg
+                };
+                self.next_reg = arm_base;
 
                 // Placeholder jumps to the per-arm body, patched once we
                 // Know where the body starts. Using `Option<usize>`
@@ -395,7 +403,7 @@ impl Codegen {
                             self.emit(Opcode::Jnz, 0, diff_reg, 0, 0);
                             // The target is not known yet (the next arm's test).
                             pending_skip = Some(placeholder);
-                            self.next_reg = saved_reg;
+                            self.next_reg = arm_base;
                         }
                         MatchPattern::Wildcard => {
                             // No test: if the previous arms did not hold, control falls
@@ -412,7 +420,7 @@ impl Codegen {
                     let end_jump = self.instructions.len();
                     self.emit(Opcode::Jmp, 0, 0, 0, 0);
                     end_jump_indices.push(end_jump);
-                    self.next_reg = saved_reg;
+                    self.next_reg = arm_base;
                 }
                 // The last arm's failure jump also goes to the end of the match.
                 if let Some(last) = pending_skip.take() {
@@ -427,6 +435,7 @@ impl Codegen {
                 for idx in end_jump_indices {
                     self.patch_jump(idx, (end_idx as i32) - (idx as i32));
                 }
+                self.next_reg = saved_reg;
             }
             Stmt::For {
                 var,

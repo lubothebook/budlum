@@ -810,6 +810,33 @@ mod tests {
         assert_eq!(vm.events, vec![30]);
     }
 
+    /// P35-F01: a scrutinee that is not a plain identifier lives in a
+    /// temporary register. The pattern Load must not overwrite it.
+    #[test]
+    fn test_match_on_expression_scrutinee_keeps_its_register() {
+        let source = r#"
+            contract MatchExpr {
+                pub fn main() {
+                    let x = 1;
+                    match (x + 1) {
+                        0 => { emit Result(100); },
+                        2 => { emit Result(200); },
+                        _ => { emit Result(999); },
+                    };
+                    match (x + 5) {
+                        0 => { emit Result(100); },
+                        2 => { emit Result(200); },
+                        _ => { emit Result(999); },
+                    };
+                }
+            }
+        "#;
+        let bytecode = compile(source, IsaProfile::Production).expect("match compiles");
+        let mut vm = bud_vm::Vm::new(8192);
+        vm.run(&bytecode).expect("VM should run");
+        assert_eq!(vm.events, vec![200, 999]);
+    }
+
     /// The wildcard arm (`_`) is required for exhaustive matching
     /// (semantic-checked); the parser only requires syntactic
     /// Validity. Verifies the parser rejects patterns that are not
