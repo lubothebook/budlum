@@ -1550,6 +1550,26 @@ impl Blockchain {
                         .get_mut(domain_id)
                         .ok_or_else(|| format!("Domain {domain_id} not found"))?;
                     d_mut.status = DomainStatus::Frozen;
+                    let frozen = d_mut.clone();
+                    // The freeze and the commitment that caused it must
+                    // survive a restart, or the domain is active again with
+                    // memory and disk apart (BLG-0170).
+                    if let Some(store) = &self.storage {
+                        if let Err(e) =
+                            store.save_domain_commitment_batch(&com, std::slice::from_ref(&frozen))
+                        {
+                            tracing::error!(error = %e, "Failed to persist frozen consensus domain");
+                        }
+                    }
+                    self.record_quarantine_event(
+                        crate::registry::QuarantineLedger::domain_target(domain_id),
+                        crate::registry::QuarantineReason::Equivocation(format!(
+                            "parent hash mismatch at domain height {next_height}"
+                        )),
+                        "DOMAIN_PARENT_MISMATCH",
+                        &format!("domain {domain_id} parent hash mismatch at height {next_height}"),
+                        4,
+                    );
                     return Err(format!(
                         "Domain {domain_id} parent hash mismatch at height {next_height}"
                     ));
@@ -6969,6 +6989,49 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    /// BLG-0170: a parent hash mismatch freezes the domain, and the freeze must
+    /// be on disk, not only in memory.
+    #[test]
+    fn parent_hash_mismatch_freeze_is_persisted() {
+        use crate::domain::plugin::default_domain;
+        use crate::domain::{ConsensusKind, DomainStatus};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("chain.db");
+        let storage = Storage::new(db_path.to_str().unwrap()).unwrap();
+        let mut bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            Some(storage),
+            45262,
+            None,
+        );
+        let domain = default_domain(1, ConsensusKind::PoW, 45262, "pow-header-chain-v1", 1);
+        bc.register_consensus_domain(domain.clone()).unwrap();
+
+        let mut block1 = Block::new(1, "00".repeat(32), vec![]);
+        block1.state_root = "11".repeat(32);
+        block1.tx_root = block1.calculate_tx_root();
+        block1.hash = block1.calculate_hash();
+        // Block 2 names a parent that is not block 1.
+        let mut block2 = Block::new(2, "77".repeat(32), vec![]);
+        block2.state_root = "22".repeat(32);
+        block2.tx_root = block2.calculate_tx_root();
+        block2.hash = block2.calculate_hash();
+        let root = [0u8; 32];
+        let c1 =
+            crate::domain::DomainCommitment::from_block(&domain, &block1, root, [0u8; 32], 0)
+                .unwrap();
+        let c2 =
+            crate::domain::DomainCommitment::from_block(&domain, &block2, root, [0u8; 32], 1)
+                .unwrap();
+        bc.submit_domain_commitment(c1).unwrap();
+        assert!(bc.submit_domain_commitment(c2).is_err());
+
+        let stored = bc.storage.as_ref().unwrap().load_consensus_domains().unwrap();
+        let stored = stored.iter().find(|d| d.id == 1).unwrap();
+        assert_eq!(stored.status, DomainStatus::Frozen);
+    }
 
     /// BLG-0169: resubmitting an old accepted commitment must not rewind the
     /// external root anchor to that commitment's state root.
