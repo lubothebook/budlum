@@ -530,6 +530,24 @@ impl Node {
         })
     }
 
+    /// Tell gossipsub whether a received message may be forwarded.
+    ///
+    /// The mesh runs with `validate_messages`: a message is held back until
+    /// the application reports a verdict, so a malformed message is not
+    /// relayed to the rest of the network.
+    fn report_gossip(
+        &mut self,
+        id: &gossipsub::MessageId,
+        source: &PeerId,
+        verdict: gossipsub::MessageAcceptance,
+    ) {
+        let _ = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .report_message_validation_result(id, source, verdict);
+    }
+
     /// Open a sync round: ask one peer for headers over `/sync`.
     ///
     /// Sync requests go over the peer-bound request_response protocol and
@@ -987,6 +1005,7 @@ impl Node {
 
         let gossipsub_config = gossipsub_config_builder
             .validation_mode(gossipsub::ValidationMode::Strict)
+            .validate_messages()
             .message_id_fn(message_id_fn)
             .max_transmit_size(crate::network::protocol::MAX_MESSAGE_SIZE)
             .build()
@@ -2237,13 +2256,16 @@ impl Node {
                                    {
                                        let pm = self.peer_manager_lock();
                                        if pm.is_banned(&peer_id) {
+                                           drop(pm);
                                            warn!("Ignoring message from banned peer {peer_id}");
+                                           self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Ignore);
                                            continue;
                                        }
                                    }
 
                                    if !self.peer_manager_lock().check_rate_limit(&peer_id) {
                                        warn!("Rate limit exceeded or lock error for peer {peer_id}");
+                                       self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Ignore);
                                        continue;
                                    }
 
@@ -2284,6 +2306,7 @@ impl Node {
                                            }
                                            let _ = self.swarm.disconnect_peer_id(peer_id);
                                        }
+                                       self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Ignore);
                                        continue;
                                    }
 
@@ -2308,8 +2331,13 @@ impl Node {
                                                    let mut pm = self.peer_manager_lock();
                                                    pm.report_invalid_tx(&peer_id);
                                                }
+                                               self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Reject);
                                                continue;
                                            }
+
+                                           // The message decoded and the sender is handshaked:
+                                           // only now may gossipsub forward it to the mesh.
+                                           self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Accept);
 
                                            match msg {
                                                NetworkMessage::Block(block) => {
@@ -3045,6 +3073,7 @@ impl Node {
                                        }
                                        Err(e) => {
                                            warn!("Computed invalid message from {}: {:?}", peer_id, e);
+                                           self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Reject);
 
                                            self.peer_manager_lock().report_oversized_message(&peer_id);
                                        }
@@ -3685,6 +3714,17 @@ mod sync_handler_order_tests {
         let needle2 = format!("&{}.hash[..8", "block");
         let src = production();
         assert!(!src.contains(&needle) && !src.contains(&needle2));
+    }
+
+    /// BLG-0203: gossipsub holds messages until the app reports a verdict.
+    #[test]
+    fn gossipsub_forwarding_waits_for_the_application_verdict() {
+        let src = production();
+        assert!(src.contains(".validate_messages()"));
+        for verdict in ["Accept", "Reject", "Ignore"] {
+            let needle = format!("gossipsub::MessageAcceptance::{verdict}");
+            assert!(src.contains(&needle), "missing verdict {verdict}");
+        }
     }
 
     /// BLG-0550: ban and rate limit run before the protobuf decode.
