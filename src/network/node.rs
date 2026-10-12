@@ -59,6 +59,9 @@ use crate::chain::chain_actor::ChainHandle;
 use crate::chain::finality::{Precommit, Prevote};
 use crate::network::gossip_dedup::{DedupResult, GossipDedup};
 use crate::network::peer_manager::PeerManager;
+use crate::network::regen_health_tick::{
+    hash32, Checkpoint, CheckpointView, RegenHealthTick, TickOutcome,
+};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 #[allow(clippy::large_enum_variant)]
@@ -459,6 +462,12 @@ pub struct Node {
     /// leaving the node stuck at whatever its flattest battery earned it. It
     /// is a ceiling and never a floor: a profile can only ask for fewer.
     mobile_peer_ceiling: usize,
+    /// The reversion ledger the regeneration health tick assesses and moves.
+    ///
+    /// Node-local and in memory: the ledger records what this node verified
+    /// about its own view against the finality certificates, and it starts
+    /// again from the live checkpoint on restart.
+    regen_health: RegenHealthTick,
 }
 
 /// On-disk shape of the validator vote high-water marks.
@@ -570,6 +579,92 @@ impl Node {
         self.active_sync_request = Some(sync.send_request(&peer, req.to_bytes()));
         info!("Requesting headers from {peer} over /sync (limit {limit})");
         true
+    }
+
+    /// One regeneration health tick against the finalized checkpoints.
+    ///
+    /// The canonical commitment for a height is the checkpoint hash in the
+    /// stored finality certificate; the held one is this node's own block
+    /// hash at that height. [`RegenHealthTick::observe`] decides and moves
+    /// the reversion ledger. This method gathers the view and acts on the
+    /// outcome: repair and revert open a sync round, alarms are logged as
+    /// errors with their stable kind label.
+    async fn regen_health_tick(&mut self) {
+        let live = self.chain.get_finalized_height().await;
+        let chain_id = self.chain.get_chain_id().await;
+        let interval =
+            crate::core::chain_config::finality_checkpoint_interval_for_chain_id(chain_id);
+        let previous = live.checked_sub(interval);
+        let mut heights = vec![live];
+        heights.extend(previous);
+        let held = self.regen_health.held_height();
+        if !heights.contains(&held) {
+            heights.push(held);
+        }
+        let mut checkpoints = Vec::with_capacity(heights.len());
+        for height in heights {
+            let local = self
+                .chain
+                .get_block(height)
+                .await
+                .and_then(|block| hash32(&block.hash));
+            let canonical = self
+                .chain
+                .get_finality_cert(height)
+                .await
+                .and_then(|cert| hash32(&cert.checkpoint_hash));
+            checkpoints.push(Checkpoint {
+                height,
+                local,
+                canonical,
+            });
+        }
+        let view = CheckpointView {
+            live,
+            previous,
+            checkpoints,
+        };
+        let outcome = self.regen_health.observe(&view);
+        match &outcome {
+            TickOutcome::Idle | TickOutcome::Healthy => {}
+            TickOutcome::Repair {
+                stress,
+                repair_cost,
+                regrowth_cost,
+            } => warn!(
+                ?stress,
+                repair_cost,
+                regrowth_cost,
+                height = live,
+                "Regeneration health: view diverges from the finality certificate, repair by sync"
+            ),
+            TickOutcome::Reverted(reversion) => warn!(
+                from = ?reversion.from,
+                to = ?reversion.to,
+                stress = ?reversion.stress,
+                height_after = reversion.height_after,
+                event = reversion.event_number,
+                "Regeneration health: reversion ledger reverted, re-growing by sync"
+            ),
+            TickOutcome::RevertRefused(error) => tracing::error!(
+                %error,
+                height = live,
+                "Regeneration health: the ledger refused the reversion verdict"
+            ),
+            TickOutcome::Alarm { reason, stress } => tracing::error!(
+                kind = reason.kind(),
+                ?reason,
+                ?stress,
+                height = live,
+                "Regeneration health alarm: self-recovery is impossible or unsafe"
+            ),
+        }
+        if outcome.opens_sync() {
+            let locator = self.chain.get_locator().await;
+            if !self.request_headers_from_peer(None, locator, 500) {
+                info!("Regeneration health: no sync round opened, one is open or no peer fits");
+            }
+        }
     }
 
     fn clear_sync_round(&mut self) {
@@ -1046,6 +1141,7 @@ impl Node {
             mobile_mode,
             mobile_profile: None,
             mobile_peer_ceiling: MAX_PEERS,
+            regen_health: RegenHealthTick::default(),
         })
     }
 
@@ -1509,6 +1605,10 @@ impl Node {
                            }
                        }
                        _ = finality_interval.tick() => {
+                           // Every node checks its own view, validator or not,
+                           // so the health tick runs before the validator gate.
+                           self.regen_health_tick().await;
+
                            // Resolve validator address lazily
                            if self.validator_address.is_none() {
                                self.validator_address = self.chain.get_validator_address().await;
