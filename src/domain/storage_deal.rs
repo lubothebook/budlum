@@ -2857,11 +2857,14 @@ impl StorageRegistry {
             .challenges
             .values()
             .filter(|c| {
+                // A challenge on a deal that left `Active` can never be
+                // resolved (answer and missed paths refuse it), so it must
+                // not hold a slot against the operator's new work.
                 !self.results.contains_key(&c.challenge_id)
                     && self
                         .deals
                         .get(&c.deal_id)
-                        .is_some_and(|d| d.operator == operator)
+                        .is_some_and(|d| d.operator == operator && d.is_active())
             })
             .count();
         if operator_open >= Self::MAX_OPEN_CHALLENGES_PER_OPERATOR {
@@ -6716,6 +6719,44 @@ mod tests {
             matches!(err, StorageError::TooManyOpenChallenges { .. }),
             "got {err:?}"
         );
+    }
+
+    /// Challenges left open on a deal that was slashed can never resolve. They
+    /// must not count toward the operator cap on its other deals.
+    #[test]
+    fn stale_challenges_on_a_slashed_deal_do_not_fill_the_operator_cap() {
+        let m = good_manifest();
+        let mut reg = StorageRegistry::new();
+        let (stale_deal, shard_id) = open_one(&mut reg, &m);
+        for i in 0..10u64 {
+            let epoch = 110 + i * StorageRegistry::MIN_OPERATOR_MANIFEST_CHALLENGE_EPOCHS;
+            reg.open_challenge(stale_deal, 0, 4, epoch, epoch + 5, opener(), 50)
+                .expect("the challenge must open");
+        }
+        reg.deals
+            .get_mut(&stale_deal)
+            .expect("the deal exists")
+            .status = DealStatus::Slashed;
+        let live_deal = reg
+            .open_deal(
+                42,
+                &m,
+                shard_id,
+                operator(),
+                1,
+                101,
+                200,
+                good_econ(),
+                &params(),
+                Some(valid_merkle_proof()),
+                Some([0x42u8; 32]),
+            )
+            .expect("the second deal must open");
+        for j in 0..7u64 {
+            let epoch = 150 + j * StorageRegistry::MIN_OPERATOR_MANIFEST_CHALLENGE_EPOCHS;
+            reg.open_challenge(live_deal, 0, 4, epoch, epoch + 5, opener(), 50)
+                .unwrap_or_else(|e| panic!("challenge {j} on the live deal must open: {e:?}"));
+        }
     }
 
     #[test]
