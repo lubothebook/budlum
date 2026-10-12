@@ -423,6 +423,9 @@ pub struct Node {
     /// Outbound request currently responsible for the one active sync round.
     active_sync_request: Option<request_response::OutboundRequestId>,
     pub pending_bitswap_fetches: PendingBitswapFetches,
+    /// The content id each outbound Bitswap request asked for. A response is
+    /// checked against this, not against the cid the response claims.
+    bitswap_requests: HashMap<request_response::OutboundRequestId, bud_node::store::ContentId>,
     pub max_peers: usize,
     pub validator_address: Option<crate::core::address::Address>,
     pub last_precommit_height: u64,
@@ -1200,6 +1203,7 @@ impl Node {
             sync_started_at,
             active_sync_request: None,
             pending_bitswap_fetches: HashMap::new(),
+            bitswap_requests: HashMap::new(),
             // The server budget. A battery-powered node lowers this through
             // `with_mobile_profile`, which derives it from the power mode
             // rather than from the boolean; deciding it twice is what let a
@@ -2009,10 +2013,11 @@ impl Node {
                                                    entry.push(response);
                                                    let want_cid = bud_node::store::ContentId(cid);
                                                    for peer in &peers {
-                                                       let _ = self.swarm.behaviour_mut().bitswap.send_request(
+                                                       let request_id = self.swarm.behaviour_mut().bitswap.send_request(
                                                            peer,
                                                            bud_node::BitswapRequest { want_cid },
                                                        );
+                                                       self.bitswap_requests.insert(request_id, want_cid);
                                                    }
                                                }
                                            }
@@ -3377,6 +3382,9 @@ impl Node {
                                    }
                                }
                                SwarmEvent::Behaviour(BudlumBehaviourEvent::Bitswap(event)) => {
+                                   if let request_response::Event::OutboundFailure { request_id, .. } = &event {
+                                       self.bitswap_requests.remove(request_id);
+                                   }
                                    if let Some(ref bitswap) = self.storage_node {
                                        if let request_response::Event::Message { peer, message, .. } = event
                                        {
@@ -3410,12 +3418,19 @@ impl Node {
                                                        .bitswap
                                                        .send_response(channel, response);
                                                }
-                                               request_response::Message::Response { response, .. } => {
+                                               request_response::Message::Response { request_id, response } => {
                                                    let response_cid = response.cid;
                                                    let is_not_found = response.not_found;
-                                                   // MEDIUM (CWE-345): the response must be for the requested block.
-                                                   // Yanitin cid'i, istegini karsiladigi cid'dir (bitswap protokolu).
-                                                   if let Err(e) = bitswap.handle_response(response_cid, response) {
+                                                   // MEDIUM (CWE-345): the response must be for the
+                                                   // requested block. The requested cid comes from the
+                                                   // request we sent, never from the response itself.
+                                                   let Some(requested_cid) = self.bitswap_requests.remove(&request_id) else {
+                                                       warn!("Unsolicited Bitswap response from {peer}");
+                                                       self.peer_manager_lock().report_bad_behavior(&peer);
+                                                       continue;
+                                                   };
+                                                   if let Err(e) = bitswap.handle_response(requested_cid, response) {
+                                                       self.peer_manager_lock().report_bad_behavior(&peer);
                                                        warn!("Bitswap response from {peer} failed: {e}");
                                                    } else {
                                                        {
@@ -3785,6 +3800,18 @@ mod sync_handler_order_tests {
         let src = production();
         let old = format!("checkpoint_height > self.{}", "last_precommit_height");
         assert!(!src.contains(&old), "the guard must use the aggregator height");
+    }
+
+    /// BLG-0209: the cid a Bitswap response is checked against comes from the
+    /// request we sent.
+    #[test]
+    fn bitswap_response_is_checked_against_the_requested_cid() {
+        let src = production();
+        let own = format!("handle_response({}, response)", "response_cid");
+        assert!(!src.contains(&own), "the response must not vouch for itself");
+        assert!(src.contains("handle_response(requested_cid, response)"));
+        assert!(src.contains("self.bitswap_requests.insert(request_id, want_cid)"));
+        assert!(src.contains("self.bitswap_requests.remove(request_id)"));
     }
 
     /// BLG-0550: ban and rate limit run before the protobuf decode.
