@@ -1319,6 +1319,37 @@ impl Storage {
             Ok(None)
         }
     }
+    /// One step of a walk from the tip toward genesis.
+    ///
+    /// The record found under `key` must carry that hash, and its height must
+    /// be exactly one below the block the walk came from. The height rule
+    /// makes a `previous_hash` cycle impossible: heights fall at every step,
+    /// so the walk ends.
+    fn check_walk_step(
+        key: &str,
+        block: &Block,
+        child_index: Option<u64>,
+    ) -> std::io::Result<()> {
+        if block.hash != key {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("record under {key} carries hash {}", block.hash),
+            ));
+        }
+        if let Some(child_index) = child_index {
+            if block.index.checked_add(1) != Some(child_index) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "block {child_index} points at a parent at height {}, not one below",
+                        block.index
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// # Errors
     ///
     /// Propagates `std::io::Error` from the step that failed; its variants name the refused
@@ -1330,6 +1361,7 @@ impl Storage {
             // ended the walk on `Err` the same way as on `Ok(None)`, so one
             // unreadable record brought the node up on a silently short chain.
             while let Some(block) = self.get_block(&current_hash)? {
+                Self::check_walk_step(&current_hash, &block, chain.last().map(|b| b.index))?;
                 chain.push(block.clone());
                 if block.previous_hash == "0".repeat(64) {
                     break;
@@ -1629,11 +1661,15 @@ impl Storage {
 
         let mut current_hash = last_hash;
         let mut count = 0;
+        let mut child_index: Option<u64> = None;
         loop {
             let block = self
                 .get_block(&current_hash)
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Cannot repair: block {current_hash} is missing"))?;
+            Self::check_walk_step(&current_hash, &block, child_index)
+                .map_err(|e| format!("Cannot repair: {e}"))?;
+            child_index = Some(block.index);
             let height_key = format!("HEIGHT:{}", block.index);
             self.db
                 .insert(height_key.as_bytes(), block.hash.as_bytes())
@@ -2348,6 +2384,37 @@ mod tests {
         assert!(storage.db.get(b"IN_PROGRESS_HEIGHT").unwrap().is_none());
         assert_eq!(storage.get_canonical_height().unwrap(), 1);
         assert!(storage.get_block_by_height(1).unwrap().is_some());
+    }
+
+    /// P26-F06: a `previous_hash` cycle ends the walk with an error instead of
+    /// looping on the boot path.
+    #[test]
+    fn a_previous_hash_cycle_is_an_error_not_a_loop() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let looped = "ab".repeat(32);
+        let mut block = Block::new(1, looped.clone(), vec![]);
+        block.hash = looped;
+        storage.commit_block(&block, "root").unwrap();
+
+        assert!(storage.load_chain().is_err());
+        assert!(storage.repair_index().is_err());
+    }
+
+    /// P26-F06: a record stored under a key other than its own hash is refused.
+    #[test]
+    fn a_record_under_the_wrong_hash_is_refused() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let blocks = commit_chain(&storage, 2);
+        let wrong = "cd".repeat(32);
+        storage
+            .db
+            .insert(wrong.as_bytes(), encode(&blocks[1]).unwrap())
+            .unwrap();
+        storage.db.insert(b"LAST", wrong.as_bytes()).unwrap();
+
+        assert!(storage.load_chain().is_err());
     }
 
     /// P26-F02: `delete_block` left the `TX_IDX` row pointing at a deleted block.
