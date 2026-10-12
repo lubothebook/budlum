@@ -1,30 +1,30 @@
-# Gorev sablonu (alt ajan ortak kurallari)
+# Task template (common rules for sub-agents)
 
-Bu dosya PR9 bulgu programinin ortak gorev kurallaridir. Her gorev paketi bu dosyaya yol verir. Dil: Turkce rapor, Ingilizce kod ve yorum (ASD-STE100, kisa cumleler, uzun tire ve kalin isaret yok).
+This file holds the common task rules of the PR9 finding program. Every task package points to this file. Language: the report is written in Turkish, code and comments in English (ASD-STE100, short sentences, no long dashes, no bold markers).
 
-## 0. Basla
+## 0. Start
 
-1. Ilk is: `docs/AGENT_MAP.md` oku. README okunmaz. Tum repo okunmaz.
-2. Paketin dosya sahipligi listesi disinda dosya degistirme. Baska dosyaya dokunmak gerekirse bulguyu `KARAR` veya `BAGIMLI` olarak raporla, kod yazma.
-3. Skill veya arac kurma. Betik, hook, ag cagrisi yok. Shell betigi yazma (Z6). Kod dili Rust ve BudL.
+1. First step: read `docs/AGENT_MAP.md`. Do not read the README. Do not read the whole repo.
+2. Do not change any file outside the ownership list of the package. If another file must change, report the finding with the matching status line from section 4 (decision or dependency) and write no code.
+3. Do not install skills or tools. No scripts, no hooks, no network calls. Do not write shell scripts (Z6). The code languages are Rust and BudL.
 
-## 1. Z2: yerelde CI araci calistirma
+## 1. Z2: do not run CI tools locally
 
-`cargo fmt`, `clippy`, `test`, `check`, `build`, `deny`, `audit`, typos, gates, miri, kani CALISTIRILMAZ. GitHub CI tek hakemdir. Bu nedenle kodu derleyici gibi oku:
+`cargo fmt`, `clippy`, `test`, `check`, `build`, `deny`, `audit`, typos, gates, miri and kani are NOT RUN. GitHub CI is the only judge. So read the code like a compiler:
 
-- Her kullandigin tipin, fonksiyonun, alanin imzasini `rg` ile ac ve oku. Tahmin yok.
-- Her `use` satirini, gorunurlugu (`pub`, `pub(crate)`) ve `#[cfg(test)]` kapsamini kontrol et.
-- rustfmt bicimi: 4 bosluk, satir 100 karakter, yaygin stil. Komsu kodun bicimini kopyala.
-- clippy `-D warnings`: `field_reassign_with_default`, `needless_borrow`, `too_many_arguments`, `large_enum_variant`, `manual_*`, `unwrap_used` ve `expect_used` (uretim yolunda deny) gibi kaliplardan kacin.
-- Istisna: yalnizca kilit dosyasi bakimi (`cargo update -p <crate> --precise <surum>`) calistirilabilir. Derleme yok.
+- For every type, function and field you use, open its signature with `rg` and read it. No guessing.
+- Check every `use` line, the visibility (`pub`, `pub(crate)`) and the `#[cfg(test)]` scope.
+- rustfmt style: 4 spaces, 100 characters per line, common style. Copy the format of the neighbouring code.
+- clippy `-D warnings`: avoid patterns such as `field_reassign_with_default`, `needless_borrow`, `too_many_arguments`, `large_enum_variant`, `manual_*`, `unwrap_used` and `expect_used` (deny on the production path).
+- Exception: only lock file maintenance (`cargo update -p <crate> --precise <version>`) may be run. No build.
 
-## 2. Her bulgu icin akis
+## 2. Flow for each finding
 
-1. Bul: ham bulgu `docs/audit/FINDINGS.md` veya `notes/Pxx-scan.md` icinde. Kodu CANLI oku. Satirlar kaymis olabilir.
-2. Dogrula: bulgunun hala gecerli oldugunu `rg` komutu veya testle goster. Gecersizse (kod degismis, iddia yanlis) `YP` (yanlis pozitif), kanitini yaz: dosya:satir ve komut. Kod yazma.
-3. Karar gerekirse (mimari veya ekonomik: protokol parametresi, ucret, tokenomics, yeni crate, yeni unsafe, gecmise donuk format degisikligi) `KARAR`: kod yazma. Soru metni: bulgu ID, kanit, secenekler (A, B, C) ve onerin.
-4. Kodla: once bulguyu gosteren ve duzeltme olmadan basarisiz olacak bir test yaz. Sonra duzeltmeyi yaz. Yalnizca bulgunun gerektirdigi satirlari degistir. Test, sahip olunan dosyadaki `#[cfg(test)]` modulune girer. Yeni test dosyasi icin `mod` kaydi baska dosyada gerekiyorsa o dosya sahip listesinde olmalidir.
-5. Commit: bir bulgu, bir commit. Yalnizca ilgili dosyalari `git add <dosya>` ile ekle (`git add -A` yok). Mesaj bicimi:
+1. Find: the raw finding is in `docs/audit/FINDINGS.md` or `notes/Pxx-scan.md`. Read the code LIVE. Lines may have moved.
+2. Verify: show that the finding is still valid with an `rg` command or a test. If it is not valid (the code changed, the claim is wrong), report `YP` (false positive) and write the proof: file:line and command. Write no code.
+3. If a decision is needed (architecture or economics: protocol parameter, fee, tokenomics, new crate, new unsafe, backward-incompatible format change), report `KARAR`: write no code. The question text has: the finding ID, the evidence, the options (A, B, C) and your recommendation.
+4. Code: first write a test that shows the finding and fails without the fix. Then write the fix. Change only the lines the finding needs. The test goes into the `#[cfg(test)]` module of the owned file. A new test file needs a `mod` entry in another file, so that file must be in the ownership list.
+5. Commit: one finding, one commit. Add only the relevant files with `git add <file>` (no `git add -A`). Message format:
 
 ```
 fix(P17/BLG-0042): <kisa aciklama>
@@ -36,22 +36,22 @@ Test: <eklenen testin adi>
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 ```
 
-Commit atilan dal senin worktree dalindir. PUSH ETME. Ana oturum commitlerini alip PR9 dalina koyar.
+The branch you commit to is your worktree branch. DO NOT PUSH. The main session takes your commits and puts them on the PR9 branch.
 
-## 3. Yasaklar (ihlal sayilir)
+## 3. Prohibitions (a breach counts as a violation)
 
-- Yeni `#[allow(...)]`, yeni `#[ignore]`, testi silmek veya beklenen degeri hataya uydurmak, CI adimini gevsetmek veya eski commite sabitlemek, clippy icin mantigi zayiflatmak.
-- `.github/*-baseline.txt` dosyalarina dokunmak.
-- Yeni `unsafe` (Z7). Yeni harici crate (karar gerektirir).
-- Uretim yolunda `unwrap`, `expect`, `panic!`, denetimsiz indeksleme. Konsensus yolunda float (Z8). Tutar, ucret, bakiye, yukseklikte `saturating_*` ve `wrapping_*` (yazili gerekce olmadan).
-- Kamu metinlerinde "L1" veya "Layer 1" (Z12). Dogru ad: Budlum Evrensel Mutabakat Katmani.
-- Token, anahtar, seed yazmak (Z9).
-- Bulguyu ham koda dokmek: kodu sen yaz, oku, gozden gecir.
-- Yeni genel (pub) ogeyi uretim cagri noktasi olmadan eklemek (bos kod kapilari kirmizi olur). Duzeltme yeni bir bagli olmayan genel oge gerektiriyorsa uretim yoluna bagla.
+- A new `#[allow(...)]`, a new `#[ignore]`, deleting a test or bending an expected value to fit an error, loosening a CI step or pinning it to an old commit, weakening logic for clippy.
+- Touching the `.github/*-baseline.txt` files.
+- New `unsafe` (Z7). A new external crate (needs a decision).
+- `unwrap`, `expect`, `panic!` or unchecked indexing on the production path. Floats on the consensus path (Z8). `saturating_*` and `wrapping_*` on amounts, fees, balances and heights (without a written reason).
+- "L1" or "Layer 1" in public text (Z12). Use the approved name given in rule Z12.
+- Writing a token, key or seed (Z9).
+- Dumping the finding into raw code: you write, read and review the code yourself.
+- Adding a new public (pub) item without a production call site (the idle-code gates go red). If the fix needs a new public item that is not connected, wire it into the production path.
 
-## 4. Teslim
+## 4. Delivery
 
-Son cevabin YALNIZCA su bicimde olur, bulgu basina bir satir, ek yorum yok:
+Your final answer has ONLY this format, one line per finding, no extra comment:
 
 ```
 PAKET: <kimlik>   DAL: <git dal adi>   TABAN: <sha>
@@ -63,4 +63,4 @@ BLG-xxxx | ENGELLI | - | <3 deneme sonrasi neden>
 YENI: <paket kapsami disi yeni bulgu: dosya:satir ve kanit>   (varsa)
 ```
 
-Uc basarisiz denemede farkli yaklasim sec. Hala olmuyorsa `ENGELLI` yaz ve sonraki bulguya gec.
+After three failed attempts, choose a different approach. If it still fails, write `ENGELLI` and move to the next finding.
