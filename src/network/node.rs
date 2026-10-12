@@ -29,6 +29,14 @@ const SYNC_TIMEOUT_SECS: u64 = 60;
 const MAX_SYNC_CONCURRENT_STREAMS: usize = 16;
 const MAX_PENDING_BITSWAP_FETCH_WAITERS: usize = 128;
 
+/// First `max_chars` characters of a peer controlled string, for log lines.
+///
+/// A byte slice such as `&s[..16]` panics when byte 16 is inside a multi byte
+/// character, and a release node aborts on panic.
+fn log_prefix(s: &str, max_chars: usize) -> String {
+    s.chars().take(max_chars).collect()
+}
+
 /// Extract IPv4 /24 key from a multiaddr (first 3 octets), if present.
 pub fn ipv4_slash24(addr: &Multiaddr) -> Option<[u8; 3]> {
     for proto in addr.iter() {
@@ -2329,7 +2337,7 @@ impl Node {
                                                    self.peer_manager_lock().report_invalid_block(&peer_id);
                                                    continue;
                                                }
-                                               info!("BLOCK: #{} Hash: {}...", block.index, &block.hash[..8.min(block.hash.len())]);
+                                               info!("BLOCK: #{} Hash: {}...", block.index, log_prefix(&block.hash, 8));
                                                let our_height = self.chain.get_height().await;
                                                if block.index == our_height + 1 {
                                                    match self.chain.validate_and_add_block(block.clone()).await {
@@ -2354,7 +2362,7 @@ impl Node {
                                                } else if block.index <= our_height {
                                                    if let Some(our_block) = self.chain.get_block(block.index).await {
                                                        if our_block.hash != block.hash {
-                                                           info!("Fork detected at height {} (ours: {}... theirs: {}...)", block.index, &our_block.hash[..8.min(our_block.hash.len())], &block.hash[..8.min(block.hash.len())]);
+                                                           info!("Fork detected at height {} (ours: {}... theirs: {}...)", block.index, log_prefix(&our_block.hash, 8), log_prefix(&block.hash, 8));
 
                                                            info!("Fork detected at height {} - initiating sync to resolve fork", block.index);
                                                            if self.sync_state.load(Ordering::SeqCst) == 0 {
@@ -2711,7 +2719,7 @@ impl Node {
                                                    continue;
                                                }
                                                info!("Prevote from {}: epoch={}, height={}, hash={}..., voter={}",
-                                                   peer_id, epoch, checkpoint_height, &checkpoint_hash[..16.min(checkpoint_hash.len())], voter_id);
+                                                   peer_id, epoch, checkpoint_height, log_prefix(&checkpoint_hash, 16), voter_id);
 
                                                let voter_addr = match crate::core::address::Address::from_hex(&voter_id) {
                                                    Ok(addr) => addr,
@@ -2748,7 +2756,7 @@ impl Node {
                                                    continue;
                                                }
                                                info!("Precommit from {}: epoch={}, height={}, hash={}..., voter={}",
-                                                   peer_id, epoch, checkpoint_height, &checkpoint_hash[..16.min(checkpoint_hash.len())], voter_id);
+                                                   peer_id, epoch, checkpoint_height, log_prefix(&checkpoint_hash, 16), voter_id);
 
                                                let voter_addr = match crate::core::address::Address::from_hex(&voter_id) {
                                                    Ok(addr) => addr,
@@ -2826,7 +2834,7 @@ impl Node {
                                                    continue;
                                                }
                                                info!("FinalityCert from {}: epoch={}, height={}, hash={}...",
-                                                   peer_id, epoch, checkpoint_height, &checkpoint_hash[..16.min(checkpoint_hash.len())]);
+                                                   peer_id, epoch, checkpoint_height, log_prefix(&checkpoint_hash, 16));
 
                                                let cert = crate::chain::finality::FinalityCert {
                                                    epoch,
@@ -3660,6 +3668,23 @@ mod sync_handler_order_tests {
             .split_once("#[cfg(test)]")
             .map(|(before, _)| before)
             .unwrap_or("")
+    }
+
+    /// BLG-0202: a multi byte character on the cut must not panic.
+    #[test]
+    fn log_prefix_survives_multibyte_input() {
+        let hostile = format!("{}{}", "a".repeat(15), "\u{20ac}\u{20ac}");
+        assert_eq!(super::log_prefix(&hostile, 16).chars().count(), 16);
+        assert_eq!(super::log_prefix("abc", 16), "abc");
+    }
+
+    /// BLG-0202: no byte slice of a peer string is left in the production path.
+    #[test]
+    fn no_byte_slice_of_checkpoint_hash_in_logs() {
+        let needle = format!("{}[..16", "checkpoint_hash");
+        let needle2 = format!("&{}.hash[..8", "block");
+        let src = production();
+        assert!(!src.contains(&needle) && !src.contains(&needle2));
     }
 
     /// BLG-0550: ban and rate limit run before the protobuf decode.
