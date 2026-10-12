@@ -6330,7 +6330,11 @@ impl Blockchain {
             // carries more of the network and earns a larger share.
             .map(|deal| (deal.operator, deal.total_fee(1)))
             .collect();
-        let total_weight: u64 = deals.iter().map(|(_, weight)| weight).sum();
+        // The math runs in u128. A deal weight is bounded only by the payer
+        // balance, so `boost_share * weight` can pass u64 and a u64 overflow
+        // here fails the whole block (BLG-0180). Each share is at most
+        // `boost_share`, so it always fits back into u64.
+        let total_weight: u128 = deals.iter().map(|(_, weight)| u128::from(*weight)).sum();
         if total_weight == 0 {
             state.pending_bud_boost_share = 0;
             return Ok(());
@@ -6338,10 +6342,12 @@ impl Blockchain {
 
         let mut distributed = 0u64;
         for (operator, weight) in &deals {
-            let share = boost_share
-                .checked_mul(*weight)
+            let share = u128::from(boost_share)
+                .checked_mul(u128::from(*weight))
                 .ok_or_else(|| "Boost distribution multiplication overflow".to_string())?
                 / total_weight;
+            let share = u64::try_from(share)
+                .map_err(|_| "Boost distribution share exceeds u64".to_string())?;
             if share > 0 {
                 state
                     .try_add_balance(operator, share)
@@ -6938,6 +6944,58 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    /// BLG-0180: a huge deal weight must not make the boost distribution fail.
+    /// With u64 math `boost_share * weight` overflowed and halted block production.
+    #[test]
+    fn boost_distribution_survives_a_huge_deal_weight() {
+        use crate::domain::storage_deal::StorageEconomicsParams;
+        use crate::domain::storage_params::StorageDomainParams;
+        use crate::storage::manifest::ContentManifest;
+
+        let mut state = AccountState::new();
+        let manifest = ContentManifest::from_bytes_sliced(b"boost pool content", 4).unwrap();
+        let shard_id = manifest.shards[0].shard_id;
+        let envelope = bud_proof::ProofEnvelope {
+            proof_format_version: 1,
+            backend: "test-backend".to_string(),
+            p3_version: "0.6".to_string(),
+            fri_params_id: "test-fri".to_string(),
+            public_inputs_hash: [0x42u8; 32],
+            proof_bytes: vec![0xABu8; 96],
+            degree_bits: 8,
+        };
+        let operator = Address::from([0x51; 32]);
+        state
+            .storage_registry
+            .open_deal(
+                42,
+                &manifest,
+                shard_id,
+                operator,
+                0,
+                100,
+                200,
+                StorageEconomicsParams {
+                    operator_bond: 5_000_000,
+                    fee_per_byte_epoch: 1_000_000_000_000_000_000,
+                },
+                &StorageDomainParams {
+                    chunk_size: 256,
+                    max_committed_chunks: 1000,
+                    challenge_interval: 10,
+                    min_operator_bond: 1_000_000,
+                },
+                Some(bincode::serialize(&envelope).unwrap()),
+                Some([0x42u8; 32]),
+            )
+            .unwrap();
+        let boost_share = 10_000_000_000u64;
+        let before = state.get_balance(&operator);
+        Blockchain::distribute_bud_boost_share_in_state(&mut state, boost_share).unwrap();
+        assert_eq!(state.get_balance(&operator), before + boost_share);
+        assert_eq!(state.pending_bud_boost_share, 0);
+    }
 
     /// BLG-0112: a relay whose fee or mint step fails after the ledger step
     /// must not stay consumed. The supply cap refuses the mint here.
