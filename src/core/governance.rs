@@ -522,6 +522,7 @@ impl GovernanceState {
 
         // Limit active proposals to prevent state bloat
         const MAX_ACTIVE_PROPOSALS: usize = 100;
+        const MAX_ACTIVE_PROPOSALS_PER_PROPOSER: usize = 8;
         let active_count = self
             .proposals
             .iter()
@@ -529,6 +530,17 @@ impl GovernanceState {
             .count();
         if active_count >= MAX_ACTIVE_PROPOSALS {
             return Err("Too many active proposals".into());
+        }
+        // The fee multiplier is keyed per epoch, so spreading proposals over
+        // many epochs keeps every one at 1x. Bound the open slots one
+        // proposer can hold at once (P20-F01).
+        let proposer_active = self
+            .proposals
+            .iter()
+            .filter(|p| p.status == ProposalStatus::Active && p.proposer == proposer)
+            .count();
+        if proposer_active >= MAX_ACTIVE_PROPOSALS_PER_PROPOSER {
+            return Err("Too many active proposals for this proposer".into());
         }
 
         // Proposal bandwidth is fee-gated, not hard-capped per proposer. Keep
@@ -1206,6 +1218,28 @@ mod l4_tests {
             assert!(result.is_ok(), "proposal {i} should remain fee-gated");
         }
         assert_eq!(gov.proposal_fee_multiplier(&proposer, 0), 64);
+    }
+
+    /// P20-F01: one proposer cannot fill the Active slots by using one
+    /// proposal per epoch, which keeps the per-epoch fee multiplier at 1x.
+    #[test]
+    fn p20_f01_one_proposer_cannot_exhaust_active_slots() {
+        let mut gov = GovernanceState::default();
+        let attacker = Address::from([0xA1; 32]);
+        let mut accepted = 0u64;
+        for epoch in 0..100u64 {
+            if gov
+                .create_proposal(attacker, ProposalType::ChangeBaseFee(100), epoch, 100_000)
+                .is_ok()
+            {
+                accepted += 1;
+            }
+        }
+        assert_eq!(accepted, 8);
+        let other = Address::from([0xA2; 32]);
+        assert!(gov
+            .create_proposal(other, ProposalType::ChangeBaseFee(100), 100, 10)
+            .is_ok());
     }
 
     #[test]
