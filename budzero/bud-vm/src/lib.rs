@@ -2504,4 +2504,45 @@ mod poseidon_parameter_tests {
             "the full-round half alone must dwarf the truncated degree"
         );
     }
+
+    /// P16-F02: the one-round Merkle node hash is invertible in its right
+    /// input (`x^7` is a bijection), so the last sibling of a walk can be
+    /// solved for any target root.
+    #[test]
+    fn merkle_round_last_sibling_is_solvable() {
+        const P: u128 = 0xFFFF_FFFF_0000_0001;
+        const RC0: u128 = 0xdd57_43e7_f2a5_a5d9;
+        const RC1: u128 = 0xcb3a_864e_58ad_a44b;
+        // 7^-1 modulo P - 1 by the extended Euclid algorithm.
+        let m = (P - 1) as i128;
+        let (mut r0, mut r1) = (m, 7i128);
+        let (mut t0, mut t1) = (0i128, 1i128);
+        while r1 != 0 {
+            let q = r0 / r1;
+            (r0, r1) = (r1, r0 - q * r1);
+            (t0, t1) = (t1, t0 - q * t1);
+        }
+        assert_eq!(r0, 1);
+        let mut e = t0.rem_euclid(m) as u128;
+        let pow7 = |x: u128| -> u128 {
+            let x2 = x * x % P;
+            let x4 = x2 * x2 % P;
+            x4 * x2 % P * x % P
+        };
+        let leaf = 123_456_789u64;
+        let target = 42u128;
+        let left = 7 * pow7((leaf as u128 + RC0) % P) % P;
+        let want = (target + P - left) % P;
+        let mut root = 1u128;
+        let mut base = want;
+        while e > 0 {
+            if e & 1 == 1 {
+                root = root * base % P;
+            }
+            base = base * base % P;
+            e >>= 1;
+        }
+        let sibling = ((root + P - RC1) % P) as u64;
+        assert_eq!(merkle_poseidon_round(leaf, sibling), target as u64);
+    }
 }

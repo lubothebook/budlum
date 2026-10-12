@@ -139,6 +139,14 @@ impl Default for MainnetActivation {
     /// was exactly a binding nobody had written down as a separate item - one of
     /// the examples showing what an internal review can miss. Do not turn this
     /// flag on merely on the strength of this comment.
+    ///
+    /// A second open weakness (P16-F02): the node hash of the walk is ONE
+    /// round, `7 * (a + c0)^7 + (b + c1)^7`, with no capacity. `x -> x^7` is a
+    /// bijection on Goldilocks (`gcd(7, P - 1) = 1`), so the last sibling can
+    /// be solved with a seventh root and any root can be reached from any
+    /// leaf. The walk is not collision or preimage resistant, and the gate
+    /// must stay closed until the node hash is a full permutation with
+    /// capacity. The VM test `merkle_round_last_sibling_is_solvable` shows it.
     fn default() -> Self {
         Self {
             verify_merkle_enabled: false,
