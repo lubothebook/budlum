@@ -18,6 +18,24 @@ fn checked_gateway_content(source: &str, data: Vec<u8>) -> Result<Vec<u8>, Strin
     Ok(data)
 }
 
+/// Every content id a name points at that a Pollen guard must look at.
+///
+/// The gateway serves `storage_root`, so that id is always first. `content_id`
+/// is added when it differs: a name must not pass the guard through one id and
+/// serve another.
+fn pollen_guard_ids(resolved: &crate::bns::types::BnsResolved) -> Vec<ContentId> {
+    let mut ids = Vec::new();
+    if let Some(root) = resolved.storage_root {
+        ids.push(ContentId(root));
+    }
+    if let Some(cid) = resolved.content_id {
+        if !ids.contains(&cid) {
+            ids.push(cid);
+        }
+    }
+    ids
+}
+
 fn verified_gateway_content(
     source: &str,
     cid: &ContentId,
@@ -188,6 +206,22 @@ impl BudGateway {
         }
     }
 
+    /// Refuse a name when Pollen protects any content id it points at,
+    /// including the id the gateway is about to serve.
+    async fn refuse_if_pollen_protected(
+        &self,
+        resolved: &crate::bns::types::BnsResolved,
+    ) -> Result<(), String> {
+        for cid in pollen_guard_ids(resolved) {
+            if self.chain.pollen_asset_for_content(cid).await.is_some() {
+                return Err(
+                    "Content is Pollen-protected; an AccessGrant is required".to_string()
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Primary entry point for D-Web resolution.
     /// Name: "ayaz.bud" → Returns raw bytes (HTML/Media).
     pub async fn fetch_name_content(&self, name: &str) -> Result<Vec<u8>, String> {
@@ -201,6 +235,8 @@ impl BudGateway {
         if resolved.is_expired {
             return Err(format!("BNS name '{name}' expired"));
         }
+
+        self.refuse_if_pollen_protected(&resolved).await?;
 
         // 2. Derive ContentId from storage_root
         let storage_root = resolved
@@ -317,6 +353,7 @@ impl BudGateway {
         if resolved.is_expired {
             return Err(format!("BNS name '{name}' expired"));
         }
+        self.refuse_if_pollen_protected(&resolved).await?;
         let storage_root = resolved
             .storage_root
             .ok_or_else(|| format!("BNS name '{name}' has no storage binding"))?;
@@ -352,6 +389,36 @@ mod tests {
     use super::*;
     use crate::storage::generated::{ContentSource, GeneratedSpec, GeneratorId};
     use crate::storage::ContentManifest;
+
+    fn resolved_with(
+        root: Option<[u8; 32]>,
+        content_id: Option<ContentId>,
+    ) -> crate::bns::types::BnsResolved {
+        crate::bns::types::BnsResolved {
+            name: "a.bud".to_string(),
+            owner: crate::core::address::Address::from([1u8; 32]),
+            address: None,
+            storage_root: root,
+            storage_domain_id: None,
+            content_id,
+            is_expired: false,
+        }
+    }
+
+    #[test]
+    fn pollen_guard_covers_the_served_storage_root() {
+        // BLG-0713: storage_root is what the gateway serves; the guard must see it
+        // even when content_id points elsewhere.
+        let protected = [7u8; 32];
+        let other = ContentId::of(b"unprotected");
+        let ids = pollen_guard_ids(&resolved_with(Some(protected), Some(other)));
+        assert!(ids.contains(&ContentId(protected)));
+        assert!(ids.contains(&other));
+        assert_eq!(ids.len(), 2);
+        let same = pollen_guard_ids(&resolved_with(Some(protected), Some(ContentId(protected))));
+        assert_eq!(same, vec![ContentId(protected)]);
+        assert!(pollen_guard_ids(&resolved_with(None, None)).is_empty());
+    }
 
     fn corrupt_store(good: &[u8], bad: &[u8]) -> (tempfile::TempDir, Storage, ContentId) {
         let dir = tempfile::tempdir().expect("tempdir");
