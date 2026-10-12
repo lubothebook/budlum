@@ -94,6 +94,10 @@ pub struct RegistryEntry {
     pub owner: [u8; 32],
     pub expires_at: u64,
     pub content_id: Option<ContentId>,
+    /// The storage root the registry holds for the name. The resolver's own
+    /// `storage_root` is compared with it, because the page can be fetched
+    /// through that root when `content_id` is absent.
+    pub storage_root: Option<[u8; 32]>,
 }
 
 /// Evaluate a BNS resolution together with its proof.
@@ -149,6 +153,7 @@ pub fn evaluate(
                 e.name == resolved.name
                     && e.owner == resolved.owner
                     && e.content_id == resolved.content_id
+                    && e.storage_root == resolved.storage_root
             });
             if !found {
                 evidence.push(Claim::new(
@@ -212,6 +217,13 @@ pub fn partial_registry_root(base_cost: u64, entries: &[RegistryEntry]) -> [u8; 
             }
             None => hasher.update([0u8]),
         }
+        match e.storage_root {
+            Some(root) => {
+                hasher.update([1u8]);
+                hasher.update(root);
+            }
+            None => hasher.update([0u8]),
+        }
     }
     hasher.finalize().into()
 }
@@ -270,6 +282,7 @@ mod tests {
                 owner: [2u8; 32],
                 expires_at: 10,
                 content_id: None,
+                storage_root: None,
             }],
         };
         let e = evaluate(&resolved(), &proof, Some([0u8; 32]));
@@ -284,6 +297,7 @@ mod tests {
             owner: [1u8; 32],
             expires_at: 10,
             content_id: Some(ContentId([9u8; 32])),
+            storage_root: Some([9u8; 32]),
         }];
         let root = partial_registry_root(100, &entries);
         let proof = BnsInclusionProof::Registry {
@@ -301,6 +315,7 @@ mod tests {
             owner: [1u8; 32],
             expires_at: 10,
             content_id: Some(ContentId([9u8; 32])),
+            storage_root: Some([9u8; 32]),
         }];
         let proof = BnsInclusionProof::Registry {
             base_cost: 100,
@@ -318,6 +333,7 @@ mod tests {
             owner: [3u8; 32],
             expires_at: 1,
             content_id: None,
+            storage_root: None,
         }];
         assert_eq!(
             partial_registry_root(100, &entries),
@@ -327,5 +343,28 @@ mod tests {
             partial_registry_root(100, &entries),
             partial_registry_root(101, &entries)
         );
+    }
+
+    #[test]
+    fn a_storage_root_the_registry_does_not_hold_is_refused() {
+        // The resolver names no content_id and hands out a storage_root of its
+        // own choosing; the proven entry holds a different one.
+        let mut r = resolved();
+        r.content_id = None;
+        r.storage_root = Some([0xAAu8; 32]);
+        let entries = vec![RegistryEntry {
+            name: String::from("ayaz.bud"),
+            owner: [1u8; 32],
+            expires_at: 10,
+            content_id: None,
+            storage_root: Some([0xBBu8; 32]),
+        }];
+        let root = partial_registry_root(100, &entries);
+        let proof = BnsInclusionProof::Registry {
+            base_cost: 100,
+            entries,
+        };
+        let e = evaluate(&r, &proof, Some(root));
+        assert_eq!(e.weakest(), Strength::Refused);
     }
 }

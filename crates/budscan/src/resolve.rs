@@ -357,6 +357,7 @@ mod tests {
                 owner: [1u8; 32],
                 expires_at: 100,
                 content_id: Some(id),
+                storage_root: None,
             }];
             let root = bns_proof::partial_registry_root(100, &entries);
             Resolver {
