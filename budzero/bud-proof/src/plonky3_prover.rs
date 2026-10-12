@@ -5071,6 +5071,43 @@ mod tests {
                     p.opened_values.aux_trace_local = None;
                 }),
             ),
+            (
+                "quotient chunk extended",
+                Box::new(|p: &mut crate::bud_stark::Proof<MyConfig>| {
+                    let v = p.opened_values.quotient_chunks[0][0];
+                    p.opened_values.quotient_chunks[0].push(v);
+                }),
+            ),
+            (
+                "quotient chunk shortened",
+                Box::new(|p: &mut crate::bud_stark::Proof<MyConfig>| {
+                    p.opened_values.quotient_chunks[0].pop();
+                }),
+            ),
+            (
+                "extra quotient chunk added",
+                Box::new(|p: &mut crate::bud_stark::Proof<MyConfig>| {
+                    let extra = p.opened_values.quotient_chunks[0].clone();
+                    p.opened_values.quotient_chunks.push(extra);
+                }),
+            ),
+            (
+                "aux opening shortened",
+                Box::new(|p: &mut crate::bud_stark::Proof<MyConfig>| {
+                    if let Some(aux) = p.opened_values.aux_trace_local.as_mut() {
+                        aux.pop();
+                    }
+                }),
+            ),
+            (
+                "aux opening extended",
+                Box::new(|p: &mut crate::bud_stark::Proof<MyConfig>| {
+                    if let Some(aux) = p.opened_values.aux_trace_local.as_mut() {
+                        let v = aux[0];
+                        aux.push(v);
+                    }
+                }),
+            ),
         ];
 
         for (ad, mutate) in mutations {
@@ -5116,6 +5153,43 @@ mod tests {
                 "{ad}: the refusal did not come from the shape gate"
             );
         }
+    }
+
+    /// Strip the aux (LogUp) trace from an honest proof: the commitment and
+    /// both openings together.
+    ///
+    /// This is the shape of P15-F01, but built from a proof that was made
+    /// with the aux trace, so the PCS opening argument still covers it and
+    /// the verifier must refuse. The forged shape, a proof that the prover
+    /// built with no aux generator at all, is not tested here: it needs the
+    /// verifier to take the aux flag from the AIR and not from the proof, and
+    /// that fix is in `bud_stark/verifier.rs`. The reason of the refusal is
+    /// not pinned, because it was not measured.
+    #[test]
+    fn rejects_a_proof_with_the_aux_trace_stripped() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 7),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let (envelope, pi) = prove_and_verify_full(program.clone(), |_| {});
+        let mut stripped: crate::bud_stark::Proof<MyConfig> =
+            postcard::from_bytes(&envelope.proof_bytes).expect("the real proof must decode");
+        assert!(
+            stripped.commitments.aux_trace.is_some(),
+            "the honest proof must carry an aux commitment, or the strip proves nothing"
+        );
+        stripped.commitments.aux_trace = None;
+        stripped.opened_values.aux_trace_local = None;
+        stripped.opened_values.aux_trace_next = None;
+
+        let forged = ProofEnvelope {
+            proof_bytes: postcard::to_allocvec(&stripped).unwrap(),
+            ..envelope.clone()
+        };
+        assert!(
+            Plonky3Adapter::verify(&forged, &pi, &program).is_err(),
+            "a proof with the aux commitment and openings removed verified"
+        );
     }
 
     /// A proof with the right shape but corrupted **content** must be refused.
