@@ -131,3 +131,5 @@ Sıra bağlayıcı değildir. Kırmızı CI ve STATUS.md kuyruğu önce gelir.
 3. Domain imza toplama katmanı: PoW, PoS, BFT ve PoA finality kanıtları Merkle ağacına girer, tek PQ imza kökte durur.
 
 @MODEL_ROUTING.md
+
+Read AGENT-TEAM.md before each task.
