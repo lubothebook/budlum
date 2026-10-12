@@ -2652,14 +2652,13 @@ impl BudlumApiServer for RpcServer {
         match self.chain.build_state_update_transaction(commitment).await {
             Ok(tx) => {
                 let tx_clone = tx.clone();
-                self.chain.add_transaction(tx).await.map_err(|e| {
-                    ErrorObjectOwned::owned(
-                        -32602,
-                        format!("State update transaction rejected: {e}"),
-                        None::<()>,
-                    )
-                })?;
-                self.node.broadcast_tx_sync(tx_clone);
+                // The commitment is already applied above, so a refused
+                // transaction must not turn the call into an error: the
+                // caller would see a failure for state that did change.
+                match self.chain.add_transaction(tx).await {
+                    Ok(()) => self.node.broadcast_tx_sync(tx_clone),
+                    Err(e) => tracing::warn!("State update transaction rejected: {e}"),
+                }
             }
             Err(e) => {
                 tracing::warn!("Could not build state update transaction: {e}");
