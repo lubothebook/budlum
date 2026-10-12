@@ -5594,6 +5594,45 @@ mod tests {
         assert!(res.is_err());
     }
 
+    /// Garbage bytes behind an envelope that passes every header, hash and
+    /// program check must reach the proof decoder and be refused there.
+    ///
+    /// `rejects_invalid_proof_bytes` uses a zero public inputs hash, so it is
+    /// refused before decoding starts and never tests the decoder.
+    #[test]
+    fn rejects_garbage_proof_bytes_behind_a_valid_envelope() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 42),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let (envelope, pi) = prove_and_verify_full(program.clone(), |_| {});
+        assert!(
+            Plonky3Adapter::verify(&envelope, &pi, &program).is_ok(),
+            "the untouched envelope must verify, or the refusals below prove nothing"
+        );
+
+        let honest = envelope.proof_bytes.clone();
+        let garbage: Vec<Vec<u8>> = vec![
+            Vec::new(),
+            vec![1, 2, 3, 4],
+            vec![0xFF; 512],
+            (0..honest.len()).map(|i| (i * 31 % 251) as u8).collect(),
+            honest[..honest.len() / 2].to_vec(),
+        ];
+        for bytes in garbage {
+            let mut broken = envelope.clone();
+            broken.proof_bytes = bytes;
+            let res = Plonky3Adapter::verify(&broken, &pi, &program);
+            assert!(
+                matches!(
+                    res,
+                    Err(VerifyError::DeserializationError(_)) | Err(VerifyError::InvalidProof)
+                ),
+                "garbage proof bytes must fail in the decoder or the verifier, got {res:?}"
+            );
+        }
+    }
+
     #[test]
     fn rejects_tampered_public_inputs() {
         let program = vec![
