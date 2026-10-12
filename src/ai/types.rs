@@ -11,6 +11,9 @@ use sha2::{Digest, Sha256};
 /// Prevents state/mempool/snapshot DoS vectors via oversize inference references.
 pub const MAX_INFERENCE_REF_BYTES: usize = 65_536;
 
+/// Highest whitelisted execution class id (1 = FixedPointMlpV1, 0 = none).
+const MAX_EXECUTION_CLASS: u8 = 1;
+
 /// Domain-separated AI Model Identifier (`[u8; 32]`).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
@@ -205,6 +208,15 @@ impl AiModelSpec {
         }
         if self.agreement_threshold == 0 || self.agreement_threshold > self.min_verifier_count {
             return Err("agreement_threshold must be between 1 and min_verifier_count".into());
+        }
+        if self.max_input_ref_bytes == 0 || self.max_output_ref_bytes == 0 {
+            return Err("max_input_ref_bytes and max_output_ref_bytes must be >= 1".into());
+        }
+        if self.execution_class > MAX_EXECUTION_CLASS {
+            return Err(format!(
+                "execution_class {} is not a whitelisted class (max {MAX_EXECUTION_CLASS})",
+                self.execution_class
+            ));
         }
         if self.max_input_ref_bytes > MAX_INFERENCE_REF_BYTES as u64 {
             return Err(format!(
@@ -1193,6 +1205,45 @@ fn request_commitment(payment_id: [u8; 32], request_id: AiRequestId) -> [u8; 32]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn valid_spec() -> AiModelSpec {
+        AiModelSpec {
+            model_id: AiModelId([9u8; 32]),
+            model_hash: [8u8; 32],
+            owner: addr(1),
+            min_verifier_count: 2,
+            agreement_threshold: 2,
+            max_input_ref_bytes: 1024,
+            max_output_ref_bytes: 1024,
+            request_deadline_blocks: 10,
+            result_deadline_blocks: 10,
+            version: 1,
+            active: true,
+            require_execution_proof: false,
+            execution_program_hash: None,
+            execution_class: 0,
+            execution_weights_digest: None,
+            execution_dims: None,
+            modalities: crate::ai_inference::perception::ModalitySet::text_only(),
+        }
+    }
+
+    #[test]
+    fn spec_validate_rejects_zero_ref_bytes_and_unknown_class() {
+        assert!(valid_spec().validate().is_ok());
+        let mut s = valid_spec();
+        s.max_input_ref_bytes = 0;
+        assert!(s.validate().is_err());
+        let mut s = valid_spec();
+        s.max_output_ref_bytes = 0;
+        assert!(s.validate().is_err());
+        let mut s = valid_spec();
+        s.execution_class = 2;
+        assert!(s.validate().is_err());
+        let mut s = valid_spec();
+        s.execution_class = 1;
+        assert!(s.validate().is_ok());
+    }
 
     fn addr(b: u8) -> Address {
         Address([b; 32])
