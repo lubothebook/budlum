@@ -590,10 +590,15 @@ impl Blockchain {
         } else {
             if snapshot_height >= chain_len as u64 {
                 warn!("Chain shorter than snapshot height, replaying from genesis");
-                0
-            } else {
-                1
+                // The snapshot is ahead of the stored chain, so it cannot be
+                // trusted for this chain. Drop it and start from the genesis
+                // state, or every block would be applied on top of a state
+                // that already holds its effects (BLG-0168).
+                state = resolved_genesis_config.build_state();
+                restored_finalized_height = 0;
+                restored_finalized_hash = chain_vec[0].hash.clone();
             }
+            1
         };
 
         info!(
@@ -6944,6 +6949,41 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    /// BLG-0168: a snapshot that is ahead of the stored chain must not stay
+    /// as the replay base. Startup falls back to the genesis state.
+    #[test]
+    fn startup_drops_a_snapshot_that_is_ahead_of_the_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let snap_dir = dir.path().join("snaps").to_string_lossy().into_owned();
+        let pm = PruningManager::new(10, 10, snap_dir);
+        let marker = Address::from([0xE7; 32]);
+        let mut snap_state = AccountState::default();
+        snap_state.add_balance(&marker, 777);
+        let params = crate::chain::snapshot::StateSnapshotV2Params {
+            height: 50,
+            block_hash: "aa".repeat(32),
+            genesis_hash: "bb".repeat(32),
+            chain_id: 45262,
+            finalized_height: 40,
+            finalized_hash: "cc".repeat(32),
+            finality_certificates: vec![],
+        };
+        let snapshot = crate::chain::snapshot::StateSnapshotV2::from_state(&snap_state, params);
+        pm.save_snapshot_v2(&snapshot).unwrap();
+
+        let db_path = dir.path().join("chain.db");
+        let storage = Storage::new(db_path.to_str().unwrap()).unwrap();
+        let bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            Some(storage),
+            45262,
+            Some(pm),
+        );
+        assert_eq!(bc.chain.len(), 1);
+        assert_eq!(bc.state.get_balance(&marker), 0);
+        assert_eq!(bc.finalized_height, 0);
+    }
 
     /// BLG-0180: a huge deal weight must not make the boost distribution fail.
     /// With u64 math `boost_share * weight` overflowed and halted block production.
