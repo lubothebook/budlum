@@ -134,9 +134,16 @@ impl L1NoteRegistry {
         }
 
         // Pre-check nullifiers
+        // The nullifiers of one transfer must also be distinct from each other.
+        // The set records a repeated value once, so `[n, n]` would spend two
+        // notes and leave a single nullifier behind.
+        let mut seen_nullifiers = BTreeSet::new();
         for n in nullifiers {
             if self.spent_nullifiers.contains(n) {
                 return Err("double-spend: nullifier already spent".into());
+            }
+            if !seen_nullifiers.insert(*n) {
+                return Err("duplicate nullifier in transfer".into());
             }
         }
         // Pre-check outputs unique + not already live
@@ -329,6 +336,22 @@ mod tests {
         assert!(r
             .apply_transfer(&[commitment], &[nullifier], &[second])
             .is_err());
+    }
+
+    /// One nullifier cannot cover two inputs of the same transfer.
+    #[test]
+    fn a_repeated_nullifier_in_one_transfer_is_refused() {
+        let a = budlum_note_packing::hash_from_field(11);
+        let b = budlum_note_packing::hash_from_field(12);
+        let n = budlum_note_packing::hash_from_field(0x8000_0001);
+        let out = budlum_note_packing::hash_from_field(0x8100_0001);
+        let mut r = L1NoteRegistry::new();
+        r.insert_note(a).unwrap();
+        r.insert_note(b).unwrap();
+        let err = r.apply_transfer(&[a, b], &[n, n], &[out]).unwrap_err();
+        assert!(err.contains("duplicate nullifier"));
+        assert!(r.contains_commitment(&a) && r.contains_commitment(&b));
+        assert_eq!(r.spent_count(), 0);
     }
 
     /// A transfer cannot grow the live set past MAX_LIVE_COMMITMENTS.
