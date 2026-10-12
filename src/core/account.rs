@@ -988,11 +988,15 @@ impl AccountState {
     }
 
     pub fn get_total_stake(&self) -> u64 {
-        self.validators
+        let total = self
+            .validators
             .values()
             .filter(|v| v.active && !v.slashed)
-            .map(|v| v.stake)
-            .sum()
+            .fold(0u128, |acc, v| acc + u128::from(v.stake));
+        // The supply cap keeps this far below u64::MAX. A tampered state
+        // could exceed it: report the largest value instead of wrapping, so
+        // quorum maths never sees a small total.
+        u64::try_from(total).unwrap_or(u64::MAX)
     }
     pub fn get_active_validators(&self) -> Vec<&Validator> {
         let mut validators: Vec<&Validator> = self
@@ -2620,6 +2624,14 @@ mod tests {
             .insert(b"ACCT:not-an-address".as_slice(), b"junk".as_slice())
             .expect("plant corrupt entry");
         assert!(AccountState::with_storage(storage).is_err());
+    }
+
+    #[test]
+    fn total_stake_does_not_wrap() {
+        let mut state = AccountState::new();
+        state.add_validator(test_addr_from_byte(1u8), u64::MAX);
+        state.add_validator(test_addr_from_byte(2u8), 5);
+        assert_eq!(state.get_total_stake(), u64::MAX);
     }
 
     #[test]
