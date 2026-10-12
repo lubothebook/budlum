@@ -7,7 +7,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | Parça | ID | Dosya:Satır | Kanıt | Durum | Commit SHA | CI run |
 |---|---|---|---|---|---|---|
 | P0 | BLG-0001 | .gitleaks.toml | CI #122 Secret Scan: `[[allowlists]] must contain at least one check`; düzeltme b35dd86 (parmak izi .gitleaksignore dosyasına taşındı); yeşil kanıt bekleniyor | CI BEKLİYOR | b35dd86 |  |
-| P0 | BLG-0002 | src/network/regen_health_tick.rs:337 | CI #124 Clippy: `field_reassign_with_default` (-D warnings), iş 115030778899 ve 115030778747 | AÇIK |  |  |
+| P0 | BLG-0002 | src/network/regen_health_tick.rs:337 | CI #124 Clippy: `field_reassign_with_default` (-D warnings), iş 115030778899 ve 115030778747 / gp/P0-A:fd859e7 | KODLANIYOR |  |  |
 | P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı | AÇIK |  |  |
 | P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile | KODLANIYOR |  |  |
 | P0 | BLG-0005 | PR9 mergeable_state | PR9 `dirty` idi, son iki commit için `pull_request` CI hiç çalışmadı; 030cc60 merge commit ile giderildi | CI BEKLİYOR | 030cc60 |  |
@@ -63,14 +63,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P02 | BLG-0055 | - | P02-F19: FINDINGS.md:113; ham önem Info | AÇIK |  |  |
 | P02 | BLG-0056 | - | P02-F20: FINDINGS.md:114; ham önem Info | AÇIK |  |  |
 | P02 | BLG-0057 | - | P02-F21: FINDINGS.md:115; ham önem Info | AÇIK |  |  |
-| P03 | BLG-0058 | src/privacy/note_registry.rs:104-111, 163-173 | P03-F01: FINDINGS.md:121; ham önem Medium; CONFIRMED | AÇIK |  |  |
-| P03 | BLG-0059 | core/account.rs:2456-2458 | P03-F02: FINDINGS.md:122; ham önem Medium; CONFIRMED | AÇIK |  |  |
-| P03 | BLG-0060 | - | P03-F03: FINDINGS.md:123; ham önem Low | AÇIK |  |  |
-| P03 | BLG-0061 | - | P03-F04: FINDINGS.md:124; ham önem Low | AÇIK |  |  |
-| P03 | BLG-0062 | src/settlement/proof_market.rs:296-316, 634-650, 695-697 | P03-F05: FINDINGS.md:125; ham önem Low; CONFIRMED | AÇIK |  |  |
-| P03 | BLG-0063 | - | P03-F06: FINDINGS.md:127; ham önem Low | AÇIK |  |  |
-| P03 | BLG-0064 | core/account.rs:1570 | P03-F07: FINDINGS.md:128; ham önem Medium | AÇIK |  |  |
-| P03 | BLG-0065 | - | P03-F08: FINDINGS.md:129; ham önem Low | AÇIK |  |  |
+| P03 | BLG-0058 | src/privacy/note_registry.rs:104-111, 163-173 | P03-F01: FINDINGS.md:121; ham önem Medium; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P03 | BLG-0059 | core/account.rs:2456-2458 | P03-F02: FINDINGS.md:122; ham önem Medium; CONFIRMED / gp/P03-A:7fbcd05 | KODLANIYOR |  |  |
+| P03 | BLG-0060 | - | P03-F03: FINDINGS.md:123; ham önem Low / gp/P03-A:509fe1e | KODLANIYOR |  |  |
+| P03 | BLG-0061 | - | P03-F04: FINDINGS.md:124; ham önem Low / gp/P03-A:059a7c5 | KODLANIYOR |  |  |
+| P03 | BLG-0062 | src/settlement/proof_market.rs:296-316, 634-650, 695-697 | P03-F05: FINDINGS.md:125; ham önem Low; CONFIRMED / gp/P03-A:3e30204 kısmi | KODLANIYOR |  |  |
+| P03 | BLG-0063 | - | P03-F06: FINDINGS.md:127; ham önem Low / gp/P03-A:99ed814 | KODLANIYOR |  |  |
+| P03 | BLG-0064 | core/account.rs:1570 | P03-F07: FINDINGS.md:128; ham önem Medium / BAĞIMLI: executor.rs, account.rs; önce escrow kararı | AÇIK |  |  |
+| P03 | BLG-0065 | - | P03-F08: FINDINGS.md:129; ham önem Low / gp/P03-A:5683bd8 | KODLANIYOR |  |  |
 | P03 | BLG-0066 | - | P03-F09: FINDINGS.md:130; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0067 | - | P03-F10: FINDINGS.md:131; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0068 | src/settlement/cold_wallet.rs:498-513, 614-619, 635-653 | P03-F11: FINDINGS.md:132; ham önem Medium; CONFIRMED | AÇIK |  |  |
@@ -88,14 +88,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P03 | BLG-0080 | src/tests/tokenomics_proptest.rs:27-122 | P03-F23: FINDINGS.md:144; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0081 | src/settlement/proof_verifier.rs:67-117 | P03-F24: FINDINGS.md:145; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0082 | - | P03-F25: FINDINGS.md:146; ham önem Info | AÇIK |  |  |
-| P04 | BLG-0083 | src/registry/invalid_vote.rs:66-107 | P04-F01: FINDINGS.md:152; ham önem Critical; CONFIRMED | AÇIK |  |  |
-| P04 | BLG-0084 | src/registry/permissionless.rs:480-515, 690-737 | P04-F02: FINDINGS.md:154; ham önem High; CONFIRMED | AÇIK |  |  |
-| P04 | BLG-0085 | - | P04-F03: FINDINGS.md:155; ham önem High; CONFIRMED | AÇIK |  |  |
-| P04 | BLG-0086 | rpc/tests.rs:1146 | P04-F04: FINDINGS.md:157; ham önem Medium; PARTLY | AÇIK |  |  |
-| P04 | BLG-0087 | - | P04-F05: FINDINGS.md:160; ham önem Medium | AÇIK |  |  |
-| P04 | BLG-0088 | - | P04-F06: FINDINGS.md:161; ham önem Medium | AÇIK |  |  |
-| P04 | BLG-0089 | consensus/poa.rs:149-158 | P04-F07: FINDINGS.md:162; ham önem Medium | AÇIK |  |  |
-| P04 | BLG-0090 | core/account.rs:2256-2532 | P04-F08: FINDINGS.md:163; ham önem Medium | AÇIK |  |  |
+| P04 | BLG-0083 | src/registry/invalid_vote.rs:66-107 | P04-F01: FINDINGS.md:152; ham önem Critical; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P04 | BLG-0084 | src/registry/permissionless.rs:480-515, 690-737 | P04-F02: FINDINGS.md:154; ham önem High; CONFIRMED / gp/P04-A:1bbd9f7 kısmi: registry yarısı; kalan yarı account.rs/blockchain.rs/executor.rs | KODLANIYOR |  |  |
+| P04 | BLG-0085 | - | P04-F03: FINDINGS.md:155; ham önem High; CONFIRMED / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | AÇIK |  |  |
+| P04 | BLG-0086 | rpc/tests.rs:1146 | P04-F04: FINDINGS.md:157; ham önem Medium; PARTLY / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | AÇIK |  |  |
+| P04 | BLG-0087 | - | P04-F05: FINDINGS.md:160; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P04 | BLG-0088 | - | P04-F06: FINDINGS.md:161; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | AÇIK |  |  |
+| P04 | BLG-0089 | consensus/poa.rs:149-158 | P04-F07: FINDINGS.md:162; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | AÇIK |  |  |
+| P04 | BLG-0090 | core/account.rs:2256-2532 | P04-F08: FINDINGS.md:163; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | AÇIK |  |  |
 | P04 | BLG-0091 | registry/poa_compliance.rs:114-264 | P04-F09: FINDINGS.md:164; ham önem Medium | AÇIK |  |  |
 | P04 | BLG-0092 | - | P04-F10: FINDINGS.md:165; ham önem Medium | AÇIK |  |  |
 | P04 | BLG-0093 | - | P04-F11: FINDINGS.md:166; ham önem Medium | AÇIK |  |  |
@@ -135,14 +135,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P05 | BLG-0127 | - | P05-F20: FINDINGS.md:218; ham önem Low | AÇIK |  |  |
 | P05 | BLG-0128 | - | P05-F21: FINDINGS.md:219; ham önem Info | AÇIK |  |  |
 | P05 | BLG-0129 | - | P05-F22: FINDINGS.md:220; ham önem Info | AÇIK |  |  |
-| P06 | BLG-0130 | src/cross_domain/external/ethereum.rs:393-406 | P06-F01: FINDINGS.md:250; ham önem High | AÇIK |  |  |
-| P06 | BLG-0131 | src/cross_domain/external/ethereum.rs:255-257, 299-306, 344-376, 399-425 | P06-F02: FINDINGS.md:266; ham önem High | AÇIK |  |  |
-| P06 | BLG-0132 | src/cross_domain/external/ethereum.rs:361-425 | P06-F03: FINDINGS.md:281; ham önem Medium | AÇIK |  |  |
-| P06 | BLG-0133 | src/cross_domain/external/domain_bridge.rs:108-160 | P06-F04: FINDINGS.md:291; ham önem Medium | AÇIK |  |  |
-| P06 | BLG-0134 | src/cross_domain/external/zkvm_proof.rs:202-263 | P06-F05: FINDINGS.md:302; ham önem Medium | AÇIK |  |  |
-| P06 | BLG-0135 | src/cross_domain/evm/adapter.rs:153-172, 328-357, 221-272 | P06-F06: FINDINGS.md:312; ham önem Medium | AÇIK |  |  |
-| P06 | BLG-0136 | src/cross_domain/evm/adapter.rs:244-254 | P06-F07: FINDINGS.md:322; ham önem Medium | AÇIK |  |  |
-| P06 | BLG-0137 | src/cross_domain/evm/sync_committee.rs:20-23, 410-439, 441-446 | P06-F08: FINDINGS.md:333; ham önem Medium | AÇIK |  |  |
+| P06 | BLG-0130 | src/cross_domain/external/ethereum.rs:393-406 | P06-F01: FINDINGS.md:250; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P06 | BLG-0131 | src/cross_domain/external/ethereum.rs:255-257, 299-306, 344-376, 399-425 | P06-F02: FINDINGS.md:266; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P06 | BLG-0132 | src/cross_domain/external/ethereum.rs:361-425 | P06-F03: FINDINGS.md:281; ham önem Medium / gp/P06-A:afa7834 kısmi: politika yarısı | KODLANIYOR |  |  |
+| P06 | BLG-0133 | src/cross_domain/external/domain_bridge.rs:108-160 | P06-F04: FINDINGS.md:291; ham önem Medium / BAĞIMLI: spec.rs, blockchain.rs | AÇIK |  |  |
+| P06 | BLG-0134 | src/cross_domain/external/zkvm_proof.rs:202-263 | P06-F05: FINDINGS.md:302; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P06 | BLG-0135 | src/cross_domain/evm/adapter.rs:153-172, 328-357, 221-272 | P06-F06: FINDINGS.md:312; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P06 | BLG-0136 | src/cross_domain/evm/adapter.rs:244-254 | P06-F07: FINDINGS.md:322; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P06 | BLG-0137 | src/cross_domain/evm/sync_committee.rs:20-23, 410-439, 441-446 | P06-F08: FINDINGS.md:333; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P06 | BLG-0138 | src/cross_domain/evm/sync_committee.rs:355-358, 430-436, 281-292 | P06-F09: FINDINGS.md:343; ham önem Low | AÇIK |  |  |
 | P06 | BLG-0139 | src/cross_domain/evm/verify.rs:245-314 | P06-F10: FINDINGS.md:353; ham önem Medium | AÇIK |  |  |
 | P06 | BLG-0140 | src/cross_domain/external/evm_hybrid.rs:183-202, 210-250 | P06-F11: FINDINGS.md:363; ham önem Medium | AÇIK |  |  |
