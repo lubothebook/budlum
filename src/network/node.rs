@@ -29,6 +29,16 @@ const SYNC_TIMEOUT_SECS: u64 = 60;
 const MAX_SYNC_CONCURRENT_STREAMS: usize = 16;
 const MAX_PENDING_BITSWAP_FETCH_WAITERS: usize = 128;
 
+/// Double sign guard for precommits.
+///
+/// The node signs the aggregator's checkpoint, so the guard must compare that
+/// height, not the height of the local tip checkpoint. A precommit at or below
+/// the last one signed could carry a different hash after a reorg, which is a
+/// slashable double sign, and would move the persisted mark backwards.
+fn precommit_height_is_new(signed_height: u64, last_precommit_height: u64) -> bool {
+    signed_height > last_precommit_height
+}
+
 /// First `max_chars` characters of a peer controlled string, for log lines.
 ///
 /// A byte slice such as `&s[..16]` panics when byte 16 is inside a multi byte
@@ -1699,7 +1709,10 @@ impl Node {
                            if agg_state.active
                                && agg_state.prevote_quorum_reached
                                && !agg_state.precommit_quorum_reached
-                               && checkpoint_height > self.last_precommit_height
+                               && precommit_height_is_new(
+                                   agg_state.checkpoint_height,
+                                   self.last_precommit_height,
+                               )
                            {
                                match self.chain.sign_precommit(
                                    agg_state.epoch,
@@ -3761,6 +3774,17 @@ mod sync_handler_order_tests {
         }
         assert!(src.contains("> height_before"));
         assert!(src.contains("> snap_height_before"));
+    }
+
+    /// BLG-0205: the guard compares the height that is signed.
+    #[test]
+    fn precommit_guard_blocks_equal_and_lower_aggregator_heights() {
+        assert!(!super::precommit_height_is_new(100, 100));
+        assert!(!super::precommit_height_is_new(50, 100));
+        assert!(super::precommit_height_is_new(101, 100));
+        let src = production();
+        let old = format!("checkpoint_height > self.{}", "last_precommit_height");
+        assert!(!src.contains(&old), "the guard must use the aggregator height");
     }
 
     /// BLG-0550: ban and rate limit run before the protobuf decode.
