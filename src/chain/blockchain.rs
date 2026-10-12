@@ -4886,6 +4886,15 @@ impl Blockchain {
             .as_ref()
             .map(|metrics| metrics.consensus_round_seconds.start_timer());
 
+        // A block that rivals a committed height is rejected below, so the
+        // commit path never sees it. Let the engine look at it first: two
+        // signed blocks from one producer at one height are slashable.
+        if usize::try_from(block.index).is_ok_and(|index| index < self.chain.len()) {
+            if let Err(error) = self.consensus.observe_received_block(&block) {
+                tracing::debug!("Rival block observation skipped: {error}");
+            }
+        }
+
         // Finality checkpoint conflict check MUST run before tip-height
         // Continuity: a block at or below finalized_height that disagrees with
         // The canonical path is a consensus-safety violation even if it is not

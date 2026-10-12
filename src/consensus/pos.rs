@@ -1029,6 +1029,48 @@ impl ConsensusEngine for PoSEngine {
         Ok(())
     }
 
+    fn observe_received_block(&self, block: &Block) -> Result<(), ConsensusError> {
+        let producer = block
+            .producer
+            .ok_or(ConsensusError("Block has no producer".into()))?;
+        let signature = block
+            .signature
+            .clone()
+            .ok_or(ConsensusError("Block has no signature".into()))?;
+        let header = BlockHeader::from_block(block);
+        // Only a verified signature may produce evidence. Otherwise anyone
+        // could frame a producer with a forged rival block.
+        if !header.verify_signature(&signature) {
+            return Err(ConsensusError("Invalid block signature".into()));
+        }
+        let existing = {
+            let seen_blocks = self
+                .seen_blocks
+                .read()
+                .map_err(|_| ConsensusError("Lock error on seen_blocks".into()))?;
+            match seen_blocks.get(&(producer, header.index)) {
+                Some(entry) if entry.0.hash != header.hash => entry.clone(),
+                _ => return Ok(()),
+            }
+        };
+        let evidence = SlashingEvidence::new(existing.0, header, existing.1, signature);
+        if !self.verify_evidence(&evidence) {
+            return Err(ConsensusError("Double-sign evidence did not verify".into()));
+        }
+        warn!(
+            "DOUBLE-SIGN: {} signed two blocks for height {}",
+            producer, evidence.header2.index
+        );
+        let mut pool = self
+            .slashing_evidence
+            .write()
+            .map_err(|_| ConsensusError("Lock error on slashing_evidence".into()))?;
+        if !pool.contains(&evidence) {
+            pool.push(evidence);
+        }
+        Ok(())
+    }
+
     fn record_block_with_chain(
         &self,
         block: &Block,
@@ -1194,6 +1236,40 @@ mod tests {
         let evidence = engine.slashing_evidence.read().unwrap()[0].clone();
         assert_eq!(evidence.header1.index, 10u64);
         assert!(engine.verify_evidence(&evidence));
+    }
+
+    /// BLG-0011: a signed rival block seen on the receive path (it never
+    /// commits) must still produce double-sign evidence, and a forged one must
+    /// not.
+    #[test]
+    fn observe_received_block_turns_a_signed_rival_into_evidence() {
+        let engine = PoSEngine::new(PoSConfig::default(), None);
+        let alice = KeyPair::generate().unwrap();
+
+        let mut committed = Block::new(10, "prev".into(), vec![]);
+        committed.sign(&alice);
+        engine.record_block(&committed, None).unwrap();
+
+        // The same block again is not a rival.
+        engine.observe_received_block(&committed).unwrap();
+        assert!(engine.slashing_evidence.read().unwrap().is_empty());
+
+        let mut rival = Block::new(10, "prev".into(), vec![]);
+        rival.timestamp += 1000;
+        rival.sign(&alice);
+        engine.observe_received_block(&rival).unwrap();
+        engine.observe_received_block(&rival).unwrap();
+        let pool = engine.slashing_evidence.read().unwrap().clone();
+        assert_eq!(pool.len(), 1, "one rival gives one evidence record");
+        assert!(engine.verify_evidence(&pool[0]));
+
+        // A rival with a bad signature is refused and adds nothing.
+        let mut forged = Block::new(10, "prev".into(), vec![]);
+        forged.timestamp += 2000;
+        forged.sign(&alice);
+        forged.signature = Some(vec![0u8; 64]);
+        assert!(engine.observe_received_block(&forged).is_err());
+        assert_eq!(engine.slashing_evidence.read().unwrap().len(), 1);
     }
 
     #[test]
