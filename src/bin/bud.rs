@@ -275,6 +275,27 @@ fn parse_rpc_u64(value: &serde_json::Value, field: &str) -> Result<u64, String> 
     }
 }
 
+/// Build an unsigned transfer bound to `chain_id`.
+fn build_transfer(
+    from: Address,
+    to: Address,
+    amount: u64,
+    fee: u64,
+    nonce: u64,
+    chain_id: u64,
+) -> Transaction {
+    Transaction::new_with_chain_id(
+        from,
+        to,
+        amount,
+        fee,
+        nonce,
+        Vec::new(),
+        chain_id,
+        TransactionType::Transfer,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_tx_send(
     rpc_url: &str,
@@ -300,11 +321,14 @@ fn run_tx_send(
         }
     };
 
+    // The chain id comes from the node, so the signature is bound to the
+    // network the node serves and never to a compiled-in default.
+    let chain_id_value = rpc_call(rpc_url, "bud_chainId", serde_json::json!([]))?;
+    let chain_id = parse_rpc_u64(&chain_id_value, "bud_chainId")?;
+    println!("chain id (from node): {chain_id}");
+
     // Build and sign the transaction.
-    let mut tx = Transaction::new(from, to_addr, amount, Vec::new());
-    tx.fee = fee;
-    tx.nonce = nonce;
-    tx.tx_type = TransactionType::Transfer;
+    let mut tx = build_transfer(from, to_addr, amount, fee, nonce, chain_id);
     tx.sign(&keypair);
 
     let tx_hash = tx.calculate_hash();
@@ -526,6 +550,17 @@ mod tests {
         let (host, port) = parse_rpc_url("http://127.0.0.1").unwrap();
         assert_eq!(host, "127.0.0.1");
         assert_eq!(port, 8545);
+    }
+
+    /// The transfer carries the chain id it was given, not the devnet default.
+    #[test]
+    fn a_transfer_is_bound_to_the_given_chain_id() {
+        let from = Address::zero();
+        let tx = build_transfer(from, from, 1, 2, 3, 45260);
+        assert_eq!(tx.chain_id, 45260);
+        assert_eq!(tx.fee, 2);
+        assert_eq!(tx.nonce, 3);
+        assert_eq!(tx.tx_type, TransactionType::Transfer);
     }
 
     const SOURCE_HASH: &str = "0909090909090909090909090909090909090909090909090909090909090909";
