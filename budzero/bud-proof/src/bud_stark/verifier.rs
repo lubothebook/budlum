@@ -271,6 +271,30 @@ where
     n_with > n_without
 }
 
+/// Shape of the opened aux rows.
+///
+/// With an aux trace the local row must have the expected width. The next row
+/// must have it when the AIR reads next rows, and must be absent otherwise:
+/// `verify_constraints` feeds the next row to the AIR, so an opening the
+/// commitment round never asked for must not be accepted (P15-F05).
+fn aux_openings_match<T>(
+    has_aux_trace: bool,
+    main_next: bool,
+    local: Option<&[T]>,
+    next: Option<&[T]>,
+    expected_width: usize,
+) -> bool {
+    if !has_aux_trace {
+        return local.is_none() && next.is_none();
+    }
+    let next_ok = if main_next {
+        next.is_some_and(|v| v.len() == expected_width)
+    } else {
+        next.is_none()
+    };
+    local.is_some_and(|v| v.len() == expected_width) && next_ok
+}
+
 #[instrument(skip_all)]
 pub fn verify<SC, A>(
     config: &SC,
@@ -424,19 +448,13 @@ where
         opened_values.trace_next.is_none()
     };
     let expected_aux_base_width = permutation_width * SC::Challenge::DIMENSION;
-    let aux_shape_ok = if has_aux_trace {
-        opened_values
-            .aux_trace_local
-            .as_ref()
-            .is_some_and(|v| v.len() == expected_aux_base_width)
-            && (!main_next
-                || opened_values
-                    .aux_trace_next
-                    .as_ref()
-                    .is_some_and(|v| v.len() == expected_aux_base_width))
-    } else {
-        opened_values.aux_trace_local.is_none() && opened_values.aux_trace_next.is_none()
-    };
+    let aux_shape_ok = aux_openings_match(
+        has_aux_trace,
+        main_next,
+        opened_values.aux_trace_local.as_deref(),
+        opened_values.aux_trace_next.as_deref(),
+        expected_aux_base_width,
+    );
     let valid_shape = opened_values.trace_local.len() == air_width
         && trace_next_ok
         && aux_shape_ok
@@ -703,6 +721,18 @@ mod tests {
 
     use super::*;
     use crate::plonky3_air::{BudAir, PREPROCESSED_WIDTH};
+
+    #[test]
+    fn aux_next_row_is_refused_without_main_next() {
+        let row: &[u8] = &[1, 2, 3];
+        assert!(aux_openings_match(true, true, Some(row), Some(row), 3));
+        assert!(aux_openings_match(true, false, Some(row), None, 3));
+        assert!(!aux_openings_match(true, false, Some(row), Some(row), 3));
+        assert!(!aux_openings_match(true, true, Some(row), None, 3));
+        assert!(!aux_openings_match(true, false, Some(row), None, 2));
+        assert!(aux_openings_match::<u8>(false, true, None, None, 3));
+        assert!(!aux_openings_match(false, true, Some(row), None, 3));
+    }
 
     #[test]
     fn bud_air_requires_the_aux_trace() {
