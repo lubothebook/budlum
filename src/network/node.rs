@@ -24,6 +24,9 @@ use libp2p::{mdns, swarm::behaviour::toggle::Toggle};
 /// "syncing" status indefinitely when a peer disconnects mid-sync or
 /// When gossipsub publish fails without a corresponding reset.
 const SYNC_TIMEOUT_SECS: u64 = 60;
+/// Concurrent request/response streams per connection. The libp2p default is
+/// 100; with a 1 MiB request ceiling that pins 100 MiB or more per peer.
+const MAX_SYNC_CONCURRENT_STREAMS: usize = 16;
 const MAX_PENDING_BITSWAP_FETCH_WAITERS: usize = 128;
 
 /// Extract IPv4 /24 key from a multiaddr (first 3 octets), if present.
@@ -1089,8 +1092,12 @@ impl Node {
                 // style resource-retention DoS against sync and bitswap
                 // (hardening research #58, #60). 30s bounds the wait while
                 // leaving plenty of headroom for large block batches.
+                //
+                // The stream cap bounds memory per connection: each inbound
+                // stream may buffer up to the codec ceiling until the timeout.
                 let req_cfg = request_response::Config::default()
-                    .with_request_timeout(Duration::from_secs(30));
+                    .with_request_timeout(Duration::from_secs(30))
+                    .with_max_concurrent_streams(MAX_SYNC_CONCURRENT_STREAMS);
                 let sync = request_response::Behaviour::new(
                     [(
                         StreamProtocol::new("/budlum/sync/1.0.0"),
@@ -3668,5 +3675,15 @@ mod sync_handler_order_tests {
         let parse = arm.find(&decode);
         assert!(rate.is_some() && parse.is_some(), "handler shape changed");
         assert!(rate < parse, "the decode must come after the rate limit");
+    }
+
+    /// BLG-0551: the stream cap is set on the request/response config.
+    #[test]
+    fn request_response_config_caps_concurrent_streams() {
+        let src = production();
+        assert!(
+            src.contains(".with_max_concurrent_streams(MAX_SYNC_CONCURRENT_STREAMS)"),
+            "the request/response config must cap streams per connection"
+        );
     }
 }
