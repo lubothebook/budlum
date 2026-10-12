@@ -38,8 +38,15 @@ impl Pkcs11Signer {
         module_path: String,
         slot_id: u64,
         token_pin_env: String,
+        key_label: Option<String>,
     ) -> Result<Self, CryptoError> {
-        Self::new_with_software_fallback_policy(module_path, slot_id, token_pin_env, true)
+        Self::new_with_software_fallback_policy(
+            module_path,
+            slot_id,
+            token_pin_env,
+            key_label,
+            true,
+        )
     }
 
     /// Construct a PKCS#11 signer without loading extractable BLS/PQ secret
@@ -51,14 +58,22 @@ impl Pkcs11Signer {
         module_path: String,
         slot_id: u64,
         token_pin_env: String,
+        key_label: Option<String>,
     ) -> Result<Self, CryptoError> {
-        Self::new_with_software_fallback_policy(module_path, slot_id, token_pin_env, false)
+        Self::new_with_software_fallback_policy(
+            module_path,
+            slot_id,
+            token_pin_env,
+            key_label,
+            false,
+        )
     }
 
     fn new_with_software_fallback_policy(
         module_path: String,
         slot_id: u64,
         token_pin_env: String,
+        key_label: Option<String>,
         _load_software_fallback: bool,
     ) -> Result<Self, CryptoError> {
         let pin = std::env::var(&token_pin_env).map_err(|e| {
@@ -104,7 +119,6 @@ impl Pkcs11Signer {
         session
             .login(cryptoki::session::UserType::User, Some(&pin_secret))
             .map_err(|e| CryptoError::KeyGeneration(format!("PKCS#11 login failed: {e}")))?;
-        let key_label: Option<String> = None;
         let public_key_bytes = Self::extract_ed25519_public_key(&session, key_label.as_deref())
             .map_err(|e| {
                 CryptoError::KeyGeneration(format!("Failed to extract Ed25519 key from HSM: {e}"))
@@ -149,13 +163,6 @@ impl Pkcs11Signer {
         if let Some(id) = self.pq_mechanism {
             tracing::info!("PKCS#11: vendor PQ mechanism 0x{:08X}", id);
         }
-        self
-    }
-
-    /// When the slot holds more than one Ed25519 pair, the label selects the consensus key.
-    #[must_use]
-    pub fn with_key_label(mut self, label: Option<String>) -> Self {
-        self.key_label = label;
         self
     }
 

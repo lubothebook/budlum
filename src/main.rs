@@ -660,21 +660,21 @@ async fn main() {
                 module_path.to_string(),
                 slot_id,
                 pin_env.to_string(),
+                config.pkcs11_key_label.clone(),
             )
         } else {
             budlum_core::crypto::pkcs11::Pkcs11Signer::new(
                 module_path.to_string(),
                 slot_id,
                 pin_env.to_string(),
+                config.pkcs11_key_label.clone(),
             )
         };
         match signer_result.map(|s| {
-            let signer = s
-                .with_vendor_mechanisms(
-                    config.pkcs11_bls_mechanism.clone(),
-                    config.pkcs11_pq_mechanism.clone(),
-                )
-                .with_key_label(config.pkcs11_key_label.clone());
+            let signer = s.with_vendor_mechanisms(
+                config.pkcs11_bls_mechanism.clone(),
+                config.pkcs11_pq_mechanism.clone(),
+            );
             if strict_vendor_native {
                 signer.require_vendor_native_signing()
             } else {
