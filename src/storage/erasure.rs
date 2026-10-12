@@ -827,13 +827,7 @@ pub fn reconstruct_object(
     let attempt = |masked: &mut Vec<Option<Vec<u8>>>| -> Result<Vec<u8>, ErasureError> {
         let all = rs.reconstruct(masked)?;
         verify_all(&all)?;
-        let k = rs.data_shards();
-        let mut out = Vec::with_capacity(k * all[0].len());
-        for shard in all.iter().take(k) {
-            out.extend_from_slice(shard);
-        }
-        out.truncate(manifest.content_size() as usize);
-        Ok(out)
+        object_from_data_shards(manifest, &all, rs.data_shards())
     };
 
     let mut masked = present.to_vec();
@@ -856,12 +850,35 @@ pub fn reconstruct_object(
 
     let all = rs.reconstruct(present)?;
     verify_all(&all)?;
-    let k = rs.data_shards();
-    let mut out = Vec::with_capacity(k * all[0].len());
+    object_from_data_shards(manifest, &all, rs.data_shards())
+}
+
+/// Join the `k` data shards and trim the stripe padding.
+///
+/// `encode_object` cuts the object into `k` stripes of `ceil(len / k)` bytes,
+/// so the object length is above `(k - 1) * stripe` and at most `k * stripe`.
+/// A `content_size` outside that range does not describe these shards.
+/// `validate_untrusted` only bounds it by all shards including parity, so it
+/// is checked here, before the bytes are handed back.
+fn object_from_data_shards(
+    manifest: &ContentManifest,
+    all: &[Vec<u8>],
+    k: usize,
+) -> Result<Vec<u8>, ErasureError> {
+    let stripe = all.first().map_or(0, Vec::len);
+    let region = (k as u64).saturating_mul(stripe as u64);
+    let floor = (k as u64).saturating_sub(1).saturating_mul(stripe as u64);
+    let size = manifest.content_size();
+    if size > region || size <= floor {
+        return Err(ErasureError::ShardMismatch(format!(
+            "content_size {size} does not fit {k} data shards of {stripe} bytes"
+        )));
+    }
+    let mut out = Vec::with_capacity(region as usize);
     for shard in all.iter().take(k) {
         out.extend_from_slice(shard);
     }
-    out.truncate(manifest.content_size() as usize);
+    out.truncate(size as usize);
     Ok(out)
 }
 
@@ -1493,6 +1510,26 @@ mod tests {
         let data: Vec<Vec<u8>> = (0..4).map(|_| vec![7u8; 32]).collect();
         assert!(matches!(
             rs.parity_row(2, &data),
+            Err(ErasureError::ShardMismatch(_))
+        ));
+    }
+
+    /// P27-F06: a content_size that does not fit the data region is refused.
+    #[test]
+    fn a_content_size_outside_the_data_region_is_refused() {
+        let data: Vec<u8> = (0..=199u8).cycle().take(800).collect();
+        let scheme = ErasureScheme { k: 4, n: 6 };
+        let enc = encode_object(&data, scheme).unwrap();
+        let present: Vec<Option<Vec<u8>>> = enc.shards.iter().cloned().map(Some).collect();
+        // Shards hold 1200 bytes in all, the data region is 800.
+        let too_big = enc.to_manifest().unwrap().with_content_size(1_000).unwrap();
+        assert!(matches!(
+            reconstruct_object(&too_big, &present),
+            Err(ErasureError::ShardMismatch(_))
+        ));
+        let too_small = enc.to_manifest().unwrap().with_content_size(100).unwrap();
+        assert!(matches!(
+            reconstruct_object(&too_small, &present),
             Err(ErasureError::ShardMismatch(_))
         ));
     }
