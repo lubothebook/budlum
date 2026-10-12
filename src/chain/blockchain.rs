@@ -1873,6 +1873,22 @@ impl Blockchain {
         )
     }
 
+    /// Aggregate the accepted domain commitments and sign one anchor for the
+    /// next global-header height.
+    pub fn build_domain_finality_anchor(
+        &self,
+        key_epoch: u32,
+        signer: &dyn crate::settlement::AnchorSigner,
+    ) -> Result<crate::settlement::PqAnchor, crate::settlement::AnchorError> {
+        crate::settlement::build_domain_finality_anchor(
+            self.global_headers.len() as u64,
+            self.chain_id,
+            &self.domain_commitment_registry,
+            key_epoch,
+            signer,
+        )
+    }
+
     pub fn build_global_header(&self, proposer: Option<Address>) -> GlobalBlockHeader {
         let previous_global_hash = self
             .global_headers

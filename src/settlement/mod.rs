@@ -28,8 +28,9 @@ pub use pq_anchor::SoftwareMlDsa87Signer;
 pub use budlum_bpqs as bpqs_research;
 pub use pq_anchor::{
     aggregate_finality_roots, anchor_leaf_digest, anchor_payload_for, assemble_anchor,
-    build_anchor_for_height, emit_anchor_node_local, enforce_anchor_mode,
-    rotate_anchor_key_with_committee, verify_anchor_full, verify_anchor_light, AnchorError,
+    build_anchor_for_height, build_domain_finality_anchor, domain_finality_anchor_leaf,
+    emit_anchor_node_local, enforce_anchor_mode, rotate_anchor_key_with_committee,
+    verify_anchor_full, verify_anchor_light, AnchorError,
     AnchorKeyEntry, AnchorMode, AnchorSignature, AnchorSignatureAlgorithm, AnchorSigner,
     EmissionOutcome, HsmSignerStub, PqAnchor,
 };

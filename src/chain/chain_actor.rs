@@ -523,6 +523,7 @@ pub enum ChainCommand {
         manifest_id: crate::storage::ContentId,
         response: oneshot::Sender<Option<crate::storage::ContentManifest>>,
     },
+    GetStorageUploadContext(oneshot::Sender<crate::storage::StorageUploadContext>),
     GetStorageDealsByManifest {
         manifest_id: crate::storage::ContentId,
         response: oneshot::Sender<Vec<crate::domain::storage_deal::StorageDeal>>,
@@ -1345,6 +1346,17 @@ impl ChainHandle {
             .await;
         rx.await
             .unwrap_or_else(|_| Err("Actor dropped".to_string()))
+    }
+
+    pub async fn get_storage_upload_context(
+        &self,
+    ) -> Result<crate::storage::StorageUploadContext, String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(ChainCommand::GetStorageUploadContext(tx))
+            .await
+            .map_err(|_| "Actor dropped".to_string())?;
+        rx.await.map_err(|_| "Actor dropped".to_string())
     }
 
     pub async fn get_storage_manifest(
@@ -4622,6 +4634,34 @@ impl ChainActor {
                             Ok(challenge_result)
                         });
                     let _ = response.send(res);
+                }
+                ChainCommand::GetStorageUploadContext(response) => {
+                    let chain_id = self.blockchain.chain_id;
+                    let tip = self.blockchain.last_block();
+                    let epoch =
+                        tip.index / crate::core::chain_config::epoch_len_for_chain_id(chain_id);
+                    let entropy = crate::core::hash::hash_fields_bytes(&[
+                        b"BDLM_STORAGE_UPLOAD_PLACEMENT_V1",
+                        &chain_id.to_le_bytes(),
+                        &epoch.to_le_bytes(),
+                        tip.hash.as_bytes(),
+                    ]);
+                    let candidates = self
+                        .blockchain
+                        .state
+                        .get_active_validators()
+                        .into_iter()
+                        .map(|validator| crate::storage::ShardCandidate {
+                            address: validator.address,
+                            stake: validator.stake,
+                        })
+                        .collect();
+                    let _ = response.send(crate::storage::StorageUploadContext {
+                        chain_id,
+                        epoch,
+                        entropy,
+                        candidates,
+                    });
                 }
                 ChainCommand::GetStorageManifest {
                     manifest_id,
