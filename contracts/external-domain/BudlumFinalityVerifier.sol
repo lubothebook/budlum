@@ -140,12 +140,8 @@ contract BudlumFinalityVerifier {
     /// BLS12_G2MSM, and calling it as if it were the pairing check returns a
     /// successful result that means nothing.
     address internal constant PRECOMPILE_BLS_G1ADD = address(0x0b);
-    address internal constant PRECOMPILE_BLS_G1MSM = address(0x0c);
-    address internal constant PRECOMPILE_BLS_G2ADD = address(0x0d);
-    address internal constant PRECOMPILE_BLS_G2MSM = address(0x0e);
     address internal constant PRECOMPILE_BLS_PAIRING = address(0x0f);
     address internal constant PRECOMPILE_BLS_MAP_FP_TO_G1 = address(0x10);
-    address internal constant PRECOMPILE_BLS_MAP_FP2_TO_G2 = address(0x11);
     /// EIP-198 modexp, present on every EVM chain. Used to reduce the
     /// hash-to-field bytes modulo the BLS12-381 base field prime.
     address internal constant PRECOMPILE_MODEXP = address(0x05);
@@ -159,10 +155,6 @@ contract BudlumFinalityVerifier {
     address internal constant PRECOMPILE_MLDSA = address(0x12);
     /// EIP-8051 VERIFY_MLDSA_ETH (Keccak PRNG, NTT-domain t1).
     address internal constant PRECOMPILE_MLDSA_ETH = address(0x13);
-    /// RIP-7212 / EIP-7212 secp256r1, present on most L2s. Not used for the
-    /// hybrid proof itself; probed so the deployment report can say what the
-    /// chain supports.
-    address internal constant PRECOMPILE_P256 = address(0x100);
 
     // ---------------------------------------------------------------------
     // Gas accounting, as constants so the numbers are in one place.
@@ -176,9 +168,6 @@ contract BudlumFinalityVerifier {
     /// one-pair probe. The stipend leaves headroom. A smaller stipend makes
     /// the probe fail on a real chain.
     uint256 internal constant GAS_BLS_PAIRING_PROBE = 100_000;
-    uint256 internal constant GAS_MLDSA_VERIFY = 4500;      // EIP-8051
-    uint256 internal constant GAS_P256_VERIFY = 3450;       // RIP-7212
-    uint256 internal GAS_P256_SOLIDITY = 300_000;           // pure Solidity
 
     /// Challenge window for the optimistic fallback, in blocks. Long enough
     /// that a prover cannot finalise a lie and spend the proceeds before
@@ -239,6 +228,8 @@ contract BudlumFinalityVerifier {
     error PrecompileRefused(string what);
     error NoVerificationPath();
     error ChallengeWindowOpen(bytes32 digest, uint256 blocksLeft);
+    error ChallengeWindowClosed(bytes32 digest);
+    error AlreadyChallenged(bytes32 digest);
     error NoSuchChallenge(bytes32 digest);
     error ChallengeResolved(bytes32 digest);
     error AlreadyFraudulent(bytes32 digest);
@@ -343,7 +334,7 @@ contract BudlumFinalityVerifier {
             // challenge record, reset `openedAt`, and postpone `settle`
             // indefinitely (and before the `fraudulent` guard, would revive
             // a fraud-proven attestation).
-            revert ChallengeWindowOpen(digest, 0);
+            revert AlreadyChallenged(digest);
         }
 
         if (keccak256(a.g2AggregatePubkey) != committeePubkeyHash) {
@@ -425,7 +416,7 @@ contract BudlumFinalityVerifier {
         }
         uint256 elapsed = block.number - uint256(c.openedAt);
         if (elapsed >= challengeWindow) {
-            revert ChallengeWindowOpen(digest, 0);
+            revert ChallengeWindowClosed(digest);
         }
         bool fraud;
         try IExternalFraudProofVerifier(fraudProofVerifier).verifyFraud(digest, fraudProof) returns (bool proven) {
