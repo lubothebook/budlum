@@ -3005,6 +3005,13 @@ impl ChainActor {
         }
     }
 
+    /// Height the AI read queries judge deadlines at. It is the height the
+    /// executor uses for the same checks, not an epoch guess that is only
+    /// right on a chain with 100 blocks per epoch.
+    fn ai_query_height(&self) -> u64 {
+        self.blockchain.state.current_block_height
+    }
+
     fn storage_economics_disabled_on_mainnet(&self) -> bool {
         self.blockchain.chain_id
             == crate::core::chain_config::Network::Mainnet
@@ -3883,7 +3890,7 @@ impl ChainActor {
                     let _ = res_tx.send(res);
                 }
                 ChainCommand::GetAiFeeReclaimStatus(id, res_tx) => {
-                    let current_block = self.blockchain.state.epoch_index.saturating_mul(100);
+                    let current_block = self.ai_query_height();
                     let mut registry = self.blockchain.state.ai_registry.clone();
                     let res = registry.reclaim_fee(&id, current_block);
                     let _ = res_tx.send(res);
@@ -3901,7 +3908,7 @@ impl ChainActor {
                     let _ = res_tx.send(is_cancelled);
                 }
                 ChainCommand::GetAiDisputeStatus(request_id, verifier, res_tx) => {
-                    let current_block = self.blockchain.state.epoch_index.saturating_mul(100);
+                    let current_block = self.ai_query_height();
                     let status = self.blockchain.state.ai_registry.get_dispute_status(
                         &request_id,
                         &verifier,
@@ -5069,5 +5076,14 @@ mod proof_cache_tests {
         let after = actor.account_proof(&who);
         assert_eq!(after.balance, 150);
         assert_ne!(before.root, after.root);
+    }
+
+    #[test]
+    fn ai_query_height_is_the_state_height_not_an_epoch_guess() {
+        let bc = Blockchain::new(Arc::new(PoWEngine::new(0)), None, 45262, None);
+        let (mut actor, _handle) = ChainActor::new(bc);
+        actor.blockchain.state.epoch_index = 0;
+        actor.blockchain.state.current_block_height = 37;
+        assert_eq!(actor.ai_query_height(), 37);
     }
 }
