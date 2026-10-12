@@ -799,7 +799,9 @@ fn extract_client_ip<B>(config: &RpcSecurityConfig, req: &HttpRequest<B>) -> Opt
             .headers()
             .get("x-forwarded-for")
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split(',').next())
+            // Rightmost entry: the one the trusted proxy itself appended.
+            // Entries to its left are client-supplied and can be forged.
+            .and_then(|value| value.split(',').next_back())
             .map(str::trim)
             .and_then(|ip| ip.parse::<IpAddr>().ok())
         {
@@ -7223,6 +7225,25 @@ mod tests {
         assert_eq!(
             extract_client_ip(&config, &req),
             Some(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10)))
+        );
+        assert!(!is_ip_allowed(&config, &req));
+    }
+
+    #[test]
+    fn forwarded_for_uses_the_entry_the_proxy_appended() {
+        let config = RpcSecurityConfig {
+            allowed_ips: vec!["10.0.0.5".into()],
+            trusted_proxies: vec!["*".into()],
+            ..Default::default()
+        };
+        let mut req = request_with_remote(SocketAddr::from(([127, 0, 0, 1], 9000)));
+        req.headers_mut().insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("10.0.0.5, 203.0.113.7"),
+        );
+        assert_eq!(
+            extract_client_ip(&config, &req),
+            Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)))
         );
         assert!(!is_ip_allowed(&config, &req));
     }
