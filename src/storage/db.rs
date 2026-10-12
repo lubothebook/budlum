@@ -181,6 +181,18 @@ impl Storage {
     pub fn apply_migrations(&self) -> std::io::Result<()> {
         const CURRENT_SCHEMA_VERSION: u64 = 1;
         let current = self.schema_version()?;
+        // An older binary must not open a newer database: it would decode
+        // rows it does not know, and positional bincode rows decode wrongly
+        // without an error.
+        if current > CURRENT_SCHEMA_VERSION {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "database schema version {current} is newer than this binary supports \
+                     ({CURRENT_SCHEMA_VERSION}); refusing to open"
+                ),
+            ));
+        }
         if current < CURRENT_SCHEMA_VERSION {
             self.db.insert(
                 b"SCHEMA_VERSION",
@@ -2402,6 +2414,23 @@ mod storage_decode_locks {
         );
         // Too short to hold a u64 - this genuinely fails.
         assert!(super::decode::<Stored>(b"\xff\xff\xff").is_err());
+    }
+
+    /// P26-F05: a database written by a newer schema is refused, not opened.
+    #[test]
+    fn a_newer_schema_version_refuses_to_open() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().to_str().expect("utf-8 path");
+        let storage = super::Storage::new(path).expect("storage opens");
+        storage
+            .db
+            .insert(b"SCHEMA_VERSION", b"2".to_vec())
+            .expect("write newer version");
+        storage.db.flush().expect("flush");
+        drop(storage);
+
+        let err = super::Storage::new(path).expect_err("a newer schema must not open");
+        assert!(err.to_string().contains("newer than this binary"), "{err}");
     }
 
     /// A present-but-unreadable schema version must not read as zero.
