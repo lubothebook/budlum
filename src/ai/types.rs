@@ -87,8 +87,20 @@ impl AiResultId {
 }
 
 /// Bounded byte wrapper verifying length bounds (`<= MAX_INFERENCE_REF_BYTES`).
+///
+/// Deserialization goes through `try_new`, so a serde path (snapshot JSON,
+/// RPC JSON, bincode) cannot build a value above the bound.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "Vec<u8>")]
 pub struct BoundedBytes(pub Vec<u8>);
+
+impl TryFrom<Vec<u8>> for BoundedBytes {
+    type Error = String;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::try_new(bytes)
+    }
+}
 
 impl BoundedBytes {
     pub fn try_new(bytes: Vec<u8>) -> Result<Self, String> {
@@ -1243,6 +1255,14 @@ mod tests {
         let mut s = valid_spec();
         s.execution_class = 1;
         assert!(s.validate().is_ok());
+    }
+
+    #[test]
+    fn bounded_bytes_deserialize_enforces_the_bound() {
+        let ok = serde_json::to_string(&vec![1u8; 10]).unwrap();
+        assert!(serde_json::from_str::<BoundedBytes>(&ok).is_ok());
+        let big = serde_json::to_string(&vec![1u8; MAX_INFERENCE_REF_BYTES + 1]).unwrap();
+        assert!(serde_json::from_str::<BoundedBytes>(&big).is_err());
     }
 
     fn addr(b: u8) -> Address {
