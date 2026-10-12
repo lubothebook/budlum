@@ -1055,8 +1055,12 @@ pub fn merkle_poseidon_round(a: u64, b: u64) -> u64 {
 ///
 /// MDS circulant matrix first row: [7, 1, 3, 8, 8, 3, 4, 9]
 /// Domain separator for nullifier derivation.
-/// ASCII-ish constant "NULLIFER" as a field element, domain-separates
-/// Nullifier hashes from plain Poseidon(a,b) and PrivacyCommit.
+/// ASCII-ish constant "NULLIFER" as a field element. It is the second input
+/// of the nullifier hash, nothing more. It does NOT separate the domains:
+/// the Poseidon opcode, `PrivacyCommit` and the nullifier hash all run the
+/// same permutation with zero capacity and no tag, so `Poseidon(a, b)` equals
+/// `PrivacyCommit(a, b, 0)` and `nullifier(s)` equals `Poseidon(s, D)`
+/// (P16-F04). A real separation needs a capacity tag, which changes the AIR.
 pub const DOMAIN_NULLIFIER: u64 = 0x4e55_4c4c_4946_4552; // "NULLIFER"
 
 /// MDS circulant matrix - must match BudAir / plonky3_prover.
@@ -2502,6 +2506,20 @@ mod poseidon_parameter_tests {
         assert!(
             full_only > truncated * 1000,
             "the full-round half alone must dwarf the truncated degree"
+        );
+    }
+
+    /// P16-F04: the three hash uses share one function with zero capacity.
+    /// This test records the overlap so nobody reads the nullifier constant
+    /// as domain separation.
+    #[test]
+    fn poseidon_privacy_commit_and_nullifier_share_one_domain() {
+        let (a, b) = (11u64, 22u64);
+        assert_eq!(poseidon4_hash(a, b), poseidon4_hash3(a, b, 0));
+        let secret = 99u64;
+        assert_eq!(
+            poseidon4_hash(secret, DOMAIN_NULLIFIER),
+            poseidon4_hash3(secret, DOMAIN_NULLIFIER, 0)
         );
     }
 
