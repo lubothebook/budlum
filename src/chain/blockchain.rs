@@ -810,8 +810,18 @@ impl Blockchain {
                     panic!("Stored bridge state is unreadable: {e}");
                 }
             }
-            if let Ok(Some(stored_universal_relayer)) = store.load_universal_relayer() {
-                universal_relayer = stored_universal_relayer;
+            match store.load_universal_relayer() {
+                Ok(Some(stored_universal_relayer)) => {
+                    universal_relayer = stored_universal_relayer;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!("CRITICAL ERROR: stored universal relayer is unreadable: {e}");
+                    #[cfg(not(test))]
+                    std::process::exit(1);
+                    #[cfg(test)]
+                    panic!("Stored universal relayer is unreadable: {e}");
+                }
             }
             match store.load_storage_registry() {
                 Ok(Some(stored_storage_registry)) => {
@@ -826,8 +836,18 @@ impl Blockchain {
                     panic!("Stored storage registry is unreadable: {e}");
                 }
             }
-            if let Ok(Some(stored_proof_claims)) = store.load_proof_claim_registry() {
-                proof_claims = stored_proof_claims;
+            match store.load_proof_claim_registry() {
+                Ok(Some(stored_proof_claims)) => {
+                    proof_claims = stored_proof_claims;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!("CRITICAL ERROR: stored proof claim registry is unreadable: {e}");
+                    #[cfg(not(test))]
+                    std::process::exit(1);
+                    #[cfg(test)]
+                    panic!("Stored proof claim registry is unreadable: {e}");
+                }
             }
 
             if let Ok(stored_global_headers) = store.load_global_headers() {
@@ -835,22 +855,41 @@ impl Blockchain {
                     Self::validated_global_header_prefix(stored_global_headers, chain_id);
             }
 
-            if let Ok(messages) = store.load_cross_domain_messages() {
-                let mut registry = CrossDomainMessageRegistry::new();
-                for msg in messages {
-                    if let Err(e) = registry.insert(msg) {
-                        warn!("Skipping duplicate cross domain message: {e}");
+            match store.load_cross_domain_messages() {
+                Ok(messages) => {
+                    let mut registry = CrossDomainMessageRegistry::new();
+                    for msg in messages {
+                        if let Err(e) = registry.insert(msg) {
+                            warn!("Skipping duplicate cross domain message: {e}");
+                        }
                     }
+                    state.message_registry = registry;
                 }
-                state.message_registry = registry;
+                Err(e) => {
+                    error!("CRITICAL ERROR: stored cross domain message registry is unreadable: {e}");
+                    #[cfg(not(test))]
+                    std::process::exit(1);
+                    #[cfg(test)]
+                    panic!("Stored cross domain message registry is unreadable: {e}");
+                }
             }
 
             if let Ok(Some(stored_quarantine_ledger)) = store.load_quarantine_ledger() {
                 quarantine_ledger = stored_quarantine_ledger;
             }
 
-            if let Ok(Some(stored_external_intake)) = store.load_external_intake() {
-                external_intake = stored_external_intake;
+            match store.load_external_intake() {
+                Ok(Some(stored_external_intake)) => {
+                    external_intake = stored_external_intake;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!("CRITICAL ERROR: stored external intake state is unreadable: {e}");
+                    #[cfg(not(test))]
+                    std::process::exit(1);
+                    #[cfg(test)]
+                    panic!("Stored external intake state is unreadable: {e}");
+                }
             }
         }
 
@@ -7032,6 +7071,44 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    /// BLG-0173: a decode error in the stored proof claim registry must stop
+    /// startup, as it does for the bridge state, and not fall back to empty.
+    #[test]
+    #[should_panic(expected = "Stored proof claim registry is unreadable")]
+    fn corrupt_proof_claim_registry_stops_startup() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("chain.db");
+        let path = db_path.to_str().unwrap();
+        {
+            let storage = Storage::new(path).unwrap();
+            let _bc = Blockchain::new(
+                Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+                Some(storage),
+                45262,
+                None,
+            );
+        }
+        let mut raw = None;
+        for _ in 0..100 {
+            if let Ok(db) = sled::open(path) {
+                raw = Some(db);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        let raw = raw.unwrap();
+        raw.insert(b"PROOF_CLAIM_REGISTRY", vec![0xFFu8; 3]).unwrap();
+        raw.flush().unwrap();
+        drop(raw);
+        let storage = Storage::new(path).unwrap();
+        let _bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            Some(storage),
+            45262,
+            None,
+        );
+    }
 
     /// BLG-0172: the domain progress a proof claim causes must be on disk.
     #[test]
