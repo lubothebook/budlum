@@ -324,8 +324,9 @@ pub struct AccountState {
     /// them against [`Self::epoch_index`], which is genesis-anchored and only
     /// ever advances by one.
     ///
-    /// It is persisted and hashed into the state root, so it cannot simply be
-    /// dropped; it is kept as the observability record it already was.
+    /// It is persisted and hashed into the snapshot digest, but
+    /// `calculate_state_root` does not hash it. It cannot simply be dropped;
+    /// it is kept as the observability record it already was.
     pub last_epoch_time: u64,
     /// The real block height. The executor used to use an approximation of
     /// `epoch_index * 100`, which drifted by up to 99 blocks. It is set during
