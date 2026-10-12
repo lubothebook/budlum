@@ -272,17 +272,7 @@ contract BudlumFinalityVerifier {
                 a.height,
                 a.stateRoot,
                 a.epoch,
-                a.chainId,
-                // The signature must bind the exact decompressed points that
-                // the pairing call will consume. This does not replace
-                // hash-to-curve; the deployment still requires the circuit
-                // binding recorded by the Rust planner. It does prevent a
-                // valid signature over one point encoding from being paired
-                // with another after signing.
-                keccak256(a.g1HashedMessage),
-                keccak256(a.g2AggregatePubkey),
-                keccak256(a.g1Generator),
-                keccak256(a.g2NegSignature)
+                a.chainId
             )
         );
     }
