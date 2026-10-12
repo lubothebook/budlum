@@ -64,12 +64,17 @@ pub mod three_rpc;
 pub mod three_visibility;
 pub mod traits;
 pub mod transformed;
+pub mod upload;
 pub mod view_grant;
 
 pub use assignment::{
     assign_object, assign_shard, displaced_shards, AssignmentError, ShardCandidate,
 };
 pub use content_id::{ContentId, DEFAULT_CHUNK_SIZE_BYTES};
+pub use upload::{
+    prepare_storage_upload, PreparedShard, PreparedStorageUpload, StorageUploadContext,
+    StorageUploadError, MAX_PREPARED_STORAGE_BYTES,
+};
 pub use derived::{
     DerivedError, DerivedSpec, DerivedTransform, PrefixSpan, DERIVED_BLOCK_PIXELS,
     DERIVED_PREFIX_SPEC_BYTES, DERIVED_SPEC_BYTES,

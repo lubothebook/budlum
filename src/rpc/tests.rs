@@ -824,6 +824,41 @@ mod rpc_tests {
     }
 
     #[tokio::test]
+    async fn storage_prepare_upload_returns_manifest_shards_and_distinct_holders() {
+        let consensus = Arc::new(PoWEngine::new(0));
+        let mut blockchain = Blockchain::new(consensus, None, 45262, None);
+        let holders = [Address([1u8; 32]), Address([2u8; 32]), Address([3u8; 32])];
+        for holder in holders {
+            blockchain.state.add_validator(holder, 1_000);
+        }
+        let (server, _chain) = setup_with_blockchain(blockchain).await;
+
+        let response = server
+            .storage_prepare_upload(
+                format!("0x{}", hex::encode("rpc upload bytes")),
+                crate::storage::ErasureScheme { k: 2, n: 3 },
+                Address([9u8; 32]),
+                crate::storage::ContentEncryption::Plaintext,
+            )
+            .await
+            .expect("the node prepares an upload from the active validator set");
+
+        assert_eq!(response["manifest"]["erasure"]["k"], 2);
+        assert_eq!(response["manifest"]["erasure"]["n"], 3);
+        assert_eq!(response["encryption"], "plaintext");
+        assert_eq!(response["shards"].as_array().unwrap().len(), 3);
+        let selected: std::collections::BTreeSet<String> = response["shards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|shard| shard["holder"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(selected.len(), 3);
+        assert_eq!(response["epoch"], 0);
+        assert_eq!(response["placementEntropy"].as_str().unwrap().len(), 66);
+    }
+
+    #[tokio::test]
     async fn test_storage_rpc_full_lifecycle_register_deal_challenge_answer() {
         let (server, bc) = setup().await;
         let manifest = crate::storage::ContentManifest::from_bytes_sliced(

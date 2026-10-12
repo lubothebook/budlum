@@ -568,7 +568,7 @@ impl Vm {
                 // address whose window does not fit is out of range, which is
                 // what the wrapped value was pretending to prove.
                 let result = if path_addr
-                    .checked_add(8 * 65)
+                    .checked_add(bud_isa::MERKLE_PATH_WINDOW_BYTES)
                     .is_some_and(|end| end <= self.memory.len())
                 {
                     let mut bytes = [0u8; 8];
@@ -591,7 +591,7 @@ impl Vm {
                     // Constrain it via the expansion path.
                     // Path hash must match AIR single-round.
                     let mut current = leaf;
-                    for i in 0..64 {
+                    for i in 0..bud_isa::MERKLE_PATH_DEPTH {
                         let sibling_addr = path_addr + 8 + i * 8;
                         bytes.copy_from_slice(&self.memory[sibling_addr..sibling_addr + 8]);
                         let sibling = u64::from_le_bytes(bytes);
@@ -793,7 +793,7 @@ impl Vm {
             // `VerifyMerkle` walks this path; `VerifyInference` has its own
             // 8-row commitment-chain block below.
             if path_addr
-                .checked_add(8 * 65)
+                .checked_add(bud_isa::MERKLE_PATH_WINDOW_BYTES)
                 .is_some_and(|end| end <= self.memory.len())
             {
                 let mut bytes = [0u8; 8];
@@ -820,7 +820,7 @@ impl Vm {
                     last.next_pc = cur_pc;
                 }
                 let mut current = src2_val; // leaf input to round 0
-                for i in 0..64u8 {
+                for i in 0..bud_isa::MERKLE_PATH_DEPTH_U8 {
                     let sibling_addr = path_addr + 8 + (i as usize) * 8;
                     let mut sb = [0u8; 8];
                     sb.copy_from_slice(&self.memory[sibling_addr..sibling_addr + 8]);

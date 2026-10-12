@@ -504,7 +504,7 @@ pub trait BudlumApi {
     async fn admin_list_banned_peers(&self) -> Result<serde_json::Value, ErrorObjectOwned>;
 
     // === B.U.D. Storage RPC surface ============================
-    // The 7 RPCs below are the public, permissionless query/mutation surface
+    // The RPCs below are the public, permissionless query/mutation surface
     // For the storage domain. Per the data-sovereignty rule (plan
     // §0.5) every endpoint is callable by any account on a standard node
     // No team-gated "official indexer" or admin-only RPC exists.
@@ -523,6 +523,25 @@ pub trait BudlumApi {
     async fn storage_register_manifest(
         &self,
         manifest: crate::storage::ContentManifest,
+    ) -> Result<serde_json::Value, ErrorObjectOwned>;
+
+    /// Encode the supplied bytes and return their manifest, shard bytes, and
+    /// distinct staked-holder placement plan. `encryption` records the caller's
+    /// client-side encryption claim; encrypted bytes must already be encrypted.
+    /// The caller registers the returned manifest through
+    /// `bud_storageRegisterManifest` after receiving the plan.
+    ///
+    /// # Errors
+    ///
+    /// Returns an RPC error when the bytes, the scheme, or the placement
+    /// refuse the request.
+    #[method(name = "bud_storagePrepareUpload")]
+    async fn storage_prepare_upload(
+        &self,
+        data_hex: String,
+        scheme: crate::storage::ErasureScheme,
+        owner: crate::core::address::Address,
+        encryption: crate::storage::ContentEncryption,
     ) -> Result<serde_json::Value, ErrorObjectOwned>;
 
     /// Optional node-side encode path: re-encode `data` under the scheme the

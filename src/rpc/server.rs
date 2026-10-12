@@ -3243,6 +3243,73 @@ impl BudlumApiServer for RpcServer {
         }))
     }
 
+    /// Prepare an upload plan: encode, manifest, and placement in one call.
+    ///
+    /// # Errors
+    ///
+    /// Returns an RPC error when the bytes, the scheme, or the placement
+    /// refuse the request.
+    async fn storage_prepare_upload(
+        &self,
+        data_hex: String,
+        scheme: crate::storage::ErasureScheme,
+        owner: crate::core::address::Address,
+        encryption: crate::storage::ContentEncryption,
+    ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        let encoded_hex = data_hex.strip_prefix("0x").unwrap_or(data_hex.as_str());
+        let max_hex_len = crate::storage::MAX_PREPARED_STORAGE_BYTES.saturating_mul(2);
+        if encoded_hex.len() > max_hex_len {
+            return Err(ErrorObjectOwned::owned(
+                -32602,
+                format!(
+                    "data_hex exceeds the {} byte upload limit",
+                    crate::storage::MAX_PREPARED_STORAGE_BYTES
+                ),
+                None::<()>,
+            ));
+        }
+        let data = hex::decode(encoded_hex).map_err(|error| {
+            ErrorObjectOwned::owned(-32602, format!("data_hex decode failed: {error}"), None::<()>)
+        })?;
+        let context = self
+            .chain
+            .get_storage_upload_context()
+            .await
+            .map_err(|error| ErrorObjectOwned::owned(-32000, error, None::<()>))?;
+        let prepared = crate::storage::prepare_storage_upload(
+            &data,
+            scheme,
+            owner,
+            encryption,
+            &context.entropy,
+            &context.candidates,
+        )
+        .map_err(|error| ErrorObjectOwned::owned(-32602, error.to_string(), None::<()>))?;
+        let shards: Vec<serde_json::Value> = prepared
+            .shards
+            .iter()
+            .map(|shard| {
+                serde_json::json!({
+                    "index": shard.reference.index,
+                    "kind": shard.reference.kind,
+                    "shardId": format!("0x{}", hex::encode(shard.reference.shard_id.0)),
+                    "size": shard.bytes.len(),
+                    "holder": shard.holder,
+                    "bytesHex": format!("0x{}", hex::encode(&shard.bytes)),
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({
+            "chainId": context.chain_id,
+            "epoch": context.epoch,
+            "placementEntropy": format!("0x{}", hex::encode(context.entropy)),
+            "manifestId": format!("0x{}", hex::encode(prepared.manifest.manifest_id.0)),
+            "encryption": prepared.manifest.encryption.to_string(),
+            "manifest": prepared.manifest,
+            "shards": shards,
+        }))
+    }
+
     async fn storage_verify_encoding(
         &self,
         data_hex: String,

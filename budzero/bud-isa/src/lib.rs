@@ -80,6 +80,21 @@ impl Opcode {
     }
 }
 
+/// Depth of the `VerifyMerkle` authentication path: one sibling per round.
+///
+/// The VM, the trace expansion, and the AIR must agree on this number; it
+/// lives here so the agreement has one source instead of three literals.
+pub const MERKLE_PATH_DEPTH: usize = 64;
+
+/// The same depth as a `u8`, for the trace `round` index.
+pub const MERKLE_PATH_DEPTH_U8: u8 = 64;
+
+/// Words in the path window: the key plus one sibling per round.
+pub const MERKLE_PATH_WINDOW_WORDS: usize = MERKLE_PATH_DEPTH + 1;
+
+/// Bytes in the path window: [`MERKLE_PATH_WINDOW_WORDS`] little-endian words.
+pub const MERKLE_PATH_WINDOW_BYTES: usize = MERKLE_PATH_WINDOW_WORDS * 8;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IsaProfile {
     Production,
@@ -317,6 +332,14 @@ impl Instruction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merkle_path_depth_consts_agree_and_pin_sixty_four() {
+        assert_eq!(usize::from(MERKLE_PATH_DEPTH_U8), MERKLE_PATH_DEPTH);
+        assert_eq!(MERKLE_PATH_DEPTH, 64);
+        assert_eq!(MERKLE_PATH_WINDOW_WORDS, 65);
+        assert_eq!(MERKLE_PATH_WINDOW_BYTES, 520);
+    }
 
     #[test]
     fn verify_merkle_enabled_in_production() {

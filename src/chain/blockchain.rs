@@ -1873,6 +1873,31 @@ impl Blockchain {
         )
     }
 
+    /// Aggregate the accepted domain commitments and sign one anchor for the
+    /// next global-header height.
+    ///
+    /// WIRING: staged entry point for the consensus seal path; the seal call
+    /// itself is a separate consensus integration (devnet first; production
+    /// stays closed until the `VerifyMerkle` opcode audit lands).
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`crate::settlement::AnchorError`] when the registry holds
+    /// no commitments or the signer refuses.
+    pub fn build_domain_finality_anchor(
+        &self,
+        key_epoch: u32,
+        signer: &dyn crate::settlement::AnchorSigner,
+    ) -> Result<crate::settlement::PqAnchor, crate::settlement::AnchorError> {
+        crate::settlement::build_domain_finality_anchor(
+            self.global_headers.len() as u64,
+            self.chain_id,
+            &self.domain_commitment_registry,
+            key_epoch,
+            signer,
+        )
+    }
+
     pub fn build_global_header(&self, proposer: Option<Address>) -> GlobalBlockHeader {
         let previous_global_hash = self
             .global_headers

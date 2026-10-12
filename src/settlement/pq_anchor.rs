@@ -1,8 +1,9 @@
 //! The post-quantum anchor for GlobalBlockHeader-level trust.
 //!
-//! WIRING: unwired - the anchor-emission caller is the consensus slice that
-//! lands with domain finality proof wiring (devnet first; production gated
-//! until the VerifyMerkle third-party opcode audit - see [`AnchorMode`]).
+//! The domain-commitment-to-anchor builder is exposed through `Blockchain`;
+//! emitting or persisting an anchor at global-header seal remains a separate
+//! consensus integration (devnet first; production gated until the VerifyMerkle
+//! third-party opcode audit - see [`AnchorMode`]).
 //! [`rotate_anchor_key_with_committee`] is already the named caller for
 //! cold-wallet key rotation. Rules are pinned by this file's tests.
 //!
@@ -96,8 +97,9 @@ pub struct AnchorSignature {
 pub struct PqAnchor {
     /// The chain height this anchor binds.
     pub height: u64,
-    /// The Merkle root over the domain finality proof hashes, leaf order as
-    /// presented by the caller (domain-id ascending, by contract).
+    /// Merkle root over ordered finality leaves. The registry-backed builder
+    /// binds each proof hash to its commitment metadata and orders by
+    /// `(domain_id, domain_height, sequence)`.
     pub aggregate_root: [u8; 32],
     /// The STARK state-transition proof root, when the BudZero path bound
     /// one this height. Signed alongside, so one signature also answers
@@ -568,6 +570,62 @@ pub fn build_anchor_for_height(
     )
 }
 
+/// Hash one accepted domain commitment into the leaf set signed by the anchor.
+///
+/// [`anchor_leaf_digest`] separates the result from every other tree the
+/// chain aggregates, so a finality digest cannot alias a foreign leaf.
+#[must_use]
+pub fn domain_finality_anchor_leaf(
+    chain_id: u64,
+    commitment: &crate::domain::DomainCommitment,
+) -> [u8; 32] {
+    let commitment_hash = commitment.leaf_hash();
+    let kind = commitment.consensus_kind.as_bytes();
+    let digest = crate::core::hash::hash_fields_bytes(&[
+        b"BDLM_DOMAIN_FINALITY_ANCHOR_LEAF_V1",
+        &chain_id.to_le_bytes(),
+        &commitment.domain_id.to_le_bytes(),
+        &commitment.domain_height.to_le_bytes(),
+        &commitment.sequence.to_le_bytes(),
+        &kind,
+        &commitment.finality_proof_hash,
+        &commitment_hash,
+    ]);
+    anchor_leaf_digest(&digest)
+}
+
+/// Build one signed anchor from the commitments held by the settlement registry.
+///
+/// The registry's ordered snapshot provides canonical `(domain, height,
+/// sequence)` order. Each leaf binds that key, the consensus kind, the proof
+/// hash, and the full commitment; one signer signs the resulting Merkle root.
+///
+/// # Errors
+///
+/// [`AnchorError::EmptyAggregation`] when the registry holds no commitments,
+/// plus the signer's own refusal.
+pub fn build_domain_finality_anchor(
+    height: u64,
+    chain_id: u64,
+    registry: &crate::domain::DomainCommitmentRegistry,
+    key_epoch: u32,
+    signer: &dyn AnchorSigner,
+) -> Result<PqAnchor, AnchorError> {
+    let mut commitments = registry.commitments_for_global_block();
+    commitments.sort_by_key(|commitment| {
+        (
+            commitment.domain_id,
+            commitment.domain_height,
+            commitment.sequence,
+        )
+    });
+    let leaves: Vec<[u8; 32]> = commitments
+        .iter()
+        .map(|commitment| domain_finality_anchor_leaf(chain_id, commitment))
+        .collect();
+    assemble_anchor(height, &leaves, None, None, key_epoch, signer)
+}
+
 /// Build the anchor and append it to the node-local JSONL log, under mode
 /// control.
 ///
@@ -677,6 +735,29 @@ mod tests {
         (0..n).map(|i| [i as u8; 32]).collect()
     }
 
+    fn domain_commitment(
+        domain_id: u32,
+        consensus_kind: crate::domain::ConsensusKind,
+        finality_proof_hash: [u8; 32],
+    ) -> crate::domain::DomainCommitment {
+        crate::domain::DomainCommitment {
+            domain_id,
+            domain_height: 10,
+            domain_block_hash: [u8::try_from(domain_id).expect("test domain id fits"); 32],
+            parent_domain_block_hash: [2u8; 32],
+            state_root: [3u8; 32],
+            tx_root: [4u8; 32],
+            event_root: [5u8; 32],
+            finality_proof_hash,
+            consensus_kind,
+            validator_set_hash: [6u8; 32],
+            timestamp_ms: 100 + u128::from(domain_id),
+            sequence: 0,
+            producer: None,
+            state_updates: std::collections::BTreeMap::new(),
+        }
+    }
+
     /// Deterministic echo signer: produces structurally valid signatures
     /// without any real cryptography, for plumbing tests that verify the
     /// emission path itself, not the scheme (the scheme has its own gated
@@ -722,6 +803,57 @@ mod tests {
             aggregate_finality_roots(&window).expect("bare leaves also aggregate"),
             "the anchor's tree must never share the header's bare leaf space"
         );
+    }
+
+    #[test]
+    fn domain_commitments_from_each_consensus_kind_share_one_signed_root() {
+        let mut registry = crate::domain::DomainCommitmentRegistry::new();
+        for (domain_id, kind, proof_hash) in [
+            (1, crate::domain::ConsensusKind::PoW, [11u8; 32]),
+            (2, crate::domain::ConsensusKind::PoS, [12u8; 32]),
+            (3, crate::domain::ConsensusKind::Bft, [13u8; 32]),
+            (4, crate::domain::ConsensusKind::PoA, [14u8; 32]),
+        ] {
+            registry
+                .insert(domain_commitment(domain_id, kind, proof_hash))
+                .expect("distinct domain commitment");
+        }
+
+        let anchor = build_domain_finality_anchor(20, 77, &registry, 3, &StubSigner)
+            .expect("the ordered domain proofs produce one anchor");
+        let commitments = registry.commitments_for_global_block();
+        let leaves: Vec<[u8; 32]> = commitments
+            .iter()
+            .map(|commitment| domain_finality_anchor_leaf(77, commitment))
+            .collect();
+        assert_eq!(anchor.aggregate_root, aggregate_finality_roots(&leaves).unwrap());
+        assert_eq!(anchor.signatures.len(), 1);
+        let payload = anchor_payload_for(20, &anchor.aggregate_root, None, None, 3);
+        assert_eq!(anchor.signatures[0].signature.as_slice(), &payload[..8]);
+    }
+
+    #[test]
+    fn domain_finality_leaf_binds_chain_and_proof_hash() {
+        let commitment = domain_commitment(7, crate::domain::ConsensusKind::Bft, [19u8; 32]);
+        let leaf = domain_finality_anchor_leaf(77, &commitment);
+        assert_eq!(leaf, domain_finality_anchor_leaf(77, &commitment));
+        assert_ne!(leaf, domain_finality_anchor_leaf(78, &commitment));
+
+        let changed_proof = domain_commitment(7, crate::domain::ConsensusKind::Bft, [20u8; 32]);
+        assert_ne!(leaf, domain_finality_anchor_leaf(77, &changed_proof));
+    }
+
+    #[test]
+    fn domain_finality_anchor_refuses_an_empty_registry() {
+        let error = build_domain_finality_anchor(
+            20,
+            77,
+            &crate::domain::DomainCommitmentRegistry::new(),
+            3,
+            &StubSigner,
+        )
+        .expect_err("an empty domain set has no anchor root");
+        assert_eq!(error.kind(), "anchor-empty-aggregation");
     }
 
     #[test]
