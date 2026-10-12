@@ -1175,6 +1175,32 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_submission_does_not_fault_the_domain() {
+        let mut state = IntakeState::new();
+        let key = register(&mut state);
+        let spec = eth_spec();
+        // An unbonded caller and a malformed payload: both are refusals about
+        // the caller's input.
+        let unbonded = quorum_evidence(&spec, addr(50));
+        let _ = state.submit_evidence(&unbonded, Some(Box::new(StrictTestBls)));
+        let mut malformed = quorum_evidence(&spec, addr(9));
+        malformed.payload.truncate(1);
+        let _ = state.submit_evidence(&malformed, Some(Box::new(StrictTestBls)));
+        let reg = state.registry.domain(&key).expect("domain");
+        assert_eq!(reg.record.attestations_refused, 2);
+        assert_eq!(
+            reg.record.state,
+            crate::cross_domain::external::DomainState::Admitted,
+            "a caller's bad input must not fault the domain"
+        );
+        // The poster (bonded) can still attest.
+        let good = quorum_evidence(&spec, addr(9));
+        state
+            .submit_evidence(&good, Some(Box::new(StrictTestBls)))
+            .expect("the domain must still serve");
+    }
+
+    #[test]
     fn a_faulted_domain_takes_no_attestation() {
         let mut state = IntakeState::new();
         let key = register(&mut state);

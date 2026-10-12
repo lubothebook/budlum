@@ -453,17 +453,10 @@ impl ExternalDomainRegistry {
                 if let Some(reg) = self.domains.get_mut(&domain) {
                     reg.record.attestations_refused =
                         reg.record.attestations_refused.saturating_add(1);
-                    let already_faulted = reg.record.state == DomainState::Faulted;
-                    if !already_faulted && reg.record.state.serves() {
-                        let from = reg.record.state;
-                        reg.record.state = DomainState::Faulted;
-                        reg.record.history.push(StateEvent {
-                            at_height: height,
-                            from,
-                            to: DomainState::Faulted,
-                            reason: err.to_string(),
-                        });
-                    }
+                    // A refusal is a fact about the caller's input, not about
+                    // the domain: any caller can make one. It moves the
+                    // counters only. A domain faults through `mark_faulted`,
+                    // when a quorum round freezes in dispute.
                     if let Some(bond) = reg.provers.get_mut(&evidence.submitter) {
                         bond.refused = bond.refused.saturating_add(1);
                     }
