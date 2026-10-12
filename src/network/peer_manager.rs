@@ -37,6 +37,9 @@ pub struct PeerScore {
     pub last_seen: Option<Instant>,
     pub rate_tokens: f64,
     pub rate_last_refill: Instant,
+    /// Last refill of the vote and blob buckets. Separate from
+    /// `rate_last_refill`, which every inbound message resets.
+    pub aux_last_refill: Instant,
     pub vote_tokens: f64,
     pub blob_tokens: f64,
     pub handshaked: bool,
@@ -53,6 +56,7 @@ impl Default for PeerScore {
             last_seen: None,
             rate_tokens: MAX_MSG_BURST,
             rate_last_refill: Instant::now(),
+            aux_last_refill: Instant::now(),
             vote_tokens: 10.0,
             blob_tokens: 5.0,
             handshaked: false,
@@ -70,17 +74,17 @@ impl PeerScore {
             false
         }
     }
+    /// Refill the vote and blob buckets. The general bucket is refilled by
+    /// `consume_token_with_rate`, so its clock is not shared with these two.
     pub fn refill_tokens(&mut self) {
         let now = Instant::now();
-        let elapsed = now.duration_since(self.rate_last_refill).as_secs_f64();
-
-        self.rate_tokens = (self.rate_tokens + elapsed * MSG_REFILL_RATE).min(MAX_MSG_BURST);
+        let elapsed = now.duration_since(self.aux_last_refill).as_secs_f64();
 
         self.vote_tokens = (self.vote_tokens + elapsed * 2.0).min(20.0);
 
         self.blob_tokens = (self.blob_tokens + elapsed * 0.5).min(10.0);
 
-        self.rate_last_refill = now;
+        self.aux_last_refill = now;
     }
     pub fn consume_token(&mut self) -> bool {
         self.consume_token_with_rate(MSG_REFILL_RATE)
@@ -668,6 +672,26 @@ mod tests {
     use super::*;
     fn test_peer_id() -> PeerId {
         PeerId::random()
+    }
+    #[test]
+    fn vote_bucket_refills_although_general_bucket_is_touched() {
+        let mut manager = PeerManager::new();
+        let peer = test_peer_id();
+        for _ in 0..10 {
+            assert!(manager.check_rate_limit(&peer));
+            assert!(manager.check_vote_rate_limit(&peer));
+        }
+        // Ten seconds pass; the general bucket is consumed on every message.
+        let Some(back) = Instant::now().checked_sub(Duration::from_secs(10)) else {
+            return;
+        };
+        if let Some(s) = manager.peers.get_mut(&peer) {
+            s.aux_last_refill = back;
+            s.rate_last_refill = back;
+        }
+        assert!(manager.check_rate_limit(&peer));
+        assert!(manager.check_vote_rate_limit(&peer));
+        assert!(manager.check_vote_rate_limit(&peer));
     }
     #[test]
     fn test_new_peer_has_zero_score() {
