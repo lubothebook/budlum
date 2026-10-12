@@ -657,7 +657,28 @@ pub struct RatioCandidate {
 pub struct MultiRatioConsensus;
 
 impl MultiRatioConsensus {
+    /// The ratio of a candidate, measured from its payload. A hand-written
+    /// literal is a claim, not a measurement (BLG-0573).
+    fn measured_ratio(original_len: usize, payload_len: usize) -> f64 {
+        if payload_len == 0 {
+            return 1.0;
+        }
+        original_len as f64 / payload_len as f64
+    }
+
     pub fn candidates_for_format(class: BudFormatClass, original: &[u8]) -> Vec<RatioCandidate> {
+        Self::claimed_candidates(class, original)
+            .into_iter()
+            .map(|mut c| {
+                // The listed ratio is the target of the pipe. Nothing here
+                // compresses, so the ratio that counts is the measured one.
+                c.ratio = Self::measured_ratio(original.len(), c.payload.len());
+                c
+            })
+            .collect()
+    }
+
+    fn claimed_candidates(class: BudFormatClass, original: &[u8]) -> Vec<RatioCandidate> {
         // Generation was removed from the lists: no regenerative, optical
         // prompt, diffusion or code recipe. Deterministic and proven only, with
         // no repo dependency.
@@ -1080,12 +1101,21 @@ mod tests {
     }
     #[test]
     fn multi_ratio_best_all_files() {
-        let best_video =
-            MultiRatioConsensus::candidates_for_format(BudFormatClass::Video, b"video");
-        assert!(best_video.iter().any(|c| c.ratio >= 100.0));
-        let best_image =
-            MultiRatioConsensus::candidates_for_format(BudFormatClass::Image, b"image");
-        assert!(best_image.iter().any(|c| c.ratio >= 20.0));
+        // The payloads are the original bytes, so every measured ratio is 1.
+        for (class, data) in [
+            (BudFormatClass::Video, &b"video"[..]),
+            (BudFormatClass::Image, &b"image"[..]),
+            (BudFormatClass::Log, &b"log log log"[..]),
+        ] {
+            let cands = MultiRatioConsensus::candidates_for_format(class, data);
+            assert!(!cands.is_empty());
+            for c in cands {
+                assert_eq!(c.ratio, 1.0, "{}: ratio must be measured", c.pipe_name);
+            }
+        }
+        // A claim of 13750x is no longer selectable.
+        let log = MultiRatioConsensus::candidates_for_format(BudFormatClass::Log, b"x");
+        assert!(MultiRatioConsensus::select_best(log, 100.0).is_none());
     }
     #[test]
     fn from_bytes_never_panics_on_truncation() {
