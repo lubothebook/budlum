@@ -2742,32 +2742,31 @@ mod tests {
     #[test]
     fn the_register_fold_shares_the_memory_fold_weakness() {
         const P: u128 = 0xFFFF_FFFF_0000_0001;
-        let beta = u128::from(MEM_INIT_BETA);
+        let gamma = u128::from(REG_INIT_GAMMA);
 
-        // The `beta` chain is what makes row order matter. With fixed
-        // constants, a prover solving for a target accumulator solves a linear
-        // system rather than searching, so the work is polynomial in the row
-        // count instead of exponential in the digest width.
-        assert_ne!(beta % P, 0, "the fold constant is live");
         assert_ne!(
-            beta % P,
-            1,
-            "a constant of one would drop row order entirely"
+            REG_INIT_BETA, MEM_INIT_BETA,
+            "the register fold keeps its own beta"
+        );
+        assert_ne!(
+            REG_INIT_GAMMA, MEM_INIT_GAMMA,
+            "the register fold keeps its own gamma"
         );
 
-        // Two-row folds collide when the second row absorbs the difference the
-        // first introduced, scaled by beta.
-        let fold = |x0: u128, x1: u128| ((x0 * beta) % P + x1) % P;
-        let (r0, r1) = (7u128, 11u128);
-        let s0 = 9u128;
-        // s1 = r1 + (r0 - s0) * beta
-        let s1 = (r1 + (P - (s0 - r0) % P) * beta) % P;
+        // Same first read. The second read moves from register 2 to register 3
+        // and the value absorbs the difference: v2 = v1 + (i1 - i2) * GAMMA.
+        let (i1, v1) = (2u128, 20u128);
+        let i2 = 3u128;
+        let v2 = (v1 + (P - (i2 - i1) % P) * gamma) % P;
+        let first = (1u64, 10u64);
+        let reads_a = [first, (i1 as u64, v1 as u64)];
+        let reads_b = [first, (i2 as u64, v2 as u64)];
 
-        assert_ne!((r0, r1), (s0, s1));
+        assert_ne!(reads_a, reads_b, "the two read lists must differ");
         assert_eq!(
-            fold(r0, r1),
-            fold(s0, s1),
-            "two different row sequences fold to one accumulator"
+            crate::adapter::register_image_commitment_of_reads(&reads_a),
+            crate::adapter::register_image_commitment_of_reads(&reads_b),
+            "two different register read lists reach one production commitment"
         );
     }
 
