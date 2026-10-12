@@ -4242,7 +4242,7 @@ impl BudlumApiServer for RpcServer {
                 .map(|d| {
                     serde_json::json!({
                         "shardId": format!("0x{}", hex::encode(d.shard_id.0)),
-                        "size": d.shard_id.0.len(),
+                        "size": d.shard_bytes,
                     })
                 })
                 .collect()
