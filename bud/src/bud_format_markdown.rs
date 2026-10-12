@@ -69,8 +69,10 @@ impl MarkdownSplit {
                 MdSection::CodeBlock
             } else if in_code {
                 MdSection::CodeBlock
-            } else if let Some(stripped) = line.strip_prefix('#') {
-                // heading: the number of #
+            } else if line.starts_with('#') {
+                // heading: the number of leading # (`strip_prefix('#')` removes
+                // one character only, so the depth was always 1)
+                let stripped = line.trim_start_matches('#');
                 let depth = line.len() - stripped.len();
                 if depth <= 6 && stripped.starts_with(' ') {
                     heading_tree.push(line.to_string());
@@ -419,6 +421,28 @@ mod tests {
             "LLM context is compact: {:.1}x",
             split.context_ratio()
         );
+    }
+
+    /// BLG-0610: every heading level 1 to 6 is recognised; seven marks or no
+    /// space after the marks is not a heading.
+    #[test]
+    fn heading_levels_one_to_six_are_recognised() {
+        let md = "# a\n## b\n### c\n#### d\n##### e\n###### f\n####### g\n##h\n#\n";
+        let split = MarkdownSplit::encode(md).expect("encode");
+        let want = [
+            MdSection::Heading(1),
+            MdSection::Heading(2),
+            MdSection::Heading(3),
+            MdSection::Heading(4),
+            MdSection::Heading(5),
+            MdSection::Heading(6),
+            MdSection::Other,
+            MdSection::Other,
+            MdSection::Other,
+        ];
+        assert_eq!(split.sections, want);
+        assert_eq!(split.heading_tree.len(), 6);
+        assert_eq!(split.decode(), md);
     }
 
     #[test]
