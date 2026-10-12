@@ -386,13 +386,25 @@ impl BudFile {
         }
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
+    /// Serialise without silent truncation: a field that does not fit its
+    /// length prefix is an error (BLG-0574).
+    pub fn try_to_bytes(&self) -> Result<Vec<u8>, &'static str> {
+        fn len16(n: usize) -> Result<[u8; 2], &'static str> {
+            u16::try_from(n)
+                .map(u16::to_le_bytes)
+                .map_err(|_| "K-BUD: field over 65535 bytes")
+        }
+        fn len32(n: usize) -> Result<[u8; 4], &'static str> {
+            u32::try_from(n)
+                .map(u32::to_le_bytes)
+                .map_err(|_| "K-BUD: field over 4 GiB")
+        }
         let mut out = Vec::new();
         out.extend_from_slice(&BUD_MAGIC);
         out.extend_from_slice(&self.header.version.to_le_bytes());
         out.extend_from_slice(&(self.header.format_class as u16).to_le_bytes());
         let mime = self.header.original_mime.as_bytes();
-        out.extend_from_slice(&(mime.len() as u16).to_le_bytes());
+        out.extend_from_slice(&len16(mime.len())?);
         out.extend_from_slice(mime);
         out.extend_from_slice(&self.header.width.to_le_bytes());
         out.extend_from_slice(&self.header.height.to_le_bytes());
@@ -409,29 +421,31 @@ impl BudFile {
         out.extend_from_slice(&self.header.previous_version_hash);
         for chunk in &self.chunks {
             out.extend_from_slice(&chunk.hash);
-            out.extend_from_slice(&(chunk.data.len() as u32).to_le_bytes());
+            out.extend_from_slice(&len32(chunk.data.len())?);
             out.extend_from_slice(&chunk.data);
-            out.push(chunk.parity_shards.len() as u8);
+            let parity_count = u8::try_from(chunk.parity_shards.len())
+                .map_err(|_| "K-BUD: over 255 parity shards")?;
+            out.push(parity_count);
             for p in &chunk.parity_shards {
-                out.extend_from_slice(&(p.len() as u32).to_le_bytes());
+                out.extend_from_slice(&len32(p.len())?);
                 out.extend_from_slice(p);
             }
         }
         out.extend_from_slice(&self.merkle_root);
         if let Some(sig) = &self.pq_signature {
-            out.extend_from_slice(&(sig.len() as u16).to_le_bytes());
+            out.extend_from_slice(&len16(sig.len())?);
             out.extend_from_slice(sig);
         } else {
             out.extend_from_slice(&0u16.to_le_bytes());
         }
         if let Some(kw) = &self.encryption_key_wrapped {
-            out.extend_from_slice(&(kw.len() as u16).to_le_bytes());
+            out.extend_from_slice(&len16(kw.len())?);
             out.extend_from_slice(kw);
         } else {
             out.extend_from_slice(&0u16.to_le_bytes());
         }
         if let Some(token) = &self.pollen_consent_token {
-            out.extend_from_slice(&(token.len() as u16).to_le_bytes());
+            out.extend_from_slice(&len16(token.len())?);
             out.extend_from_slice(token.as_bytes());
         } else {
             out.extend_from_slice(&0u16.to_le_bytes());
@@ -439,10 +453,16 @@ impl BudFile {
         // Optional trailing field: the PQ verification key. It is written only
         // when present, so a file without a key keeps its old bytes.
         if let Some(pk) = &self.pq_public_key {
-            out.extend_from_slice(&(pk.len() as u16).to_le_bytes());
+            out.extend_from_slice(&len16(pk.len())?);
             out.extend_from_slice(pk);
         }
-        out
+        Ok(out)
+    }
+
+    /// Infallible form. A field that does not fit gives an empty vector,
+    /// which `from_bytes` refuses; use `try_to_bytes` to see the reason.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.try_to_bytes().unwrap_or_default()
     }
 
     pub fn from_bytes(data: &[u8]) -> Result<Self, &'static str> {
@@ -469,7 +489,9 @@ impl BudFile {
         if data.len() < off + mime_len {
             return Err("K-BUD: mime");
         }
-        let mime = String::from_utf8_lossy(&data[off..off + mime_len]).to_string();
+        let mime = std::str::from_utf8(&data[off..off + mime_len])
+            .map_err(|_| "K-BUD: mime not utf8")?
+            .to_string();
         off += mime_len;
         if data.len() < off + 4 + 4 + 32 + 32 + 2 + 2 + 4 + 32 + 3 + 4 + 32 {
             return Err("K-BUD: hdr");
@@ -592,7 +614,9 @@ impl BudFile {
             if data.len() < off + tok_len {
                 return Err("K-BUD: token");
             }
-            let t = String::from_utf8_lossy(&data[off..off + tok_len]).to_string();
+            let t = std::str::from_utf8(&data[off..off + tok_len])
+                .map_err(|_| "K-BUD: token not utf8")?
+                .to_string();
             off += tok_len;
             Some(t)
         } else {
@@ -608,10 +632,15 @@ impl BudFile {
                 return Err("K-BUD: pk");
             }
             let k = data[off..off + pk_len].to_vec();
+            off += pk_len;
             Some(k)
         } else {
             None
         };
+        // Two byte strings must not parse to one file.
+        if off != data.len() {
+            return Err("K-BUD: trailing bytes");
+        }
         let hdr = BudHeader {
             version,
             format_class: class,
@@ -991,6 +1020,27 @@ mod tests {
         let back = BudFile::from_bytes(&f.to_bytes()).unwrap();
         assert_eq!(back.pq_public_key, f.pq_public_key);
         assert_eq!(back.decode().unwrap(), b"abc");
+    }
+    #[test]
+    fn writer_refuses_truncation_and_reader_refuses_noise() {
+        let mut f = one_chunk_file();
+        f.header.original_mime = "a".repeat(70_000);
+        assert!(f.try_to_bytes().is_err());
+        assert!(BudFile::from_bytes(&f.to_bytes()).is_err());
+        let mut f = one_chunk_file();
+        f.chunks[0].parity_shards = vec![vec![1u8]; 256];
+        assert!(f.try_to_bytes().is_err());
+        let f = one_chunk_file();
+        let good = f.try_to_bytes().unwrap();
+        // Trailing bytes are refused.
+        let mut trailing = good.clone();
+        trailing.push(0);
+        assert!(BudFile::from_bytes(&trailing).is_err());
+        // Invalid UTF-8 in the mime is refused, not normalised.
+        let mut bad = good.clone();
+        bad[14] = 0xFF;
+        assert!(BudFile::from_bytes(&bad).is_err());
+        assert!(BudFile::from_bytes(&good).is_ok());
     }
     #[test]
     fn generative_removed() {
