@@ -186,8 +186,10 @@ impl BudHeader {
             chunk_count: 1,
             dictionary_hash: [0u8; 32],
             tier: 1,
-            erasure_k: 18,
-            erasure_p: 3,
+            // v1 stores no erasure code: (0, 0) says so. Real repair needs
+            // bud_format_erasure and a stored layout (see BLG-0568).
+            erasure_k: 0,
+            erasure_p: 0,
             version_number: 1,
             previous_version_hash: [0u8; 32],
         }
@@ -224,9 +226,6 @@ fn hash(data: &[u8]) -> [u8; 32] {
     h.update(data);
     h.finalize().into()
 }
-fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
-    a.iter().zip(b.iter()).map(|(x, y)| x ^ y).collect()
-}
 
 impl BudFile {
     pub fn encode(
@@ -242,12 +241,12 @@ impl BudFile {
         let cid = hash(&payload);
         let orig = hash(original);
         let ch = hash(&payload);
-        let p1 = xor(&payload, &vec![0xAA; payload.len()]);
-        let p2 = xor(&payload, &vec![0x55; payload.len()]);
+        // No parity: the old shards were the payload XOR a constant, each one
+        // a full copy and no k-of-n code.
         let chunk = BudChunk {
             hash: ch,
             data: payload,
-            parity_shards: vec![p1, p2],
+            parity_shards: vec![],
         };
         let hdr = BudHeader::new(class, mime, w, h, cid, orig, pipe_id, flags);
         Self {
@@ -868,6 +867,26 @@ impl BudGates {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn v1_encode_stores_no_fake_parity() {
+        let payload = b"payload bytes".to_vec();
+        let f = BudFile::encode(
+            &payload,
+            BudFormatClass::Json,
+            "application/json",
+            0,
+            0,
+            3,
+            BudFlags::new(true, true, false, false, false, false),
+            payload.clone(),
+        );
+        assert!(f.chunks[0].parity_shards.is_empty());
+        assert_eq!((f.header.erasure_k, f.header.erasure_p), (0, 0));
+        // The file is about one payload, not three.
+        assert!(f.to_bytes().len() < 3 * payload.len() + 300);
+        let back = BudFile::from_bytes(&f.to_bytes()).unwrap();
+        assert_eq!(back.decode().unwrap(), payload);
+    }
     #[test]
     fn generative_removed() {
         let f = BudFile::encode(
