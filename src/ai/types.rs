@@ -764,6 +764,9 @@ impl AiVerifierQos {
     }
 
     /// Calculate a reliability score (0.0 - 1.0).
+    ///
+    /// Display only (Z8): uses f64. It must never feed consensus, verifier
+    /// selection or fees. The state root hashes the integer counters only.
     /// Higher is better. Factors in:
     /// - Finalization rate (successful / total)
     /// - Equivocation penalty
@@ -979,6 +982,9 @@ impl AiAgentReputation {
     }
 
     /// Calculate the agent's trust score (0.0 - 1.0).
+    ///
+    /// Display only (Z8): uses f64. It must never feed consensus, verifier
+    /// selection or fees. The state root hashes the integer counters only.
     /// Factors in payment reliability, inference quality, and equivocation rate.
     pub fn trust_score(&self) -> f64 {
         let total_payments = self.payments_completed.saturating_add(self.payments_defaulted);
