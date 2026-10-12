@@ -1209,6 +1209,55 @@ mod rpc_tests {
         assert_eq!(refused.code(), -32004);
     }
 
+    /// Every operator-gated mutating method answers -32004 on a public
+    /// listener, before any argument is parsed or any state is touched.
+    #[tokio::test]
+    async fn rpc_tests_operator_methods_refused_on_public_listener() {
+        let consensus = Arc::new(PoWEngine::new(0));
+        let blockchain = Blockchain::new(consensus, None, 45265, None);
+        let (chain_actor, chain) = ChainActor::new(blockchain);
+        tokio::spawn(async move {
+            chain_actor.run().await;
+        });
+        let node_struct = Node::new(chain.clone()).unwrap();
+        let node_client = node_struct.get_client();
+        let public_server = RpcServer::with_security_and_mode(
+            chain.clone(),
+            node_client,
+            RpcSecurityConfig::operator_default(),
+            RpcMode::Public,
+        );
+        let address = format!("0x{}", "01".repeat(32));
+        let codes = [
+            public_server
+                .register_external_domain(serde_json::json!({}))
+                .await
+                .expect_err("registerExternalDomain")
+                .code(),
+            public_server
+                .registry_bond_relayer(address.clone(), 1)
+                .await
+                .expect_err("registryBondRelayer")
+                .code(),
+            public_server
+                .registry_bond_prover(address, 1)
+                .await
+                .expect_err("registryBondProver")
+                .code(),
+            public_server
+                .request_prune(None)
+                .await
+                .expect_err("requestPrune")
+                .code(),
+            public_server
+                .seal_global_header()
+                .await
+                .expect_err("sealGlobalHeader")
+                .code(),
+        ];
+        assert_eq!(codes, [-32004; 5]);
+    }
+
     /// On an operator listener the peer-id format is validated before any
     /// work is handed to the node: a syntactically empty id stops at
     /// -32602 and the mode gate did not fire, proving validation order
