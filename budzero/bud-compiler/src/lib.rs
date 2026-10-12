@@ -868,6 +868,28 @@ mod tests {
         assert_eq!(vm.events, vec![5, 3]);
     }
 
+    /// P35-F03: a struct literal nested in another literal must get its own
+    /// heap block. Before, both objects started at the same address.
+    #[test]
+    fn test_nested_struct_literal_gets_its_own_heap_block() {
+        let source = r#"
+            contract Nested {
+                struct Inner { pad: u64, y: u64, }
+                struct Outer { inner: Inner, tag: u64, }
+                pub fn main() {
+                    let o = Outer { inner: Inner { pad: 1, y: 42 }, tag: 7 };
+                    emit E(o.inner.pad);
+                    emit E(o.inner.y);
+                    emit E(o.tag);
+                }
+            }
+        "#;
+        let bytecode = compile(source, IsaProfile::Production).expect("nested literal compiles");
+        let mut vm = bud_vm::Vm::new(MIN_VM_MEMORY_BYTES);
+        vm.run(&bytecode).expect("VM should run");
+        assert_eq!(vm.events, vec![1, 42, 7]);
+    }
+
     /// The wildcard arm (`_`) is required for exhaustive matching
     /// (semantic-checked); the parser only requires syntactic
     /// Validity. Verifies the parser rejects patterns that are not

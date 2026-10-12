@@ -739,6 +739,21 @@ impl Codegen {
                 // Calls below.
                 let layout: Option<Vec<String>> = self.struct_layouts.get(name).cloned();
 
+                // Reserve the block *before* the field values are evaluated.
+                // A field value can allocate too (a nested literal or a call
+                // That builds a struct); bumping the heap pointer afterwards
+                // Placed the inner object at the outer object's address.
+                // Allocate the full *declared* struct size (not the
+                // Literal's field count) so the block is correctly sized
+                // Regardless of the order the literal lists its fields.
+                // Falls back to the literal count when the layout is
+                // Unknown.
+                let size_words = layout.as_ref().map_or(fields.len(), |fs| fs.len());
+                let size_reg = self.alloc_reg();
+                self.emit(Opcode::Load, size_reg, 0, 0, (size_words * 8) as i32);
+                self.emit(Opcode::Add, 31, 31, size_reg, 0); // bump heap pointer
+                self.next_reg = ptr_reg + 1;
+
                 let mut field_vals: Vec<(usize, u8)> = Vec::new();
                 for (fname, val) in fields {
                     let val_reg = self.generate_expr(val, scope, storage);
@@ -767,16 +782,6 @@ impl Codegen {
                 for (offset, val_reg) in field_vals {
                     self.emit(Opcode::Store, 0, ptr_reg, val_reg, offset as i32);
                 }
-
-                // Allocate the full *declared* struct size (not the
-                // Literal's field count) so the block is correctly sized
-                // Regardless of the order the literal lists its fields.
-                // Falls back to the literal count when the layout is
-                // Unknown.
-                let size_words = layout.as_ref().map_or(fields.len(), |fs| fs.len());
-                let size_reg = self.alloc_reg();
-                self.emit(Opcode::Load, size_reg, 0, 0, (size_words * 8) as i32);
-                self.emit(Opcode::Add, 31, 31, size_reg, 0); // bump heap pointer
 
                 self.next_reg = saved_next_reg;
                 let res_reg = self.alloc_reg();
