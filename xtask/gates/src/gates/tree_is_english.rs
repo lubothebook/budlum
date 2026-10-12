@@ -108,6 +108,11 @@ const ALLOWED_FILES: &[&str] = &[
     // the rules it carries.
     "MODEL_ROUTING_REF.md",
     "BUD-AI-KAPSAMLI-DIREKTIF.md",
+    // The owner's finding ledger. The owner dictated it in Turkish and its
+    // status values (for example AÇIK) are part of that dictation, so it stays
+    // in the owner's words. Exempt by exact file name only, so a look-alike
+    // name is still a finding.
+    "BULGU_DEFTERI.md",
 ];
 
 /// Path fragments whose contents are a Turkish localisation.
@@ -996,6 +1001,7 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         "MODEL_ROUTING.md",
         "MODEL_ROUTING_KURULUM.md",
         "BUD-AI-KAPSAMLI-DIREKTIF.md",
+        "BULGU_DEFTERI.md",
     ] {
         if !counted_accepts_with(
             &mut ran,
@@ -1024,6 +1030,21 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         let _ = fs::remove_dir_all(tmp);
         return Err(String::from(
             "canary: the directive exemption leaked into a look-alike file name",
+        ));
+    }
+
+    // The ledger exemption is by exact file name too.
+    if counted_accepts_with(
+        &mut ran,
+        clean,
+        tmp,
+        "ledgerspill",
+        "BULGU_DEFTERI2.md",
+        "# Defter\n\nBu belge sahibin kuralıdır; kanit dogrulama.\n",
+    )? {
+        let _ = fs::remove_dir_all(tmp);
+        return Err(String::from(
+            "canary: the ledger exemption leaked into a look-alike file name",
         ));
     }
 
@@ -1185,7 +1206,7 @@ const CANARY_GROUPS: [CanaryGroup; 3] = [
 /// Hard-coded on purpose. A group that stops testing anything still returns
 /// `Ok`, so the only way to notice is to know the number beforehand. Raise it
 /// deliberately when a canary is added; a drop is a defect.
-const EXPECTED_CANARIES: usize = 73;
+const EXPECTED_CANARIES: usize = 75;
 
 pub fn self_test() -> Result<String, String> {
     let tmp = scratch_dir()?;
