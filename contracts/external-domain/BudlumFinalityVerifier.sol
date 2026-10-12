@@ -231,6 +231,7 @@ contract BudlumFinalityVerifier {
     error NoFraudProofVerifier();
     error FraudProofRejected(bytes32 digest);
     error NoChallengeWindow();
+    error SignatureInvalid(string what);
 
     constructor(
         uint64 budlumChainId_,
@@ -305,6 +306,8 @@ contract BudlumFinalityVerifier {
     ///        a challenge window for the post-quantum half. This is a weaker
     ///        guarantee and the event says so;
     ///      - neither: optimistic, window open, event says so.
+    ///      A window opens only for a half whose precompile is missing. If a
+    ///      precompile is present and its check fails, `verify` reverts.
     ///
     ///      There is no path in which a missing precompile causes the
     ///      verification to be skipped and the attestation recorded as if it
@@ -350,13 +353,24 @@ contract BudlumFinalityVerifier {
             pqOk = _verifyMlDsa(root, a.mlDsaPubkey, a.mlDsaSignature, a.mlDsaEthVariant);
         }
 
+        // A half whose precompile is present must verify. A failed check is a
+        // refusal, never a reason to open a window: only a MISSING precompile
+        // may fall back to the optimistic path.
+        if (hasBlsPrecompile && !blsOk) {
+            revert SignatureInvalid("BLS signature does not verify");
+        }
+        if (hasMlDsaPrecompile && !pqOk) {
+            revert SignatureInvalid("ML-DSA signature does not verify");
+        }
+
         if (blsOk && pqOk) {
             accepted[digest] = true;
             emit AttestationVerified(digest, a.height, a.stateRoot);
             return digest;
         }
 
-        // Optimistic path. The attestation is NOT marked accepted here; it is
+        // Optimistic path, reached only when a precompile is missing. The
+        // attestation is NOT marked accepted here; it is
         // marked accepted only when the window closes, via `settle`. A caller
         // that treats an open window as accepted is reading the wrong function.
         string memory reason = !hasBlsPrecompile && !hasMlDsaPrecompile
