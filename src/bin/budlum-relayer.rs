@@ -767,9 +767,18 @@ async fn budlum_head_height(client: &BudlumClient) -> Result<u64, String> {
 /// variant name. Matching on a prefix keeps a variant that carries fields
 /// (`BurnBridgeTransferWithEvent { .. }`) from being missed.
 async fn burn_events_in_block(client: &BudlumClient, height: u64) -> Result<Vec<String>, String> {
-    let params = serde_json::json!([format!("0x{height:x}"), true]);
-    let block = client.rpc_call("bud_getBlockByNumber", params).await?;
+    let block = client
+        .rpc_call("bud_getBlockByNumber", block_by_number_params(height))
+        .await?;
     Ok(burn_hashes_from_block(&block))
+}
+
+/// Positional parameters of `bud_getBlockByNumber`: exactly one `u64`.
+///
+/// The node declares `number: u64` (src/rpc/api.rs). A hex string or an extra
+/// flag is an invalid-params error, so every scan would fail.
+fn block_by_number_params(height: u64) -> serde_json::Value {
+    serde_json::json!([height])
 }
 
 /// Burn transaction hashes in a block payload.
@@ -856,7 +865,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{burn_hashes_from_block, parse_hex_height};
+    use super::{block_by_number_params, burn_hashes_from_block, parse_hex_height};
 
     fn block_with(types: &[&str]) -> serde_json::Value {
         let txs: Vec<serde_json::Value> = types
@@ -865,6 +874,12 @@ mod tests {
             .map(|(i, t)| serde_json::json!({ "hash": format!("0x{i:02x}"), "type": t }))
             .collect();
         serde_json::json!({ "transactions": txs })
+    }
+
+    /// The node takes one numeric height; a hex string plus a flag is refused.
+    #[test]
+    fn block_by_number_sends_one_numeric_parameter() {
+        assert_eq!(block_by_number_params(42), serde_json::json!([42]));
     }
 
     /// The loop used to report nothing because it read nothing. A block that
