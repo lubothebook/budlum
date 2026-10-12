@@ -15,27 +15,45 @@
 //! operators in order to make a check pass, so the harnesses live in a
 //! standalone package instead.
 //!
-//! # Why a mirror is sound here
+//! # Why a mirror is used here
 //!
-//! [`penalty_for`] is the expression from
-//! `PermissionlessRegistry::slash_role_only`, character for character. It is
-//! not called through the registry because that needs a populated `BTreeMap`
+//! [`penalty_for`] is the expression from `core::chain_config::slash_penalty`
+//! (called by `PermissionlessRegistry::slash_role_only`). It is not called
+//! through the registry because that needs a populated `BTreeMap`
 //! of registrations, which a bit-precise model checker would have to unroll,
 //! the arithmetic is what is under proof, not the map.
 //!
-//! A copy can rot. Two things stop it: `budlum-core`'s
-//! `bond_arithmetic_matches_the_kani_mirror` recomputes both and fails on any
-//! divergence, and `scripts/check-kani.sh` fails if the number of harnesses
-//! Kani ran drops below the number declared here.
+//! A copy can rot, and this package has no link that stops it. The kani
+//! package does not depend on `budlum-core` and `budlum-core` does not depend
+//! on it, so no test calls the functions in this file. Facts, as of this
+//! writing:
+//!
+//! * Production slashing calls `core::chain_config::slash_penalty`. This
+//!   file's [`penalty_for`] is a second copy of that function.
+//! * `budlum-core`'s `bond_arithmetic_matches_the_kani_mirror`, the Merkle
+//!   mirror test and the PQ length test each compare production with a third,
+//!   hand-written copy that sits inside the test. They do not look at this
+//!   file.
+//! * The only guard on this file is the harness-count gate
+//!   (`xtask/gates/src/gates/kani.rs`), which checks that every declared
+//!   harness ran. It does not check that the logic equals production.
+//!
+//! So the proofs hold for the text of this file. That they hold for
+//! production depends on a human keeping the copies equal. Closing the gap
+//! needs one shared definition, for example a path dependency from
+//! `budlum-core` (dev-dependencies) on this package so a test can call these
+//! functions directly. That changes the root manifest and is tracked as a
+//! decision, not done here.
 
 /// Fixed-point denominator, mirroring `core::chain_config::FIXED_POINT_SCALE`.
 pub const FIXED_POINT_SCALE: u64 = 1_000_000;
 
-/// The penalty computation exactly as `slash_role_only` performs it.
+/// The penalty computation exactly as `core::chain_config::slash_penalty`
+/// performs it (production slashing calls that function).
 ///
 /// ```text
-/// let penalty =
-///     ((reg.stake as u128 * slash_ratio_fixed as u128) / FIXED_POINT_SCALE as u128) as u64;
+/// let quotient = (stake as u128 * ratio as u128) / FIXED_POINT_SCALE as u128;
+/// // clamped to `stake` instead of narrowed with `as u64`
 /// ```
 #[must_use]
 pub fn penalty_for(stake: u64, slash_ratio_fixed: u64) -> u64 {
