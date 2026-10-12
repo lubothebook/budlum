@@ -399,10 +399,19 @@ impl Executor {
                 );
             }
             TransactionType::Unstake => {
-                let current_stake = state
+                let (current_stake, penalised) = state
                     .get_validator(&tx.from)
-                    .map(|v| v.stake)
+                    .map(|v| (v.stake, v.slashed || v.jailed))
                     .ok_or_else(|| BudlumError::validation("not_validator", "Not a validator"))?;
+                // A slashed or jailed validator must stay in the registry
+                // until its penalty is settled. A full exit would remove the
+                // entry, and a later report would find nothing to cut.
+                if penalised {
+                    return Err(BudlumError::validation(
+                        "validator_penalised",
+                        "Slashed or jailed validators cannot unstake",
+                    ));
+                }
                 if current_stake < tx.amount {
                     return Err(BudlumError::validation(
                         "insufficient_stake",
@@ -2655,6 +2664,38 @@ mod tests {
     #[test]
     fn ai_exec_dims_accepts_small_model() {
         assert!(check_ai_exec_dims(&[2, 1]).is_ok());
+    }
+
+    /// BLG-0085: a jailed validator must not exit, or a later report finds
+    /// no registry entry to cut.
+    #[test]
+    fn unstake_refuses_a_jailed_validator() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let who = Address::from([5u8; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&who, 10);
+        state.add_validator(who, 1_000);
+        if let Some(validator) = state.get_validator_mut(&who) {
+            validator.jailed = true;
+        }
+        let mut tx = Transaction::new_with_chain_id(
+            who,
+            Address::zero(),
+            1_000,
+            1,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::Unstake,
+        );
+        tx.hash = tx.calculate_hash();
+        assert!(Executor::apply_transaction(&mut state, &tx).is_err());
+        assert_eq!(state.get_validator(&who).map(|v| v.stake), Some(1_000));
+        assert!(state.unbonding_queue.is_empty());
     }
 
     /// Audit 2026-09-09 E-1: the vesting spend gate must hold on every arm

@@ -1483,6 +1483,54 @@ impl AccountState {
         Some(penalty)
     }
 
+    /// Apply a slashing report to the registry and, for the validator role,
+    /// to the stake still waiting in the unbonding queue.
+    ///
+    /// `PermissionlessRegistry::slash_from_report` only sees the registry
+    /// entry. A validator that unstaked fully had its entry removed and its
+    /// stake moved to `unbonding_queue`, so the report found nothing and the
+    /// queued stake stayed whole. The queue is cut here with the same ratio
+    /// as the governance path (`slash_validator`). A validator that is
+    /// already slashed (registry or ledger) was cut once, so it is not cut
+    /// a second time.
+    pub fn slash_from_report(
+        &mut self,
+        report: &crate::registry::evidence::SlashingReport,
+    ) -> Result<Option<crate::registry::SlashOutcome>, crate::registry::EvidenceError> {
+        let already_slashed = self
+            .registry
+            .get(&report.offender, report.role)
+            .is_some_and(|entry| matches!(entry.status, crate::registry::MemberStatus::Slashed))
+            || self
+                .validators
+                .get(&report.offender)
+                .is_some_and(|validator| validator.slashed);
+        let outcome = self.registry.slash_from_report(report)?;
+        if report.role == roles::VALIDATOR && !already_slashed {
+            let ratio = self.registry.params().slash_ratio(report.condition());
+            let mut cut_total = 0u64;
+            for entry in self
+                .unbonding_queue
+                .iter_mut()
+                .filter(|entry| entry.address == report.offender)
+            {
+                let cut = crate::core::chain_config::slash_penalty(entry.amount, ratio);
+                entry.amount = entry.amount.saturating_sub(cut);
+                cut_total = cut_total.saturating_add(cut);
+            }
+            if cut_total > 0 {
+                self.unbonding_queue
+                    .retain(|entry| entry.address != report.offender || entry.amount > 0);
+                tracing::info!(
+                    offender = %report.offender,
+                    cut = cut_total,
+                    "Slashed unbonding stake after a registry report"
+                );
+            }
+        }
+        Ok(outcome)
+    }
+
     pub fn process_unbonding(&mut self) {
         let current_epoch = self.epoch_index;
         let mut released: Vec<(Address, u64)> = Vec::new();
@@ -2586,6 +2634,32 @@ mod tests {
         let role = crate::registry::role::roles::RELAYER;
         assert_eq!(state.registry.get(&who, role).unwrap().stake, min + 1);
         assert_eq!(state.get_balance(&who), min * 2 - 1);
+    }
+    #[test]
+    fn report_slash_cuts_unbonding_queue_after_full_unstake() {
+        let mut state = AccountState::new();
+        let who = Address::from([9u8; 32]);
+        // Full unstake: stake is zero, the registry entry is gone.
+        state.add_validator(who, 0);
+        state.unbonding_queue.push(UnbondingEntry {
+            address: who,
+            amount: 1_000,
+            release_epoch: 10,
+        });
+        let report = crate::registry::evidence::SlashingReport::consensus_double_sign(
+            who,
+            7,
+            "aa".into(),
+            "bb".into(),
+            vec![1],
+            vec![2],
+            None,
+        );
+        assert_eq!(state.slash_from_report(&report).unwrap(), None);
+        let ratio = state.registry.params().slash_ratio(report.condition());
+        let cut = crate::core::chain_config::slash_penalty(1_000, ratio);
+        assert!(cut > 0);
+        assert_eq!(state.unbonding_queue[0].amount, 1_000 - cut);
     }
     #[test]
     fn test_new_account() {

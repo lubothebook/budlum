@@ -2851,7 +2851,7 @@ impl Blockchain {
                 .epoch_index
                 .saturating_add(crate::registry::params::LIVENESS_JAIL_EPOCHS);
             for report in &reports {
-                let _ = self.state.registry.slash_from_report(report);
+                let _ = self.state.slash_from_report(report);
                 if let Some(v) = self.state.validators.get_mut(&report.offender) {
                     if !v.slashed {
                         v.slashed = true;
@@ -3516,7 +3516,7 @@ impl Blockchain {
         //   Ok(Some(_))  - offender was registered and slashed (actionable)
         //   Ok(None)     - offender wasn't registered, no-op (still honest)
         //   Err(_)       - report was structurally invalid or unverified
-        match self.state.registry.slash_from_report(&report) {
+        match self.state.slash_from_report(&report) {
             Ok(outcome) => {
                 if charged_fee {
                     // Refund on either actionable or honest-no-op outcome.
@@ -4403,7 +4403,7 @@ impl Blockchain {
                 .epoch_index
                 .saturating_add(crate::registry::params::LIVENESS_JAIL_EPOCHS);
             for report in &reported {
-                let _ = state.registry.slash_from_report(report);
+                let _ = state.slash_from_report(report);
                 if let Some(validator) = state.validators.get_mut(&report.offender) {
                     if !validator.slashed {
                         validator.slashed = true;
