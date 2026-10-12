@@ -197,6 +197,25 @@ impl L1NoteRegistry {
             ));
         }
 
+        // Bounded live set. Outputs are counted against the same ceiling as
+        // `insert_note`: a transfer replaces its inputs with its outputs, so
+        // the set grows by the difference. Without this check one input and
+        // sixteen outputs add fifteen notes per transfer and walk past
+        // MAX_LIVE_COMMITMENTS without any insert_note call.
+        let live_after = self
+            .live_commitments
+            .len()
+            .saturating_sub(spent_commitments.len())
+            .saturating_add(output_commitments.len());
+        if live_after > MAX_LIVE_COMMITMENTS {
+            return Err(format!(
+                "live commitment set full ({}/{}) - transfer would add {} notes",
+                self.live_commitments.len(),
+                MAX_LIVE_COMMITMENTS,
+                output_commitments.len().saturating_sub(spent_commitments.len())
+            ));
+        }
+
         // Past every refusal: the transfer now runs to completion.
         for (commitment, nullifier) in spent_commitments.iter().zip(nullifiers.iter()) {
             self.live_commitments.remove(commitment);
@@ -310,6 +329,29 @@ mod tests {
         assert!(r
             .apply_transfer(&[commitment], &[nullifier], &[second])
             .is_err());
+    }
+
+    /// A transfer cannot grow the live set past MAX_LIVE_COMMITMENTS.
+    #[test]
+    fn transfer_outputs_respect_the_live_commitment_cap() {
+        let mut r = L1NoteRegistry::new();
+        for i in 0..MAX_LIVE_COMMITMENTS {
+            r.insert_note(budlum_note_packing::hash_from_field(i as u64 + 1))
+                .unwrap();
+        }
+        let input = budlum_note_packing::hash_from_field(1);
+        let nullifier = budlum_note_packing::hash_from_field(0x7000_0001);
+        let outs = [
+            budlum_note_packing::hash_from_field(0x7100_0001),
+            budlum_note_packing::hash_from_field(0x7100_0002),
+        ];
+        assert!(r.apply_transfer(&[input], &[nullifier], &outs).is_err());
+        assert_eq!(r.live_count(), MAX_LIVE_COMMITMENTS);
+        assert!(r.contains_commitment(&input));
+        assert!(!r.is_nullifier_spent(&nullifier));
+        // One for one keeps the size and is still allowed.
+        r.apply_transfer(&[input], &[nullifier], &outs[..1]).unwrap();
+        assert_eq!(r.live_count(), MAX_LIVE_COMMITMENTS);
     }
 
     /// A registry hash is a packed hash, not an arbitrary 32 bytes.
