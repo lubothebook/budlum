@@ -8,6 +8,11 @@ use tiny_keccak::{Hasher, Keccak};
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
 
+const _: () = assert!(
+    bud_compiler::MIN_VM_MEMORY_BYTES as u64 <= bud_vm::MAX_MEMORY_BYTES,
+    "MIN_VM_MEMORY_BYTES must not exceed bud_vm::MAX_MEMORY_BYTES, the proof address space"
+);
+
 /// Which opcode activation state the CLI executes and verifies under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 enum ActivationArg {

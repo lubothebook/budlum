@@ -192,6 +192,11 @@ pub fn field_mul_goldilocks(a: u64, b: u64) -> u64 {
 /// proved.
 pub const MAX_MEMORY_BYTES: u64 = 1 << 32;
 
+/// True if a memory of `memory_size` bytes can be proved.
+fn memory_size_is_provable(memory_size: usize) -> bool {
+    memory_size as u64 <= MAX_MEMORY_BYTES
+}
+
 impl Vm {
     pub fn new(memory_size: usize) -> Self {
         Self::with_gas_limit(memory_size, 1_000_000)
@@ -201,7 +206,7 @@ impl Vm {
     /// from the host that builds the VM, never from a program.
     pub fn with_gas_limit(memory_size: usize, gas_limit: u64) -> Self {
         assert!(
-            memory_size as u64 <= MAX_MEMORY_BYTES,
+            memory_size_is_provable(memory_size),
             "memory size {memory_size} is above the 2^32 byte address space of the proof"
         );
         Self {
@@ -1665,6 +1670,29 @@ mod tests {
     #[should_panic(expected = "memory size")]
     fn rejects_memory_larger_than_the_proof_address_space() {
         let _ = Vm::new((1usize << 32) + 1);
+    }
+
+    /// The bound is inclusive. This checks the check only and never builds a
+    /// VM of `MAX_MEMORY_BYTES`.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn memory_bound_accepts_the_maximum_and_refuses_one_more() {
+        assert!(memory_size_is_provable(MAX_MEMORY_BYTES as usize));
+        assert!(!memory_size_is_provable(MAX_MEMORY_BYTES as usize + 1));
+    }
+
+    #[test]
+    fn memory_bound_accepts_small_sizes() {
+        assert!(memory_size_is_provable(0));
+        assert!(memory_size_is_provable(8192));
+    }
+
+    /// The assert fires before the allocation, so this is safe to run.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    #[should_panic(expected = "memory size")]
+    fn with_gas_limit_refuses_one_byte_above_the_maximum() {
+        let _ = Vm::with_gas_limit(MAX_MEMORY_BYTES as usize + 1, 1);
     }
 
     /// `Load rd, r0, imm` copies the immediate as a field element. A negative
