@@ -184,23 +184,7 @@ impl BudlumClient {
                 "bud_registryActiveMembers returned unexpected JSON shape".to_string()
             })?;
 
-        let normalized = address.to_lowercase();
-        for entry in members {
-            if let Some(acc) = entry.get("address").and_then(|a| a.as_str()) {
-                if acc.to_lowercase() == normalized {
-                    return Ok(true);
-                }
-            } else if let Some(acc) = entry.get("account").and_then(|a| a.as_str()) {
-                if acc.to_lowercase() == normalized {
-                    return Ok(true);
-                }
-            } else if let Some(s) = entry.as_str() {
-                if s.to_lowercase() == normalized {
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
+        Ok(members_contain(members, address))
     }
 
     /// Relay proof submit - bud_submitRelayProof
@@ -515,6 +499,30 @@ pub fn run_relayer(config: &RelayerConfig) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Lowercase an address and drop an optional `0x` prefix, so that
+/// `0xAB..` and `ab..` name the same account.
+fn normalize_address(address: &str) -> String {
+    let lower = address.trim().to_lowercase();
+    match lower.strip_prefix("0x") {
+        Some(rest) => rest.to_string(),
+        None => lower,
+    }
+}
+
+/// Is `address` among the registry members? A member is an object with an
+/// `address` or `account` field, or a plain string.
+fn members_contain(members: &[serde_json::Value], address: &str) -> bool {
+    let wanted = normalize_address(address);
+    members.iter().any(|entry| {
+        let member = entry
+            .get("address")
+            .and_then(|a| a.as_str())
+            .or_else(|| entry.get("account").and_then(|a| a.as_str()))
+            .or_else(|| entry.as_str());
+        member.is_some_and(|m| normalize_address(m) == wanted)
+    })
 }
 
 /// A relayer address is 32 bytes in hex, with an optional `0x` prefix.
@@ -950,6 +958,22 @@ mod tests {
             (10, MAX_WINDOW_ATTEMPTS - 1)
         );
         assert_eq!(advance_cursor(10, 20, true, MAX_WINDOW_ATTEMPTS - 1), (20, 0));
+    }
+
+    /// The check used to compare lowercased strings, so a prefix difference
+    /// made an active relayer look inactive.
+    #[test]
+    fn membership_ignores_case_and_the_0x_prefix() {
+        let members = vec![
+            serde_json::json!({"address": "0xAABB"}),
+            serde_json::json!({"account": "ccdd"}),
+            serde_json::json!("0xEEFF"),
+        ];
+        assert!(members_contain(&members, "aabb"));
+        assert!(members_contain(&members, "0XCCDD"));
+        assert!(members_contain(&members, "eeff"));
+        assert!(!members_contain(&members, "0xaa"));
+        assert!(!members_contain(&[], "aabb"));
     }
 
     #[test]
