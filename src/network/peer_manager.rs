@@ -318,11 +318,37 @@ impl PeerManager {
     fn get_or_create(&mut self, peer_id: &PeerId) -> Option<&mut PeerScore> {
         if !self.peers.contains_key(peer_id) && self.peers.len() >= self.max_tracked_peers {
             self.prune_spent_records();
-            if self.peers.len() >= self.max_tracked_peers {
+            if self.peers.len() >= self.max_tracked_peers
+                && !(self.connected_peers.contains(peer_id) && self.evict_stalest_penalty())
+            {
+                warn!(
+                    "Peer score table full ({}), refusing a record for {}",
+                    self.max_tracked_peers, peer_id
+                );
                 return None;
             }
         }
         Some(self.peers.entry(*peer_id).or_default())
+    }
+
+    /// Make room for a connected peer by dropping the least recently seen
+    /// unbanned, unconnected penalty record. A running ban is never dropped.
+    /// Connected peers are bounded by the connection limits, so this cannot
+    /// be driven faster than connections are admitted. Without it a table
+    /// full of fresh penalty records refuses to track a live peer, which
+    /// then can never complete its handshake.
+    fn evict_stalest_penalty(&mut self) -> bool {
+        let connected = &self.connected_peers;
+        let victim = self
+            .peers
+            .iter()
+            .filter(|(id, s)| !s.is_banned() && !connected.contains(*id))
+            .min_by_key(|(_, s)| s.last_seen)
+            .map(|(id, _)| *id);
+        match victim {
+            Some(id) => self.peers.remove(&id).is_some(),
+            None => false,
+        }
     }
 
     /// Reclaim records that carry nothing worth keeping.
@@ -1458,5 +1484,25 @@ mod tests {
             manager.check_rate_limit(&newcomer),
             "the table admits a new peer once the stale garbage is reclaimed"
         );
+    }
+
+    /// A connected peer must be able to handshake when the table is full of
+    /// fresh penalty records minted by short-lived ids.
+    #[test]
+    fn connected_peer_handshakes_when_table_is_full_of_fresh_penalties() {
+        let mut manager = PeerManager::new();
+        manager.max_tracked_peers = 4;
+        let banned = test_peer_id();
+        manager.ban_peer(&banned);
+        for _ in 0..3 {
+            manager.report_invalid_handshake(&test_peer_id());
+        }
+        assert_eq!(manager.tracked_peer_count(), 4);
+
+        let honest = test_peer_id();
+        assert!(manager.note_connected(honest, None));
+        manager.set_handshaked(&honest, true);
+        assert!(manager.is_handshaked(&honest));
+        assert!(manager.is_banned(&banned), "a running ban must survive");
     }
 }
