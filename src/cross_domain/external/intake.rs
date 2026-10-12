@@ -274,7 +274,14 @@ pub enum IntakeError {
          AcceptMostCommon is never for a state root that will be committed to"
     )]
     PermissiveQuorumPolicy,
+    #[error("the quorum policy cannot decide safely: {reason}")]
+    InvalidQuorumPolicy { reason: &'static str },
 }
+
+/// The most seats one quorum round may hold. Rounds are consensus state and
+/// are digested on every call, so the seat count must have a bound the
+/// operator cannot lift.
+pub const MAX_QUORUM_PARTICIPANTS: usize = 256;
 
 impl IntakeState {
     #[must_use]
@@ -539,6 +546,37 @@ impl IntakeState {
             )
         {
             return Err(IntakeError::PermissiveQuorumPolicy);
+        }
+        if policy.agreement_threshold == 0 {
+            return Err(IntakeError::InvalidQuorumPolicy {
+                reason: "the agreement threshold is zero",
+            });
+        }
+        if policy.agreement_threshold > policy.max_participants {
+            return Err(IntakeError::InvalidQuorumPolicy {
+                reason: "the threshold is above the number of seats",
+            });
+        }
+        if policy.max_participants > MAX_QUORUM_PARTICIPANTS {
+            return Err(IntakeError::InvalidQuorumPolicy {
+                reason: "too many seats",
+            });
+        }
+        // A threshold at or below half of the seats lets two rival groups
+        // both reach it, so the first group to fill wins a race.
+        if policy.agreement_threshold <= policy.max_participants / 2 {
+            return Err(IntakeError::InvalidQuorumPolicy {
+                reason: "the threshold is not a strict majority of the seats",
+            });
+        }
+        let bonded = self
+            .registry
+            .domain(key)
+            .map_or(0, |reg| reg.provers.len());
+        if policy.agreement_threshold > bonded {
+            return Err(IntakeError::InvalidQuorumPolicy {
+                reason: "fewer provers are bonded than the threshold needs",
+            });
         }
         self.quorum.set_policy(*key, policy);
         Ok(())
@@ -1001,6 +1039,38 @@ mod tests {
         policy.low_participants = LowParticipantsBehavior::AcceptMostCommon;
         let err = state.set_quorum_policy(&key, policy).unwrap_err();
         assert!(matches!(err, IntakeError::PermissiveQuorumPolicy));
+    }
+
+    #[test]
+    fn a_quorum_policy_that_cannot_decide_safely_is_refused() {
+        use crate::cross_domain::external::QuorumPolicy;
+        let mut state = IntakeState::new();
+        let key = register(&mut state);
+        for prover in [addr(2), addr(3)] {
+            state
+                .bond_prover(&key, prover, economics_bond())
+                .expect("bond");
+        }
+        let cases = [
+            QuorumPolicy::strict(0, 3),
+            QuorumPolicy::strict(4, 3),
+            QuorumPolicy::strict(2, 0),
+            QuorumPolicy::strict(1, 3),
+            QuorumPolicy::strict(2, 4),
+            QuorumPolicy::strict(3, MAX_QUORUM_PARTICIPANTS + 1),
+            // Three bonded provers, threshold four.
+            QuorumPolicy::strict(4, 5),
+        ];
+        for policy in cases {
+            let err = state.set_quorum_policy(&key, policy).unwrap_err();
+            assert!(
+                matches!(err, IntakeError::InvalidQuorumPolicy { .. }),
+                "policy {policy:?} must be refused, got: {err:?}"
+            );
+        }
+        state
+            .set_quorum_policy(&key, QuorumPolicy::strict(2, 3))
+            .expect("a strict majority with enough bonded provers installs");
     }
 
     #[test]
