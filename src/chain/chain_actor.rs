@@ -2931,11 +2931,14 @@ impl ChainHandle {
 /// feature being used, not to running a node. The first request after a new
 /// block pays; every later request at that height is a tree walk.
 ///
-/// `height` is what makes the cache honest. State only changes with a block,
-/// so a trie tagged with the height it was built at is either current or
-/// discarded - it can never serve a proof for state that has moved on.
+/// `leaves` is what makes the cache honest. Balances change outside blocks
+/// (faucet, bond debit and refund) and an equal length reorg swaps state at
+/// the same chain length, so the chain length cannot tag the trie. The trie
+/// keeps the exact (address, balance, nonce) list it was built from. A hit
+/// needs the live accounts to match that list, so a stale trie is never used.
+/// The compare is one pass over the accounts and is far cheaper than a build.
 struct ProofTrieCache {
-    height: u64,
+    leaves: Vec<([u8; 32], u64, u64)>,
     trie: crate::storage::merkle_trie::MerkleTrie,
 }
 
@@ -2958,25 +2961,33 @@ impl ChainActor {
         )
     }
 
-    /// Proof for one account, reusing the trie built for this height.
+    /// Proof for one account, reusing the trie when the accounts did not change.
     ///
-    /// The cache is keyed by height and rebuilt when it does not match, so a
-    /// proof is always drawn against the state the chain is at. A stale trie
-    /// would produce a proof that verifies against its own root and describes
-    /// state that no longer exists - worse than no proof, because it is a
-    /// correct-looking answer to the wrong question.
+    /// The cache is keyed by the account contents and rebuilt when they do not
+    /// match, so a proof is always drawn against the state the node holds. A
+    /// stale trie would produce a proof that verifies against its own root and
+    /// describes state that no longer exists - worse than no proof, because it
+    /// is a correct-looking answer to the wrong question.
     fn account_proof(&mut self, addr: &Address) -> crate::storage::merkle_trie::AccountProofBundle {
-        let height = self.blockchain.chain.len() as u64;
-        let stale = self
-            .proof_trie
-            .as_ref()
-            .is_none_or(|cached| cached.height != height);
-        if stale {
+        let accounts = &self.blockchain.state.accounts;
+        let fresh = self.proof_trie.as_ref().is_some_and(|cached| {
+            cached.leaves.len() == accounts.len()
+                && cached
+                    .leaves
+                    .iter()
+                    .zip(accounts.iter())
+                    .all(|(l, (a, acct))| l.0 == a.0 && l.1 == acct.balance && l.2 == acct.nonce)
+        });
+        if !fresh {
+            let leaves: Vec<([u8; 32], u64, u64)> = accounts
+                .iter()
+                .map(|(a, acct)| (a.0, acct.balance, acct.nonce))
+                .collect();
             let mut trie = crate::storage::merkle_trie::MerkleTrie::new();
-            for (a, acct) in &self.blockchain.state.accounts {
-                trie.insert(&a.0, acct.balance, acct.nonce);
+            for (a, balance, nonce) in &leaves {
+                trie.insert(a, *balance, *nonce);
             }
-            self.proof_trie = Some(ProofTrieCache { height, trie });
+            self.proof_trie = Some(ProofTrieCache { leaves, trie });
         }
         match self.proof_trie.as_ref() {
             Some(cached) => crate::storage::merkle_trie::prove_from_trie(&cached.trie, &addr.0),
@@ -5036,5 +5047,27 @@ impl ChainActor {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod proof_cache_tests {
+    use super::*;
+    use crate::consensus::pow::PoWEngine;
+    use std::sync::Arc;
+
+    #[test]
+    fn account_proof_follows_balance_change_at_equal_chain_length() {
+        let bc = Blockchain::new(Arc::new(PoWEngine::new(0)), None, 45262, None);
+        let (mut actor, _handle) = ChainActor::new(bc);
+        let who = Address([7u8; 32]);
+        actor.blockchain.state.add_balance(&who, 100);
+        let before = actor.account_proof(&who);
+        assert_eq!(before.balance, 100);
+        // No block is added: the chain length stays the same.
+        actor.blockchain.state.add_balance(&who, 50);
+        let after = actor.account_proof(&who);
+        assert_eq!(after.balance, 150);
+        assert_ne!(before.root, after.root);
     }
 }
