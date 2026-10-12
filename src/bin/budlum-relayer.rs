@@ -586,6 +586,7 @@ async fn run_eth_to_bud_loop(config: RelayerConfig) -> Result<(), String> {
         }
     };
 
+    let mut window_attempts: u32 = 0;
     loop {
         interval.tick().await;
         // 1. Get latest finalized block (N-conf)
@@ -613,10 +614,12 @@ async fn run_eth_to_bud_loop(config: RelayerConfig) -> Result<(), String> {
         };
         if deposits.is_empty() {
             last_block = to;
+            window_attempts = 0;
             continue;
         }
         eprintln!("EthToBud: found {} deposit event(s)", deposits.len());
 
+        let mut window_failed = false;
         for dep in deposits {
             // 3. Build proof
             let proof_json = match eth_client.build_deposit_proof(&dep).await {
@@ -626,6 +629,7 @@ async fn run_eth_to_bud_loop(config: RelayerConfig) -> Result<(), String> {
                         "EthToBud: build_deposit_proof failed for {}: {e}",
                         dep.tx_hash
                     );
+                    window_failed = true;
                     continue;
                 }
             };
@@ -660,10 +664,42 @@ async fn run_eth_to_bud_loop(config: RelayerConfig) -> Result<(), String> {
                         "EthToBud: submit_relay_proof failed for {}: {e}",
                         dep.tx_hash
                     );
+                    window_failed = true;
                 }
             }
         }
-        last_block = to;
+        let (next_last, next_attempts) =
+            advance_cursor(last_block, to, window_failed, window_attempts);
+        if window_failed && next_last == to {
+            eprintln!(
+                "EthToBud: window {from}..{to} failed {MAX_WINDOW_ATTEMPTS} times; \
+                 skipping it, its deposits are NOT relayed"
+            );
+        }
+        last_block = next_last;
+        window_attempts = next_attempts;
+    }
+}
+
+/// How many times one scan window is retried before it is skipped.
+const MAX_WINDOW_ATTEMPTS: u32 = 5;
+
+/// The scan cursor after one window.
+///
+/// A window with a failed deposit is scanned again on the next tick, so a
+/// transient proof or submit error does not drop the deposit for good. After
+/// `MAX_WINDOW_ATTEMPTS` failures the window is skipped, so one permanently
+/// bad deposit cannot stall the loop. Returns the new cursor and the failed
+/// attempts so far on the current window.
+fn advance_cursor(last_block: u64, to: u64, window_failed: bool, attempts: u32) -> (u64, u32) {
+    if !window_failed {
+        return (to, 0);
+    }
+    let attempts = attempts.saturating_add(1);
+    if attempts >= MAX_WINDOW_ATTEMPTS {
+        (to, 0)
+    } else {
+        (last_block, attempts)
     }
 }
 
@@ -879,7 +915,22 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{block_by_number_params, burn_hashes_from_block, parse_hex_height, STATUS_NOTICE};
+    use super::{
+        advance_cursor, block_by_number_params, burn_hashes_from_block, parse_hex_height,
+        MAX_WINDOW_ATTEMPTS, STATUS_NOTICE,
+    };
+
+    /// A failed window is retried and only skipped after the attempt limit.
+    #[test]
+    fn a_failed_window_is_retried_before_it_is_skipped() {
+        assert_eq!(advance_cursor(10, 20, false, 3), (20, 0));
+        assert_eq!(advance_cursor(10, 20, true, 0), (10, 1));
+        assert_eq!(
+            advance_cursor(10, 20, true, MAX_WINDOW_ATTEMPTS - 2),
+            (10, MAX_WINDOW_ATTEMPTS - 1)
+        );
+        assert_eq!(advance_cursor(10, 20, true, MAX_WINDOW_ATTEMPTS - 1), (20, 0));
+    }
 
     /// The usage text must say that nothing is relayed yet.
     #[test]
