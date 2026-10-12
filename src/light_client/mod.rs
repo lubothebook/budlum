@@ -488,14 +488,15 @@ impl LightClient {
         if interval == 0 || self.trusted.height >= target_height {
             return None;
         }
-        let mut height = self.trusted.height.saturating_add(1);
-        while height <= target_height {
-            if height.is_multiple_of(interval) {
-                return Some(height);
-            }
-            height = height.saturating_add(1);
-        }
-        None
+        // Closed form: one division, not a walk of up to 2^64 heights.
+        let start = self.trusted.height.checked_add(1)?;
+        let rest = start % interval;
+        let next = if rest == 0 {
+            start
+        } else {
+            start.checked_add(interval - rest)?
+        };
+        (next <= target_height).then_some(next)
     }
 
     /// The wire requests a transport must issue from this anchor: a
@@ -921,6 +922,31 @@ mod tests {
             client.verify_checkpoint(&fork, &fork_cert, &snapshot),
             Err(LightClientError::HeaderChain(_))
         ));
+    }
+
+    /// The next checkpoint height is computed in closed form (audit P18-F08):
+    /// a huge target must not loop height by height.
+    #[test]
+    fn next_checkpoint_height_is_closed_form() {
+        let client = LightClient::new(TrustedCheckpoint {
+            height: 4,
+            block_hash: "0".repeat(64),
+            set_hash: "0".repeat(64),
+        })
+        .unwrap();
+        assert_eq!(client.next_checkpoint_height(10, u64::MAX), Some(10));
+        assert_eq!(client.next_checkpoint_height(5, 100), Some(5));
+        assert_eq!(client.next_checkpoint_height(10, 9), None);
+        assert_eq!(client.next_checkpoint_height(0, 100), None);
+        assert_eq!(client.next_checkpoint_height(1, 100), Some(5));
+        assert_eq!(client.next_checkpoint_height(u64::MAX, u64::MAX), Some(u64::MAX));
+        let top = LightClient::new(TrustedCheckpoint {
+            height: u64::MAX,
+            block_hash: "0".repeat(64),
+            set_hash: "0".repeat(64),
+        })
+        .unwrap();
+        assert_eq!(top.next_checkpoint_height(3, u64::MAX), None);
     }
 
     #[test]
