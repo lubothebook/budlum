@@ -837,6 +837,37 @@ mod tests {
         assert_eq!(vm.events, vec![200, 999]);
     }
 
+    /// P35-F02: `let b = a;` copies the value. A later write to `a` must not
+    /// change `b`, and a write to the loop bound must not move the bound.
+    #[test]
+    fn test_let_copies_value_and_loop_bound_is_snapshotted() {
+        let source = r#"
+            contract Alias {
+                fn f(a: u64) -> u64 {
+                    let b = a;
+                    a = a + 1;
+                    return b;
+                }
+
+                pub fn main() {
+                    let r = f(5);
+                    emit Result(r);
+                    let n = 3;
+                    let count = 0;
+                    for i in 0..n {
+                        n = n - 1;
+                        count = count + 1;
+                    }
+                    emit Result(count);
+                }
+            }
+        "#;
+        let bytecode = compile(source, IsaProfile::Production).expect("alias source compiles");
+        let mut vm = bud_vm::Vm::new(8192);
+        vm.run(&bytecode).expect("VM should run");
+        assert_eq!(vm.events, vec![5, 3]);
+    }
+
     /// The wildcard arm (`_`) is required for exhaustive matching
     /// (semantic-checked); the parser only requires syntactic
     /// Validity. Verifies the parser rejects patterns that are not

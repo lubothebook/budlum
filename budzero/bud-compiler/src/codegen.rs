@@ -213,7 +213,15 @@ impl Codegen {
                 // Own type; for an `Ident` it is the aliased variable's
                 // Recorded type; otherwise it is `None`.
                 let struct_type = self.expr_struct_type(expr, scope);
-                let reg = self.generate_expr(expr, scope, storage);
+                let mut reg = self.generate_expr(expr, scope, storage);
+                // A register below `saved_reg` belongs to another variable
+                // (`let b = a;`). Binding `b` to it would alias the two, so a
+                // later `b = ..` would also change `a`. Copy the value.
+                if reg < saved_reg {
+                    let copy = self.alloc_reg();
+                    self.emit(Opcode::Add, copy, reg, 0, 0);
+                    reg = copy;
+                }
                 scope.insert(name.clone(), VarInfo { reg, struct_type });
                 if reg >= saved_reg {
                     self.next_reg = reg + 1;
@@ -444,7 +452,15 @@ impl Codegen {
                 body,
             } => {
                 let start_reg = self.generate_expr(start, scope, storage);
-                let end_reg = self.generate_expr(end, scope, storage);
+                let mut end_reg = self.generate_expr(end, scope, storage);
+                // Snapshot the bound when it is a variable's own register, so
+                // an assignment in the body cannot move it (the IR lowering
+                // also evaluates the bound once).
+                if end_reg < saved_reg {
+                    let copy = self.alloc_reg();
+                    self.emit(Opcode::Add, copy, end_reg, 0, 0);
+                    end_reg = copy;
+                }
                 let loop_reg = self.alloc_reg();
                 self.emit(Opcode::Add, loop_reg, start_reg, 0, 0);
                 self.next_reg = loop_reg + 1; // loop var is kept!
