@@ -32,6 +32,24 @@ impl ActivationArg {
             ActivationArg::Full => bud_isa::MainnetActivation::full(),
         }
     }
+
+    /// The activation state a signed relay report may be made under.
+    ///
+    /// The signed payload does not record the activation state. A report made
+    /// under `full` would be byte-compatible with one made under the closed
+    /// default, so a reader could not tell that a program the production
+    /// verifier refuses had been accepted. Only the closed state is allowed.
+    fn relay_state(self) -> Result<bud_isa::MainnetActivation, String> {
+        match self {
+            ActivationArg::Default => Ok(self.state()),
+            ActivationArg::Full => Err(
+                "relay refuses --activation full: the signed report does not record the \
+                 activation state, so it could not be told from a report made under the \
+                 closed default"
+                    .to_string(),
+            ),
+        }
+    }
 }
 
 #[derive(Parser)]
@@ -1018,7 +1036,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 payload_out: payload_out.as_deref(),
                 reexecute: *reexecute,
                 spent_set: spent_set.as_deref(),
-                activation: cli.activation.state(),
+                activation: cli.activation.relay_state()?,
             };
             let line = write_signed_relay_report(&req)?;
             println!("{line}");
@@ -1117,6 +1135,18 @@ mod tests {
         );
 
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn relay_refuses_the_open_activation_state() {
+        assert_eq!(
+            ActivationArg::Default.relay_state().unwrap(),
+            bud_isa::MainnetActivation::default()
+        );
+        let err = ActivationArg::Full
+            .relay_state()
+            .expect_err("a signed report under the open state must be refused");
+        assert!(err.contains("does not record"), "{err}");
     }
 
     /// The relay's argument set has to parse, and `--output` has to default:
