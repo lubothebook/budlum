@@ -134,11 +134,16 @@ impl DualWallet {
             pq_seed: pq,
         }
     }
+    /// The address commits to the PUBLIC keys, so a verifier holding the keys can recompute it.
+    pub fn address_from_pubkeys(ed_pk: &[u8], pq_pk: &[u8]) -> [u8; 32] {
+        Sha3Hasher::hash_fields(&[b"BUD_DUAL_ADDR_V1", ed_pk, pq_pk])
+    }
     pub fn address(&self) -> [u8; 32] {
-        let mut h = Sha3_256::new();
-        h.update(self.ed_seed);
-        h.update(self.pq_seed);
-        h.finalize().into()
+        let ed_pk = ed25519_dalek::SigningKey::from_bytes(&self.ed_seed).verifying_key();
+        let pq_sk = ml_dsa::SigningKey::<ml_dsa::MlDsa87>::from_seed(&self.pq_seed.into());
+        let pq_vk: &ml_dsa::VerifyingKey<ml_dsa::MlDsa87> = pq_sk.as_ref();
+        let pq_pk: Vec<u8> = pq_vk.encode().into_iter().collect();
+        Self::address_from_pubkeys(ed_pk.as_bytes(), &pq_pk)
     }
     pub fn has_dual(&self) -> bool {
         true
@@ -338,6 +343,18 @@ mod tests {
         assert!(w.has_dual());
         let addr = w.address();
         assert_ne!(addr, [0u8; 32]);
+        // the address is a function of the public keys: a verifier can recompute it
+        let ed_pk = ed25519_dalek::SigningKey::from_bytes(&w.ed_seed).verifying_key();
+        let pq_sk = ml_dsa::SigningKey::<ml_dsa::MlDsa87>::from_seed(&w.pq_seed.into());
+        let pq_vk: &ml_dsa::VerifyingKey<ml_dsa::MlDsa87> = pq_sk.as_ref();
+        let pq_pk: Vec<u8> = pq_vk.encode().into_iter().collect();
+        assert_eq!(addr, DualWallet::address_from_pubkeys(ed_pk.as_bytes(), &pq_pk));
+        // the old construction hashed the secret seeds; it must differ
+        let mut old = Sha3_256::new();
+        old.update(w.ed_seed);
+        old.update(w.pq_seed);
+        let old: [u8; 32] = old.finalize().into();
+        assert_ne!(addr, old);
     }
     #[test]
     fn device_10dk() {
