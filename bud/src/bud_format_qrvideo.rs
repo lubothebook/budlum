@@ -218,23 +218,26 @@ pub fn zstd_decompress(data: &[u8]) -> Option<Vec<u8>> {
 /// THE DECODER (spec section 4): a drop stream -> the original body.
 /// Peeling + GF(2) elimination - "peeling alone IS NOT ENOUGH" (Finding-5:
 /// k=3, 11 correct drops, the single lost degree-1 drop -> pure peeling stalled).
-/// If the rank is insufficient it returns None - it NEVER produces wrong data.
+/// If the rank is insufficient it returns None. If the assembled body does not
+/// match the expected digest it returns None too, so it never returns wrong data.
 pub struct KaruselDecoder {
     k: usize,
     total_len: usize,
+    expected_digest: [u8; 32],
     solved: Vec<Option<Vec<u8>>>,
     solved_count: usize,
     pending: Vec<(Vec<usize>, Vec<u8>)>,
 }
 
 impl KaruselDecoder {
-    pub fn new(k: usize, total_len: usize) -> Option<Self> {
+    pub fn new(k: usize, total_len: usize, expected_digest: [u8; 32]) -> Option<Self> {
         if k == 0 || k > 65_535 || total_len == 0 || total_len > k * BLOCK {
             return None;
         }
         Some(Self {
             k,
             total_len,
+            expected_digest,
             solved: vec![None; k],
             solved_count: 0,
             pending: Vec::new(),
@@ -381,6 +384,10 @@ impl KaruselDecoder {
                 break;
             }
         }
+        // End-to-end check: one wrong payload byte in any frame ends here.
+        if body_digest(&out) != self.expected_digest {
+            return None;
+        }
         Some(out)
     }
 }
@@ -397,6 +404,15 @@ pub fn derivative_growth(derived_len: usize, original_len: usize) -> f64 {
         return 1.0;
     }
     derived_len as f64 / original_len as f64
+}
+
+/// The digest of a carousel body. The decoder compares it after assembly.
+fn body_digest(body: &[u8]) -> [u8; 32] {
+    let mut h = Sha3_256::new();
+    h.update(b"BDLM_QRV_BODY_V1");
+    h.update((body.len() as u64).to_le_bytes());
+    h.update(body);
+    h.finalize().into()
 }
 
 pub fn qrv_digest(derived: &[u8]) -> [u8; 32] {
@@ -492,7 +508,7 @@ mod tests {
         // Spec section 4 closure: produce -> frames -> decoder -> byte-equal
         let data: Vec<u8> = (0u8..=255).cycle().take(13 * BLOCK + 77).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len()).unwrap();
+        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
         // The systematic turn only (a lossless channel): it must finish in k frames
         for i in 0..k.k {
             let (seq, b) = k.systematic_drop(i).unwrap();
@@ -511,7 +527,7 @@ mod tests {
         // 30% systematic frame loss -> the repair drops close it (the K1 pattern)
         let data: Vec<u8> = (7u8..=200).cycle().take(11 * BLOCK).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len()).unwrap();
+        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
         for i in 0..k.k {
             if i % 3 == 0 {
                 continue; // every 3rd frame is lost
@@ -539,7 +555,7 @@ mod tests {
         // NEGATIVE CANARY: k/2 drops -> assemble returns None (never wrong data)
         let data: Vec<u8> = (1u8..=100).cycle().take(10 * BLOCK).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len()).unwrap();
+        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
         for i in 0..k.k / 2 {
             let (seq, b) = k.systematic_drop(i).unwrap();
             dec.add_frame(&k.pack(seq, 0, 0, &b).unwrap());
@@ -554,7 +570,7 @@ mod tests {
     fn decoder_drops_a_corrupt_frame_silently() {
         let data: Vec<u8> = (3u8..=90).cycle().take(5 * BLOCK).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len()).unwrap();
+        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
         // Corrupt magic -> refused
         assert!(!dec.add_frame(b"XXXXXXXXXXXXXXXXXXXXXXXX"));
         // Inconsistent length -> refused
@@ -563,6 +579,23 @@ mod tests {
         fr.truncate(fr.len() - 3);
         assert!(!dec.add_frame(&fr));
         assert_eq!(dec.solved_count, 0, "a corrupt frame solves no block");
+    }
+
+    #[test]
+    fn decoder_refuses_a_poisoned_payload() {
+        // One wrong payload byte in a systematic frame must not give a wrong body.
+        let data: Vec<u8> = (3u8..=90).cycle().take(5 * BLOCK).collect();
+        let k = Karusel::new(&data).unwrap();
+        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
+        for i in 0..k.k {
+            let (seq, mut b) = k.systematic_drop(i).unwrap();
+            if i == 2 {
+                b[17] ^= 0x40;
+            }
+            assert!(dec.add_frame(&k.pack(seq, 0, 0, &b).unwrap()));
+        }
+        assert!(dec.is_complete());
+        assert!(dec.assemble().is_none(), "a poisoned body must be refused");
     }
 
     #[test]
