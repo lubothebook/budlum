@@ -5455,6 +5455,15 @@ impl Blockchain {
 
         let new_state = self.validate_candidate_chain(&new_chain)?;
 
+        // Replay the new fork the way it will be persisted, BEFORE anything
+        // changes. A state root mismatch here (for example the PoA stamp
+        // mismatch) now refuses the reorg while memory and disk still agree,
+        // instead of leaving memory on the new chain and disk on neither
+        // fork (BLG-0182). Only a real disk error can still fail later.
+        if self.storage.is_some() {
+            self.replay_reorg_blocks(&new_chain, fork_point, |_, _| Ok(()))?;
+        }
+
         info!("Reorg: replacing {reorg_depth} blocks from height {fork_point}");
 
         let old_chain = self.chain.clone();
@@ -5592,35 +5601,9 @@ impl Blockchain {
                     let _ = store.delete_tx_index(&tx.hash);
                 }
             }
-            let mut current_state = if fork_point > 0 {
-                Blockchain::rebuild_state(&self.chain[..fork_point], &self.genesis_config)?
-            } else {
-                AccountState::new()
-            };
-            // The rebuild starts from a fresh state; carry the engine's
-            // domain over before re-executing blocks, or a reorg after an
-            // identity write would replay it as a refusal and fork the node
-            // off its own chain.
-            current_state.execution_domain = self.consensus.domain_kind();
-            for block in &self.chain[fork_point..] {
-                current_state = Self::apply_block_effects(
-                    &current_state,
-                    block,
-                    &self.chain[..block.index as usize],
-                )?;
-                Self::apply_block_end_roots(
-                    &mut current_state,
-                    &self.chain[..block.index as usize],
-                    self.chain_id,
-                );
-                if current_state.calculate_state_root() != block.state_root {
-                    return Err(format!(
-                        "Reorg persistence state root mismatch at block {}",
-                        block.index
-                    ));
-                }
-                self.commit_block_durable(block, &current_state)?;
-            }
+            self.replay_reorg_blocks(&self.chain, fork_point, |block, committed| {
+                self.commit_block_durable(block, committed)
+            })?;
             if let Some(last) = self.chain.last() {
                 if let Err(e) = store.save_last_hash(&last.hash) {
                     tracing::error!(error = %e, "Failed to persist last_hash after reorg");
@@ -5634,6 +5617,66 @@ impl Blockchain {
         }
         self.mempool.set_min_fee(self.state.base_fee);
         Ok(true)
+    }
+
+    /// Replays `chain[fork_point..]` on the state at the fork point, checks
+    /// every state root and hands each block with its committed state to
+    /// `on_block`. Returns the validator set of every epoch the replay went
+    /// through. It reads `self` only, so it can run before a reorg changes
+    /// anything.
+    fn replay_reorg_blocks<F>(
+        &self,
+        chain: &[Block],
+        fork_point: usize,
+        mut on_block: F,
+    ) -> Result<BTreeMap<u64, ValidatorSetSnapshot>, String>
+    where
+        F: FnMut(&Block, &AccountState) -> Result<(), String>,
+    {
+        let mut current_state = if fork_point > 0 {
+            Blockchain::rebuild_state(&chain[..fork_point], &self.genesis_config)?
+        } else {
+            AccountState::new()
+        };
+        // The rebuild starts from a fresh state; carry the engine's
+        // domain over before re-executing blocks, or a reorg after an
+        // identity write would replay it as a refusal and fork the node
+        // off its own chain.
+        current_state.execution_domain = self.consensus.domain_kind();
+        let mut snapshots = BTreeMap::new();
+        snapshots.insert(
+            current_state.epoch_index,
+            Self::build_validator_snapshot_from_state(
+                current_state.epoch_index,
+                &current_state,
+                self.chain_id,
+            ),
+        );
+        for block in &chain[fork_point..] {
+            current_state =
+                Self::apply_block_effects(&current_state, block, &chain[..block.index as usize])?;
+            Self::apply_block_end_roots(
+                &mut current_state,
+                &chain[..block.index as usize],
+                self.chain_id,
+            );
+            if current_state.calculate_state_root() != block.state_root {
+                return Err(format!(
+                    "Reorg persistence state root mismatch at block {}",
+                    block.index
+                ));
+            }
+            snapshots.insert(
+                current_state.epoch_index,
+                Self::build_validator_snapshot_from_state(
+                    current_state.epoch_index,
+                    &current_state,
+                    self.chain_id,
+                ),
+            );
+            on_block(block, &current_state)?;
+        }
+        Ok(snapshots)
     }
 
     pub fn get_state_root(&self, height: u64) -> Option<String> {
@@ -8967,6 +9010,36 @@ mod bond_and_reorg_tests {
 
         let error = left.try_reorg(right.chain).unwrap_err();
         assert!(error.contains("at or below finalized height"));
+    }
+
+    /// BLG-0182: the persistence replay of a reorg runs before anything changes.
+    /// A block with a wrong state root is refused and the callback never sees it.
+    #[test]
+    fn reorg_replay_refuses_a_wrong_state_root_without_touching_the_chain() {
+        let (left, right) = build_divergent_pow_chains();
+        let fork_point = left.find_fork_point(&right.chain).unwrap();
+        let mut calls = 0usize;
+        left.replay_reorg_blocks(&right.chain, fork_point, |_, _| {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(calls, right.chain.len() - fork_point);
+
+        let mut tampered = right.chain.clone();
+        let last = tampered.len() - 1;
+        tampered[last].state_root = "00".repeat(32);
+        let chain_before = left.chain.clone();
+        let mut seen = 0usize;
+        let error = left
+            .replay_reorg_blocks(&tampered, fork_point, |_, _| {
+                seen += 1;
+                Ok(())
+            })
+            .unwrap_err();
+        assert!(error.contains("state root mismatch"), "unexpected: {error}");
+        assert_eq!(seen, last - fork_point);
+        assert_eq!(left.chain, chain_before);
     }
 
     #[test]
