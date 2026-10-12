@@ -242,6 +242,7 @@ fn parse_address(s: &str) -> Result<Address, String> {
 /// `BUD_PRIV_KEY` environment variable, in that order, never from `argv`.
 fn load_priv_key(path: Option<&std::path::Path>) -> Result<String, String> {
     if let Some(path) = path {
+        check_key_file_mode(path)?;
         return std::fs::read_to_string(path)
             .map(|s| s.trim().to_string())
             .map_err(|e| format!("cannot read priv key file {}: {e}", path.display()));
@@ -252,6 +253,31 @@ fn load_priv_key(path: Option<&std::path::Path>) -> Result<String, String> {
              (the seed is not accepted as a command-line argument)",
         )
     })
+}
+
+/// Refuse a seed file that group or others can read (Unix only).
+///
+/// A world-readable seed file is a leaked key; the user must `chmod 600` it.
+#[cfg(unix)]
+fn check_key_file_mode(path: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let meta = std::fs::metadata(path)
+        .map_err(|e| format!("cannot read priv key file {}: {e}", path.display()))?;
+    let mode = meta.permissions().mode();
+    if mode & 0o077 != 0 {
+        return Err(format!(
+            "priv key file {} has mode {:03o}; group and others must have no access \
+             (chmod 600)",
+            path.display(),
+            mode & 0o777
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn check_key_file_mode(_path: &std::path::Path) -> Result<(), String> {
+    Ok(())
 }
 
 fn parse_seed(hex_str: &str) -> Result<[u8; 32], String> {
@@ -550,6 +576,21 @@ mod tests {
         let (host, port) = parse_rpc_url("http://127.0.0.1").unwrap();
         assert_eq!(host, "127.0.0.1");
         assert_eq!(port, 8545);
+    }
+
+    /// A seed file readable by group or others is refused.
+    #[cfg(unix)]
+    #[test]
+    fn a_world_readable_key_file_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join(format!("bud-key-mode-{}", std::process::id()));
+        std::fs::write(&path, "00").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let err = check_key_file_mode(&path).expect_err("mode 644 must be refused");
+        assert!(err.contains("chmod 600"), "{err}");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(check_key_file_mode(&path).is_ok());
+        std::fs::remove_file(&path).ok();
     }
 
     /// The transfer carries the chain id it was given, not the devnet default.
