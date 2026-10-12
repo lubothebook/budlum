@@ -1981,12 +1981,22 @@ impl TryFrom<pb::ProtoNetworkMessage> for NetworkMessage {
             pb::proto_network_message::Payload::Transaction(t) => {
                 Ok(NetworkMessage::Transaction(Transaction::try_from(t)?))
             }
-            pb::proto_network_message::Payload::GetHeaders(h) => Ok(NetworkMessage::GetHeaders {
-                locator: h.locator,
-                limit: h.limit,
-            }),
+            pb::proto_network_message::Payload::GetHeaders(h) => {
+                if h.locator.len() > crate::network::protocol::MAX_HEADER_LOCATOR_HASHES {
+                    return Err("GetHeaders locator exceeds the limit".into());
+                }
+                Ok(NetworkMessage::GetHeaders {
+                    locator: h.locator,
+                    limit: h.limit,
+                })
+            }
             pb::proto_network_message::Payload::Headers(h) => {
-                let mut headers = Vec::new();
+                // Refuse before the second allocation pass: the count limit
+                // used to be applied only after every header was converted.
+                if h.headers.len() > crate::network::protocol::MAX_HEADERS_PER_REQUEST as usize {
+                    return Err("Headers message exceeds the header limit".into());
+                }
+                let mut headers = Vec::with_capacity(h.headers.len());
                 for header in h.headers {
                     headers.push(BlockHeader::try_from(header)?);
                 }
@@ -1999,7 +2009,10 @@ impl TryFrom<pb::ProtoNetworkMessage> for NetworkMessage {
                 })
             }
             pb::proto_network_message::Payload::Blocks(b) => {
-                let mut blocks = Vec::new();
+                if b.blocks.len() > crate::network::protocol::MAX_CHAIN_SYNC_BLOCKS {
+                    return Err("Blocks message exceeds the block limit".into());
+                }
+                let mut blocks = Vec::with_capacity(b.blocks.len());
                 for block in b.blocks {
                     blocks.push(Block::try_from(block)?);
                 }
@@ -2012,7 +2025,10 @@ impl TryFrom<pb::ProtoNetworkMessage> for NetworkMessage {
                 })
             }
             pb::proto_network_message::Payload::BlocksByHeight(b) => {
-                let mut blocks = Vec::new();
+                if b.blocks.len() > crate::network::protocol::MAX_CHAIN_SYNC_BLOCKS {
+                    return Err("BlocksByHeight message exceeds the block limit".into());
+                }
+                let mut blocks = Vec::with_capacity(b.blocks.len());
                 for block in b.blocks {
                     blocks.push(Block::try_from(block)?);
                 }
@@ -2129,6 +2145,34 @@ mod tests {
             Transaction::try_from(proto_tx).expect("Failed to decode proto transaction");
 
         assert_eq!(tx, decoded_tx);
+    }
+
+    #[test]
+    fn oversized_item_counts_are_refused_before_conversion() {
+        let headers = pb::ProtoNetworkMessage {
+            payload: Some(pb::proto_network_message::Payload::Headers(
+                pb::ProtoHeaders {
+                    headers: vec![
+                        pb::ProtoBlockHeader::default();
+                        crate::network::protocol::MAX_HEADERS_PER_REQUEST as usize + 1
+                    ],
+                },
+            )),
+        };
+        let err = NetworkMessage::try_from(headers).expect_err("too many headers");
+        assert!(err.contains("header limit"), "{err}");
+        let blocks = pb::ProtoNetworkMessage {
+            payload: Some(pb::proto_network_message::Payload::Blocks(
+                pb::ProtoBlocks {
+                    blocks: vec![
+                        pb::ProtoBlock::default();
+                        crate::network::protocol::MAX_CHAIN_SYNC_BLOCKS + 1
+                    ],
+                },
+            )),
+        };
+        let err = NetworkMessage::try_from(blocks).expect_err("too many blocks");
+        assert!(err.contains("block limit"), "{err}");
     }
 
     #[test]
