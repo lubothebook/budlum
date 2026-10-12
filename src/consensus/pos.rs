@@ -282,14 +282,6 @@ impl PoSEngine {
             .is_some_and(|block| block.index == height && block.hash == hash)
     }
 
-    pub fn is_before_checkpoint(&self, block: &Block) -> bool {
-        if let Ok(guard) = self.checkpoints.read() {
-            if let Some(last_cp) = guard.last() {
-                return block.index < last_cp.block_index;
-            }
-        }
-        false
-    }
     /// Derive epoch randomness from a canonical, already-established VRF
     /// Transcript. Epoch `E` consumes epoch `E-2`, giving the source transcript
     /// A full epoch to settle before it controls leader selection. Only verified
@@ -712,11 +704,11 @@ impl ConsensusEngine for PoSEngine {
                 )));
             }
         }
-        if self.is_before_checkpoint(block) {
-            return Err(ConsensusError(
-                "Block is before last checkpoint (possible long-range attack)".into(),
-            ));
-        }
+        // No "below the checkpoint" rejection here. `validate_block` also runs
+        // over a candidate chain from block 1 (`try_reorg`, `is_valid`), and
+        // every block of a chain that honours the checkpoint sits below it.
+        // The checkpoint is enforced where a chain is chosen:
+        // `chain_honours_checkpoint` in `is_better_chain`.
 
         let expected_epoch = block.index / self.epoch_length_checked()?;
         if block.epoch != expected_epoch {
@@ -1270,6 +1262,27 @@ mod tests {
         forged.signature = Some(vec![0u8; 64]);
         assert!(engine.observe_received_block(&forged).is_err());
         assert_eq!(engine.slashing_evidence.read().unwrap().len(), 1);
+    }
+
+    /// BLG-0010: a block below the local checkpoint is part of every candidate
+    /// chain that honours it. `validate_block` must not reject it for that
+    /// reason, or `try_reorg` and `is_valid` fail on block 1.
+    #[test]
+    fn validate_block_does_not_reject_blocks_below_the_checkpoint() {
+        let engine = PoSEngine::new(PoSConfig::default(), None);
+        engine
+            .add_checkpoint(&Block::new(10, "prev".into(), vec![]), None)
+            .unwrap();
+        let mut block = Block::new(5, "prev".into(), vec![]);
+        block.hash = block.calculate_hash();
+        let error = engine
+            .validate_block(&block, &[], &AccountState::new())
+            .unwrap_err();
+        assert!(
+            !error.0.contains("checkpoint"),
+            "unexpected checkpoint rejection: {}",
+            error.0
+        );
     }
 
     #[test]
