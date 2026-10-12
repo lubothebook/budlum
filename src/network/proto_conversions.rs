@@ -224,6 +224,12 @@ impl From<&Transaction> for pb::ProtoTransaction {
                             .map(|dims| dims.iter().map(|d| u32::from(*d)).collect())
                             .unwrap_or_default(),
                         modality_bits: spec.modalities.bits(),
+                        require_execution_proof: spec.require_execution_proof,
+                        execution_program_hash: spec
+                            .execution_program_hash
+                            .map(|d| d.to_vec())
+                            .unwrap_or_default(),
+                        execution_class: u32::from(spec.execution_class),
                     },
                 )),
             ),
@@ -1068,9 +1074,13 @@ impl TryFrom<pb::ProtoTransaction> for Transaction {
                         d.copy_from_slice(&payload.execution_weights_digest);
                         Some(d)
                     },
-                    require_execution_proof: false,
-                    execution_program_hash: None,
-                    execution_class: 0,
+                    require_execution_proof: payload.require_execution_proof,
+                    execution_program_hash: decode_optional_hash32(
+                        payload.execution_program_hash,
+                        "AiModelRegister execution_program_hash",
+                    )?,
+                    execution_class: u8::try_from(payload.execution_class)
+                        .map_err(|_| "AiModelRegister execution_class exceeds u8".to_string())?,
                     execution_dims: if payload.execution_dims.is_empty() {
                         None
                     } else {
@@ -2119,6 +2129,35 @@ mod tests {
             Transaction::try_from(proto_tx).expect("Failed to decode proto transaction");
 
         assert_eq!(tx, decoded_tx);
+    }
+
+    #[test]
+    fn ai_model_register_keeps_execution_fields_over_the_wire() {
+        let keypair = KeyPair::generate().unwrap();
+        let from = Address::from(keypair.public_key_bytes());
+        let spec = crate::ai::types::AiModelSpec {
+            model_id: crate::ai::types::AiModelId([1u8; 32]),
+            model_hash: [2u8; 32],
+            owner: from,
+            min_verifier_count: 3,
+            agreement_threshold: 2,
+            max_input_ref_bytes: 1024,
+            max_output_ref_bytes: 2048,
+            request_deadline_blocks: 100,
+            result_deadline_blocks: 50,
+            version: 1,
+            active: true,
+            require_execution_proof: true,
+            execution_program_hash: Some([9u8; 32]),
+            execution_class: 1,
+            execution_dims: Some(vec![4, 8, 2]),
+            execution_weights_digest: Some([7u8; 32]),
+            modalities: crate::ai_inference::perception::ModalitySet::text_only(),
+        };
+        let mut tx = Transaction::new_with_fee(from, Address::zero(), 0, 1, 1, vec![]);
+        tx.tx_type = TransactionType::AiModelRegister(spec);
+        let decoded = Transaction::try_from(pb::ProtoTransaction::from(&tx)).expect("decode");
+        assert_eq!(tx.tx_type, decoded.tx_type);
     }
 
     #[cfg(feature = "wallet-ml-dsa")]

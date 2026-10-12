@@ -312,6 +312,12 @@ message ProtoAiModelRegister {
     // a program hash it can compare but no program it can verify against.
     // Empty when the model does not register an execution class.
     repeated uint32 execution_dims = 13;
+    // These three are part of the signed preimage. Absent (false, empty, 0)
+    // reads as the default, so older encodings stay valid.
+    bool require_execution_proof = 15;
+    // Guest program hash, empty when not registered.
+    bytes execution_program_hash = 16;
+    uint32 execution_class = 17;
 }
 
 message ProtoAiInferenceRequest {
