@@ -284,6 +284,10 @@ impl BudFile {
             if total > Self::MAX_DECOMPRESSED_BYTES {
                 return Err("K-BUD-STREAM: total > 100MB (OOM)");
             }
+            // Never hand unverified bytes to the sink.
+            if hash(&chunk.data) != chunk.hash {
+                return Err("K-BUD-STREAM: chunk hash mismatch");
+            }
             sink(&chunk.data)?;
         }
         Ok(total)
@@ -348,9 +352,19 @@ impl BudFile {
             return Err("K-BUD: no chunks and no files");
         }
         if !self.chunks.is_empty() {
+            // v1 holds exactly one chunk. A second chunk would carry bytes that
+            // no hash covers, and decode returns the first chunk only.
+            if self.chunks.len() != 1 || self.header.chunk_count != 1 {
+                return Err("K-BUD: v1 holds exactly one chunk");
+            }
             let payload = &self.chunks[0].data;
             if hash(payload) != self.header.content_id {
                 return Err("K-BUD: content_id mismatch");
+            }
+            // The stored chunk hash is recomputed here, so the root below is
+            // the hash of the data and not a stored field.
+            if hash(payload) != self.chunks[0].hash {
+                return Err("K-BUD: chunk hash mismatch");
             }
             if self.merkle_root != self.chunks[0].hash {
                 return Err("K-BUD: merkle mismatch");
@@ -886,6 +900,45 @@ mod tests {
         assert!(f.to_bytes().len() < 3 * payload.len() + 300);
         let back = BudFile::from_bytes(&f.to_bytes()).unwrap();
         assert_eq!(back.decode().unwrap(), payload);
+    }
+    fn one_chunk_file() -> BudFile {
+        BudFile::encode(
+            b"abc",
+            BudFormatClass::Json,
+            "application/json",
+            0,
+            0,
+            3,
+            BudFlags::new(true, true, false, false, false, false),
+            b"abc".to_vec(),
+        )
+    }
+    #[test]
+    fn decode_rejects_unauthenticated_extra_chunk() {
+        let mut f = one_chunk_file();
+        assert!(f.decode().is_ok());
+        f.chunks.push(BudChunk {
+            hash: [9u8; 32],
+            data: b"smuggled".to_vec(),
+            parity_shards: vec![],
+        });
+        f.header.chunk_count = 2;
+        assert!(f.decode().is_err());
+        // The streaming path refuses the chunk whose hash does not match.
+        let mut seen = Vec::new();
+        let r = f.decode_streaming(|c| {
+            seen.extend_from_slice(c);
+            Ok(())
+        });
+        assert!(r.is_err());
+        assert!(!seen.windows(8).any(|w| w == b"smuggled"));
+    }
+    #[test]
+    fn decode_recomputes_the_chunk_hash() {
+        let mut f = one_chunk_file();
+        f.chunks[0].hash = [7u8; 32];
+        f.merkle_root = [7u8; 32];
+        assert!(f.decode().is_err());
     }
     #[test]
     fn generative_removed() {
