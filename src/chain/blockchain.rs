@@ -5460,9 +5460,11 @@ impl Blockchain {
         // mismatch) now refuses the reorg while memory and disk still agree,
         // instead of leaving memory on the new chain and disk on neither
         // fork (BLG-0182). Only a real disk error can still fail later.
-        if self.storage.is_some() {
-            self.replay_reorg_blocks(&new_chain, fork_point, |_, _| Ok(()))?;
-        }
+        let replayed_snapshots = if self.storage.is_some() {
+            Some(self.replay_reorg_blocks(&new_chain, fork_point, |_, _| Ok(()))?)
+        } else {
+            None
+        };
 
         info!("Reorg: replacing {reorg_depth} blocks from height {fork_point}");
 
@@ -5565,8 +5567,36 @@ impl Blockchain {
             }
         }
 
-        self.validator_snapshots.clear();
+        // Keep the sets of epochs the fork did not touch and add the sets the
+        // new fork went through, so past-epoch certificates and fault proofs
+        // stay verifiable after a reorg (BLG-0184). Without storage there is no
+        // replay, so only the current epoch is known.
+        let kept_snapshots: BTreeMap<u64, ValidatorSetSnapshot> = match &replayed_snapshots {
+            Some(replayed) => {
+                let first_replayed = replayed.keys().next().copied().unwrap_or(u64::MAX);
+                let mut merged: BTreeMap<u64, ValidatorSetSnapshot> = self
+                    .validator_snapshots
+                    .iter()
+                    .filter(|(epoch, _)| **epoch < first_replayed)
+                    .map(|(epoch, snapshot)| (*epoch, snapshot.clone()))
+                    .collect();
+                merged.extend(replayed.iter().map(|(e, s)| (*e, s.clone())));
+                merged
+            }
+            None => BTreeMap::new(),
+        };
+        self.validator_snapshots = kept_snapshots;
         self.record_validator_snapshot(self.state.epoch_index);
+        if let (Some(store), Some(replayed)) = (&self.storage, &replayed_snapshots) {
+            for (epoch, snapshot) in replayed {
+                if !self.validator_snapshots.contains_key(epoch) {
+                    continue;
+                }
+                if let Err(error) = store.save_validator_snapshot(*epoch, snapshot) {
+                    warn!("Failed to persist reorg validator snapshot for epoch {epoch}: {error}");
+                }
+            }
+        }
 
         // The candidate was required to preserve the actual finalized checkpoint.
         // Reorg must never silently downgrade finality to genesis.
@@ -9040,6 +9070,37 @@ mod bond_and_reorg_tests {
         assert!(error.contains("state root mismatch"), "unexpected: {error}");
         assert_eq!(seen, last - fork_point);
         assert_eq!(left.chain, chain_before);
+    }
+
+    /// BLG-0184: a reorg must keep the validator sets of the epochs it did not
+    /// touch, or past-epoch certificates are refused until restart.
+    #[test]
+    fn reorg_keeps_validator_snapshots_of_untouched_epochs() {
+        use crate::consensus::PoWEngine;
+        use std::sync::Arc;
+
+        let epoch_len = crate::core::chain_config::epoch_len_for_chain_id(45262);
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Storage::new(dir.path().join("left.db").to_str().unwrap()).unwrap();
+        let mut left = Blockchain::new(Arc::new(PoWEngine::new(0)), Some(storage), 45262, None);
+        let mut right = Blockchain::new(Arc::new(PoWEngine::new(0)), None, 45262, None);
+        let common_producer = Address::from([1u8; 32]);
+        for _ in 0..(epoch_len + 2) {
+            left.produce_block(common_producer).unwrap();
+            right.produce_block(common_producer).unwrap();
+        }
+        for _ in 0..2 {
+            left.produce_block(Address::from([2u8; 32])).unwrap();
+        }
+        for _ in 0..3 {
+            right.produce_block(Address::from([3u8; 32])).unwrap();
+        }
+        assert!(left.validator_snapshots.contains_key(&0));
+        assert!(left.try_reorg(right.chain).unwrap());
+        assert!(left.validator_snapshots.contains_key(&0));
+        assert!(left
+            .validator_snapshots
+            .contains_key(&left.state.epoch_index));
     }
 
     #[test]
