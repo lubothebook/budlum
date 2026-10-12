@@ -371,10 +371,39 @@ pub fn assert_consensus_ready_on_device(
     semantics: SemanticProfile,
 ) -> Result<ResidencyPlan, String> {
     assert_consensus_ready(cfg)?;
+    plan_on_device(cfg, shards, budget, semantics, true)
+}
+
+/// The device check for a bridge that stays local: the same prompt, residency
+/// and disk-budget checks as [`assert_consensus_ready_on_device`], without the
+/// determinism profile and without the streaming refusal. A streaming bridge
+/// serves locally, which is the point of the disk tier.
+///
+/// # Errors
+///
+/// A prompt or device-level refusal.
+pub fn plan_local_on_device(
+    cfg: &ServeConfig,
+    shards: &[WeightShard],
+    budget: DeviceBudget,
+    semantics: SemanticProfile,
+) -> Result<ResidencyPlan, String> {
+    plan_on_device(cfg, shards, budget, semantics, false)
+}
+
+/// The shared device check. `consensus` adds the refusal to stream from disk.
+fn plan_on_device(
+    cfg: &ServeConfig,
+    shards: &[WeightShard],
+    budget: DeviceBudget,
+    semantics: SemanticProfile,
+    consensus: bool,
+) -> Result<ResidencyPlan, String> {
     // A consensus operator serves the checked prompt or does not serve. Two
     // operators answering the same request from different instructions would
     // produce different bytes and never group, and the failure would look like
-    // a liveness problem rather than a configuration one.
+    // a liveness problem rather than a configuration one. A local operator is
+    // held to the same prompt: it is the text shown to the user.
     checked_system_prompt()?;
 
     let plan = match cfg.disk_budget_bytes {
@@ -395,7 +424,7 @@ pub fn assert_consensus_ready_on_device(
         ),
     })?;
 
-    if plan.streams_from_disk() {
+    if consensus && plan.streams_from_disk() {
         return Err(format!(
             "this device streams weights from disk ({} B on disk); that serves \
              locally but cannot join the consensus path",
