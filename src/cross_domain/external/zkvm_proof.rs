@@ -557,6 +557,7 @@ mod tests {
     /// digest is the only public input beyond the trace shape.
     fn honest_evidence(adapter: &ZkVmFinalityAdapter, program: Vec<u64>) -> RawConsensusEvidence {
         let mut vm = bud_vm::Vm::new(1024);
+        vm.context.block_height = 1;
         let receipt = vm.run_receipt(&program);
         assert!(receipt.success, "the test program must halt cleanly");
         let inputs = ExecutionPublicInputs {
@@ -573,7 +574,7 @@ mod tests {
             final_state_root: [0; 32],
             sender: vm.context.sender,
             nonce: vm.context.nonce,
-            block_height: 1,
+            block_height: vm.context.block_height,
             gas_limit: vm.gas_limit,
             gas_used: vm.gas_used,
             exit_code: 0,
