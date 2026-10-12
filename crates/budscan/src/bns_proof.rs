@@ -103,12 +103,15 @@ pub struct RegistryEntry {
 /// Evaluate a BNS resolution together with its proof.
 ///
 /// `expected_bns_root` is the value `AccountState` writes into the state root
-/// under the `bns_v1` tag.
+/// under the `bns_v1` tag, and `current_epoch` is the epoch of the header that
+/// root was read from. A proven entry is expired when its `expires_at` is not
+/// after that epoch, the same rule as `BnsRegistry::resolve`.
 #[must_use]
 pub fn evaluate(
     resolved: &ResolvedName,
     proof: &BnsInclusionProof,
     expected_bns_root: Option<[u8; 32]>,
+    current_epoch: u64,
 ) -> Evidence {
     let mut evidence = Evidence::new();
 
@@ -149,17 +152,26 @@ pub fn evaluate(
                 ));
                 return evidence;
             };
-            let found = entries.iter().any(|e| {
+            let found = entries.iter().find(|e| {
                 e.name == resolved.name
                     && e.owner == resolved.owner
                     && e.content_id == resolved.content_id
                     && e.storage_root == resolved.storage_root
             });
-            if !found {
+            let Some(entry) = found else {
                 evidence.push(Claim::new(
                     "bns-resolution",
                     Strength::Refused,
                     "the resolved record is not in the presented registry; the answer contradicts it",
+                ));
+                return evidence;
+            };
+            if entry.expires_at <= current_epoch {
+                evidence.push(Claim::new(
+                    "bns-resolution",
+                    Strength::Refused,
+                    "the proven entry has expired at the current epoch, whatever the resolver \
+                     reported, and an expired name binds to no content",
                 ));
                 return evidence;
             }
@@ -246,14 +258,14 @@ mod tests {
     fn an_expired_name_is_refused_before_any_proof_is_read() {
         let mut r = resolved();
         r.is_expired = true;
-        let e = evaluate(&r, &BnsInclusionProof::None, None);
+        let e = evaluate(&r, &BnsInclusionProof::None, None, 0);
         assert_eq!(e.weakest(), Strength::Refused);
         assert!(e.badge().contains("has expired"));
     }
 
     #[test]
     fn no_proof_is_a_claim_not_a_verification() {
-        let e = evaluate(&resolved(), &BnsInclusionProof::None, None);
+        let e = evaluate(&resolved(), &BnsInclusionProof::None, None, 0);
         assert_eq!(e.weakest(), Strength::RpcClaimOnly);
         assert!(e.badge().contains("a node can lie"));
     }
@@ -268,6 +280,7 @@ mod tests {
                 directions: vec![],
             },
             Some([0u8; 32]),
+            0,
         );
         assert_eq!(e.weakest(), Strength::RpcClaimOnly);
         assert!(e.badge().contains("not a Merkle tree"));
@@ -285,7 +298,7 @@ mod tests {
                 storage_root: None,
             }],
         };
-        let e = evaluate(&resolved(), &proof, Some([0u8; 32]));
+        let e = evaluate(&resolved(), &proof, Some([0u8; 32]), 0);
         assert_eq!(e.weakest(), Strength::Refused);
         assert!(e.badge().contains("contradicts it"));
     }
@@ -304,7 +317,7 @@ mod tests {
             base_cost: 100,
             entries,
         };
-        let e = evaluate(&resolved(), &proof, Some(root));
+        let e = evaluate(&resolved(), &proof, Some(root), 0);
         assert_eq!(e.weakest(), Strength::Verified);
     }
 
@@ -321,7 +334,7 @@ mod tests {
             base_cost: 100,
             entries,
         };
-        let e = evaluate(&resolved(), &proof, Some([0xFFu8; 32]));
+        let e = evaluate(&resolved(), &proof, Some([0xFFu8; 32]), 0);
         assert_eq!(e.weakest(), Strength::RpcClaimOnly);
         assert!(e.badge().contains("storage_root_height"), "{}", e.badge());
     }
@@ -364,7 +377,29 @@ mod tests {
             base_cost: 100,
             entries,
         };
-        let e = evaluate(&r, &proof, Some(root));
+        let e = evaluate(&r, &proof, Some(root), 0);
         assert_eq!(e.weakest(), Strength::Refused);
+    }
+
+    #[test]
+    fn a_lapsed_proven_entry_is_refused_even_if_the_resolver_says_live() {
+        let entries = vec![RegistryEntry {
+            name: String::from("ayaz.bud"),
+            owner: [1u8; 32],
+            expires_at: 10,
+            content_id: Some(ContentId([9u8; 32])),
+            storage_root: Some([9u8; 32]),
+        }];
+        let root = partial_registry_root(100, &entries);
+        let proof = BnsInclusionProof::Registry {
+            base_cost: 100,
+            entries,
+        };
+        // resolved() reports is_expired = false.
+        let e = evaluate(&resolved(), &proof, Some(root), 10);
+        assert_eq!(e.weakest(), Strength::Refused);
+        assert!(e.badge().contains("has expired"), "{}", e.badge());
+        let live = evaluate(&resolved(), &proof, Some(root), 9);
+        assert_eq!(live.weakest(), Strength::Verified);
     }
 }
