@@ -236,6 +236,12 @@ impl ConstitutionRegistry {
                 .parameters
                 .get(&key)
                 .ok_or_else(|| format!("missing hard constitution guardrail {key:?}"))?;
+            if parameter.key != key {
+                return Err(format!(
+                    "constitution guardrail {key:?} holds a parameter for {:?}",
+                    parameter.key
+                ));
+            }
             parameter.validate_value()?;
         }
         Ok(())
@@ -289,6 +295,22 @@ mod tests {
                 .clone(),
             ConstitutionValue::Bool(true)
         );
+    }
+
+    /// P20-F08: a guardrail slot must hold the parameter of its own key.
+    #[test]
+    fn p20_f08_guardrail_slot_with_foreign_parameter_is_rejected() {
+        let mut registry = ConstitutionRegistry::new();
+        registry.parameters.insert(
+            ConstitutionParameterKey::PoaIslandIsolation,
+            ConstitutionParameter::new(
+                ConstitutionParameterKey::MaxEmergencyHaltEpochs,
+                ConstitutionValue::U64(5),
+                0,
+                [0u8; 32],
+            ),
+        );
+        assert!(registry.assert_hard_guardrails().is_err());
     }
 
     #[test]
