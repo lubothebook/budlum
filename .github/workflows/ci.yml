@@ -1211,6 +1211,48 @@ jobs:
         if: always() && steps.rust.outcome == 'success'
         run: cargo run --release --manifest-path xtask/gates/Cargo.toml -- budscan-patchset
 
+  # ============================ Standalone crates: bpqs and note-packing ============================
+  standalone-crates:
+    # P58-F01: both crates carry their own lock file and are not members of the root
+    # package, so `cargo test --lib` at the root never runs their tests. Without this
+    # job a break in the note packing code or in the BPQS research line stays green.
+    name: Standalone crates (bpqs, note-packing)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: rust
+        name: Install Rust
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-12
+        with:
+          toolchain: "1.97.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: standalone-crates
+          workspaces: |
+            crates/bpqs
+            crates/note-packing
+      - name: Format (bpqs)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path crates/bpqs/Cargo.toml --all -- --check
+      - name: Format (note-packing)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path crates/note-packing/Cargo.toml --all -- --check
+      - name: Clippy (bpqs)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo clippy --manifest-path crates/bpqs/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (note-packing)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo clippy --manifest-path crates/note-packing/Cargo.toml --all-targets -- -D warnings
+      - name: Tests (bpqs)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo test --manifest-path crates/bpqs/Cargo.toml
+      - name: Tests (note-packing)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo test --manifest-path crates/note-packing/Cargo.toml
+
   # ============================  / Bolum 4 (BNS gate) ============================
       - name: Format
         if: always() && steps.rust.outcome == 'success'
