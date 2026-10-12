@@ -53,8 +53,16 @@ pub struct HybridTx {
     pub pq_pub_hash: [u8; 32],
 }
 impl HybridTx {
+    /// The commitment a transaction carries to its ML-DSA public key.
+    pub fn pq_pub_hash_of(pq_pk: &[u8]) -> [u8; 32] {
+        Sha3Hasher::hash_fields(&[b"BUD_PQ_PUB_HASH_V1", pq_pk])
+    }
     pub fn verify(&self, msg: &[u8], ed_pk: &[u8], pq_pk: &[u8]) -> bool {
-        use ed25519_dalek::{Signature as EdSig, Verifier as EdVerifier, VerifyingKey as EdVk};
+        use ed25519_dalek::{Signature as EdSig, VerifyingKey as EdVk};
+        // 0) The PQ key must be the one this transaction commits to.
+        if self.pq_pub_hash != Self::pq_pub_hash_of(pq_pk) {
+            return false;
+        }
         // 1) Verify the Ed25519 signature.
         let pk32: [u8; 32] = match ed_pk.try_into() {
             Ok(v) => v,
@@ -68,7 +76,7 @@ impl HybridTx {
             Ok(s) => s,
             Err(_) => return false,
         };
-        if vk.verify(msg, &ed_sig).is_err() {
+        if vk.verify_strict(msg, &ed_sig).is_err() {
             return false;
         }
         // 2) Verify the ML-DSA-87 signature (FIPS 204).
@@ -261,7 +269,7 @@ mod tests {
         let tx = HybridTx {
             ed_sig,
             pq_sig: pq_sig.clone(),
-            pq_pub_hash: [0u8; 32],
+            pq_pub_hash: HybridTx::pq_pub_hash_of(&pq_pk_bytes),
         };
         // the right input -> PASSES
         assert!(tx.verify(msg, ed_pk.as_bytes(), &pq_pk_bytes));
@@ -271,6 +279,19 @@ mod tests {
         let other_sk = ml_dsa::SigningKey::<ml_dsa::MlDsa87>::generate();
         let other_pk: Vec<u8> = other_sk.as_ref().encode().into_iter().collect();
         assert!(!tx.verify(msg, ed_pk.as_bytes(), &other_pk));
+        // a PQ key that does not match the committed hash -> REFUSED, even with a valid signature
+        let other_sk2 = ml_dsa::SigningKey::<ml_dsa::MlDsa87>::generate();
+        let other_pk2: Vec<u8> = other_sk2.as_ref().encode().into_iter().collect();
+        let other_sig: Vec<u8> = other_sk2.sign(msg).encode().into_iter().collect();
+        let swapped = HybridTx {
+            ed_sig,
+            pq_sig: other_sig,
+            pq_pub_hash: [0u8; 32],
+        };
+        assert!(
+            !swapped.verify(msg, ed_pk.as_bytes(), &other_pk2),
+            "a PQ key not bound by pq_pub_hash is REFUSED"
+        );
         // a tampered pq_sig byte -> REFUSED (K38)
         let mut bad_pq = pq_sig.clone();
         let mid = bad_pq.len() / 2;
@@ -278,7 +299,7 @@ mod tests {
         let bad_tx = HybridTx {
             ed_sig,
             pq_sig: bad_pq,
-            pq_pub_hash: [0u8; 32],
+            pq_pub_hash: HybridTx::pq_pub_hash_of(&pq_pk_bytes),
         };
         assert!(
             !bad_tx.verify(msg, ed_pk.as_bytes(), &pq_pk_bytes),
@@ -290,7 +311,7 @@ mod tests {
         let bad_ed_tx = HybridTx {
             ed_sig: bad_ed,
             pq_sig: pq_sig.clone(),
-            pq_pub_hash: [0u8; 32],
+            pq_pub_hash: HybridTx::pq_pub_hash_of(&pq_pk_bytes),
         };
         assert!(
             !bad_ed_tx.verify(msg, ed_pk.as_bytes(), &pq_pk_bytes),
