@@ -512,11 +512,16 @@ impl GovernanceState {
         }
 
         // Validate proposal duration
-        const MIN_PROPOSAL_DURATION: u64 = 10; // Minimum 10 epochs
         const MAX_PROPOSAL_DURATION: u64 = 100_000; // Maximum 100,000 epochs
-        if !(MIN_PROPOSAL_DURATION..=MAX_PROPOSAL_DURATION).contains(&duration) {
+        // Minimum 10 epochs. A constitution amendment must also respect the
+        // constitution's own MinConstitutionProposalEpochs (P20-F05).
+        let min_proposal_duration = match &p_type {
+            ProposalType::SetConstitutionParameter(_) => self.constitution.min_proposal_epochs(),
+            _ => 10,
+        };
+        if !(min_proposal_duration..=MAX_PROPOSAL_DURATION).contains(&duration) {
             return Err(format!(
-                "Proposal duration must be between {MIN_PROPOSAL_DURATION} and {MAX_PROPOSAL_DURATION} epochs"
+                "Proposal duration must be between {min_proposal_duration} and {MAX_PROPOSAL_DURATION} epochs"
             ));
         }
 
@@ -1034,6 +1039,36 @@ mod tests {
             actions,
             vec![GovernanceAction::SetConstitutionParameter(update)]
         );
+    }
+
+    /// P20-F05: the constitution's MinConstitutionProposalEpochs binds
+    /// constitution amendments instead of the hard coded 10.
+    #[test]
+    fn p20_f05_amendment_respects_min_constitution_proposal_epochs() {
+        let mut gov = GovernanceState::default();
+        let proposer = Address::from([0x01; 32]);
+        gov.constitution
+            .set_parameter(ConstitutionParameter::new(
+                ConstitutionParameterKey::MinConstitutionProposalEpochs,
+                ConstitutionValue::U64(50),
+                0,
+                [3u8; 32],
+            ))
+            .unwrap();
+        let amendment = || {
+            ProposalType::SetConstitutionParameter(ConstitutionParameter::new(
+                ConstitutionParameterKey::MaxEmergencyHaltEpochs,
+                ConstitutionValue::U64(720),
+                11,
+                [2u8; 32],
+            ))
+        };
+        assert!(gov.create_proposal(proposer, amendment(), 0, 10).is_err());
+        assert!(gov.create_proposal(proposer, amendment(), 0, 50).is_ok());
+        // Other proposal types keep the default minimum.
+        assert!(gov
+            .create_proposal(proposer, ProposalType::ChangeBaseFee(100), 0, 10)
+            .is_ok());
     }
 
     #[test]

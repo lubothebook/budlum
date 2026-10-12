@@ -209,6 +209,20 @@ impl ConstitutionRegistry {
         self.parameters.get(&key)
     }
 
+    /// Minimum voting duration for a constitution amendment, in epochs.
+    /// Falls back to the default of 10 when the entry is missing or not a
+    /// `U64` (a tampered snapshot), which is never lower than the default.
+    pub fn min_proposal_epochs(&self) -> u64 {
+        match self
+            .parameters
+            .get(&ConstitutionParameterKey::MinConstitutionProposalEpochs)
+            .map(|p| &p.value)
+        {
+            Some(ConstitutionValue::U64(epochs)) => (*epochs).max(10),
+            _ => 10,
+        }
+    }
+
     pub fn assert_hard_guardrails(&self) -> Result<(), String> {
         for key in [
             ConstitutionParameterKey::AiReadRequiresPollenGrant,
