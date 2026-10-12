@@ -505,19 +505,39 @@ pub fn run_relayer(config: &RelayerConfig) -> Result<(), String> {
             "bridge-address is placeholder (0x0); set real Ethereum bridge contract".into(),
         );
     }
-    if config.relayer_address == "0x0" || config.relayer_address.len() < 10 {
-        eprintln!("WARN: relayer-address is placeholder - permissionless gate will skip active check (devnet mode). Set real Budlum address for mainnet.");
+    if let Err(e) = validate_relayer_address(&config.relayer_address) {
+        // The submitting direction must name a real relayer. BudToEth submits
+        // nothing, so it only warns and its registry check reports "not active".
+        if config.direction == RelayDirection::EthToBud {
+            return Err(e);
+        }
+        eprintln!("WARN: {e}");
     }
 
     Ok(())
 }
 
+/// A relayer address is 32 bytes in hex, with an optional `0x` prefix.
+///
+/// The placeholder `0x0` (the default) and short values are refused. There is
+/// no devnet or mainnet switch in this binary, so no value may switch the
+/// registry check off.
+fn validate_relayer_address(address: &str) -> Result<(), String> {
+    let clean = address
+        .strip_prefix("0x")
+        .or_else(|| address.strip_prefix("0X"))
+        .unwrap_or(address);
+    if clean.len() == 64 && clean.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        Err(format!(
+            "relayer-address '{address}' is not a 32-byte hex Budlum address"
+        ))
+    }
+}
+
 /// Permissionless registration check - is relayer active?
 async fn check_relayer_active(budlum_client: &BudlumClient, config: &RelayerConfig) -> bool {
-    if config.relayer_address == "0x0" {
-        eprintln!("Devnet mode: relayer-address placeholder, skip active check (assume active).");
-        return true;
-    }
     match budlum_client
         .is_active_relayer(&config.relayer_address)
         .await
@@ -930,6 +950,30 @@ mod tests {
             (10, MAX_WINDOW_ATTEMPTS - 1)
         );
         assert_eq!(advance_cursor(10, 20, true, MAX_WINDOW_ATTEMPTS - 1), (20, 0));
+    }
+
+    #[test]
+    fn a_placeholder_relayer_address_is_refused() {
+        assert!(validate_relayer_address("0x0").is_err());
+        assert!(validate_relayer_address("0xab").is_err());
+        assert!(validate_relayer_address(&"g".repeat(64)).is_err());
+        assert!(validate_relayer_address(&format!("0x{}", "ab".repeat(32))).is_ok());
+        assert!(validate_relayer_address(&"AB".repeat(32)).is_ok());
+    }
+
+    #[test]
+    fn eth_to_bud_does_not_start_with_a_placeholder_relayer_address() {
+        let config = RelayerConfig {
+            bridge_address: format!("0x{}", "11".repeat(20)),
+            direction: RelayDirection::EthToBud,
+            ..RelayerConfig::default()
+        };
+        assert!(run_relayer(&config).is_err());
+        let ok = RelayerConfig {
+            relayer_address: format!("0x{}", "ab".repeat(32)),
+            ..config
+        };
+        assert!(run_relayer(&ok).is_ok());
     }
 
     /// The usage text must say that nothing is relayed yet.
