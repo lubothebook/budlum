@@ -662,6 +662,18 @@ impl Storage {
         let key = format!("HEIGHT:{height}");
         if let Some(hash_val) = self.db.get(key.as_bytes())? {
             let mut batch = sled::Batch::default();
+            // The index rows of this block go with it. A row that already
+            // points at another height was rewritten by a later block and
+            // stays.
+            let hash = from_utf8(&hash_val)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            if let Some(block) = self.get_block(hash)? {
+                for tx in &block.transactions {
+                    if self.get_tx_block_height(&tx.hash)? == Some(height) {
+                        batch.remove(format!("TX_IDX:{}", tx.hash).as_bytes());
+                    }
+                }
+            }
             batch.remove(&hash_val);
             batch.remove(key.as_bytes());
             batch.remove(format!("STATE_ROOT:{height}").as_bytes());
@@ -1297,6 +1309,24 @@ impl Storage {
                 }
                 current_hash = block.previous_hash;
             }
+            // The walk ends at a missing parent. On a pruned node the heights
+            // below the oldest kept block are gone too, so that is the end of
+            // the kept chain. A height index that still names a parent whose
+            // block is gone is damage, and it is not reported as a short chain.
+            if let Some(oldest) = chain.last() {
+                if oldest.index > 0 && oldest.previous_hash != "0".repeat(64) {
+                    let parent_key = format!("HEIGHT:{}", oldest.index - 1);
+                    if self.db.get(parent_key.as_bytes())?.is_some() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "block {} is indexed but its record is missing",
+                                oldest.index - 1
+                            ),
+                        ));
+                    }
+                }
+            }
         }
         chain.reverse();
         Ok(chain)
@@ -1516,10 +1546,21 @@ impl Storage {
         info!("Starting integrity audit up to height {height}");
 
         let mut prev_hash = "0".repeat(64);
+        // A pruned node has deleted a prefix of the chain. Heights before the
+        // first stored block are that prefix and are not damage; a gap after
+        // it still is.
+        let mut seen_block = false;
         for i in 0..=height {
             let block_res = self.get_block_by_height(i);
             match block_res {
+                Ok(None) if !seen_block => {
+                    continue;
+                }
                 Ok(Some(block)) => {
+                    if !seen_block {
+                        seen_block = true;
+                        prev_hash.clone_from(&block.previous_hash);
+                    }
                     let calc_hash = block.calculate_hash();
                     if block.hash != calc_hash {
                         errors.push(format!(
@@ -2233,6 +2274,65 @@ mod tests {
         storage.repair_index().unwrap();
         let b1 = storage.get_block_by_height(1).unwrap().unwrap();
         assert_eq!(b1.hash, blocks[1].hash);
+    }
+
+    /// Chain of `len` blocks where block 1 carries one transaction.
+    fn commit_chain_with_tx(storage: &Storage, len: u64) -> (Vec<Block>, String) {
+        let from = Address::from_hex(&"01".repeat(32)).unwrap();
+        let to = Address::from_hex(&"02".repeat(32)).unwrap();
+        let tx = crate::core::transaction::Transaction::new(from, to, 5, vec![]);
+        let tx_hash = tx.hash.clone();
+        let mut blocks: Vec<Block> = Vec::new();
+        for i in 0..len {
+            let prev = blocks
+                .last()
+                .map_or_else(|| "0".repeat(64), |b| b.hash.clone());
+            let txs = if i == 1 { vec![tx.clone()] } else { vec![] };
+            let mut b = Block::new(i, prev, txs);
+            b.hash = b.calculate_hash();
+            storage.commit_block(&b, "root").unwrap();
+            blocks.push(b);
+        }
+        (blocks, tx_hash)
+    }
+
+    /// P26-F02: `delete_block` left the `TX_IDX` row pointing at a deleted block.
+    #[test]
+    fn delete_block_removes_its_tx_index_rows() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let (_blocks, tx_hash) = commit_chain_with_tx(&storage, 3);
+        assert_eq!(storage.get_tx_block_height(&tx_hash).unwrap(), Some(1));
+
+        storage.delete_block(1).unwrap();
+        assert_eq!(storage.get_tx_block_height(&tx_hash).unwrap(), None);
+    }
+
+    /// P26-F02: a pruned prefix is not reported as damage by the audit.
+    #[test]
+    fn check_integrity_accepts_a_pruned_prefix_but_not_a_gap() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        commit_chain(&storage, 5);
+        storage.delete_block(0).unwrap();
+        storage.delete_block(1).unwrap();
+        assert!(storage.check_integrity().unwrap().is_empty());
+
+        storage.delete_block(3).unwrap();
+        assert!(!storage.check_integrity().unwrap().is_empty());
+    }
+
+    /// P26-F02: a dangling height index is an error, not a short chain.
+    #[test]
+    fn load_chain_reports_a_missing_indexed_parent() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let blocks = commit_chain(&storage, 4);
+        storage.delete_block(0).unwrap();
+        assert_eq!(storage.load_chain().unwrap().len(), 3);
+
+        storage.db.remove(blocks[1].hash.as_bytes()).unwrap();
+        assert!(storage.load_chain().is_err());
     }
 }
 
