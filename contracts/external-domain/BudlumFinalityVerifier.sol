@@ -117,6 +117,8 @@ struct Challenge {
     address challenger;
     uint64 openedAt;
     bool resolved;
+    uint64 height;
+    bytes32 stateRoot;
 }
 
 /// @notice A deployment-specific fraud-proof verifier. The optimistic path
@@ -198,6 +200,14 @@ contract BudlumFinalityVerifier {
     /// Attestations accepted, by digest.
     mapping(bytes32 => bool) public accepted;
 
+    /// The one state root allowed per Budlum height. Set by the first digest
+    /// that is accepted or opens a window. A different root for the same
+    /// height is refused until a fraud proof clears the claim.
+    mapping(uint64 => bytes32) public rootAtHeight;
+
+    /// Heights with an accepted digest. Their claim is never cleared.
+    mapping(uint64 => bool) public heightFinal;
+
     /// Open challenges, by attestation digest.
     mapping(bytes32 => Challenge) public challenges;
 
@@ -232,6 +242,7 @@ contract BudlumFinalityVerifier {
     error FraudProofRejected(bytes32 digest);
     error NoChallengeWindow();
     error SignatureInvalid(string what);
+    error ConflictingRoot(uint64 height, bytes32 held, bytes32 got);
 
     constructor(
         uint64 budlumChainId_,
@@ -341,6 +352,11 @@ contract BudlumFinalityVerifier {
             revert UntrustedKey("ML-DSA pubkey is not the pinned key");
         }
 
+        bytes32 held = rootAtHeight[a.height];
+        if (held != bytes32(0) && held != a.stateRoot) {
+            revert ConflictingRoot(a.height, held, a.stateRoot);
+        }
+
         bytes32 root = signingRoot(a);
 
         bool blsOk = false;
@@ -365,6 +381,8 @@ contract BudlumFinalityVerifier {
 
         if (blsOk && pqOk) {
             accepted[digest] = true;
+            rootAtHeight[a.height] = a.stateRoot;
+            heightFinal[a.height] = true;
             emit AttestationVerified(digest, a.height, a.stateRoot);
             return digest;
         }
@@ -380,8 +398,11 @@ contract BudlumFinalityVerifier {
             attestationDigest: digest,
             challenger: address(0),
             openedAt: uint64(block.number),
-            resolved: false
+            resolved: false,
+            height: a.height,
+            stateRoot: a.stateRoot
         });
+        rootAtHeight[a.height] = a.stateRoot;
         emit AttestationOptimistic(digest, a.height, reason);
     }
 
@@ -415,6 +436,9 @@ contract BudlumFinalityVerifier {
         c.resolved = true;
         fraudulent[digest] = true;
         accepted[digest] = false;
+        if (!heightFinal[c.height] && rootAtHeight[c.height] == c.stateRoot) {
+            rootAtHeight[c.height] = bytes32(0);
+        }
         emit ChallengeOpened(digest, msg.sender);
         emit ChallengeProven(digest, msg.sender, true);
     }
@@ -434,8 +458,14 @@ contract BudlumFinalityVerifier {
         if (elapsed < challengeWindow) {
             revert ChallengeWindowOpen(digest, challengeWindow - elapsed);
         }
+        // The claim may have been cleared by a fraud proof on a sibling digest
+        // and taken by another root. Never settle against a different root.
+        if (rootAtHeight[c.height] != c.stateRoot) {
+            revert ConflictingRoot(c.height, rootAtHeight[c.height], c.stateRoot);
+        }
         c.resolved = true;
         accepted[digest] = true;
+        heightFinal[c.height] = true;
         emit ChallengeProven(digest, c.challenger, false);
     }
 
