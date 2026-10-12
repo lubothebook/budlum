@@ -511,7 +511,10 @@ async fn main() {
                     Address::from(keys.sig_key.public_key_bytes())
                 );
             }
-            Err(e) => eprintln!("Error generating key: {e}"),
+            Err(e) => {
+                eprintln!("Error generating key: {e}");
+                std::process::exit(1);
+            }
         }
         return;
     }
@@ -1335,7 +1338,7 @@ async fn main() {
             }
             Err(e) => {
                 eprintln!("RPC configuration error: {e}");
-                return;
+                std::process::exit(1);
             }
         };
 
@@ -1401,6 +1404,7 @@ async fn main() {
         tokio::spawn(async move {
             if let Err(e) = pub_server.run(pub_addr.clone()).await {
                 eprintln!("Public RPC Server Error on {pub_addr}: {e}");
+                std::process::exit(1);
             } else {
                 println!("Public JSON-RPC Server running on {pub_addr}");
             }
@@ -1444,6 +1448,7 @@ async fn main() {
             tokio::spawn(async move {
                 if let Err(e) = op_server.run(op_addr.clone()).await {
                     eprintln!("Operator RPC Server Error on {op_addr}: {e}");
+                    std::process::exit(1);
                 } else {
                     println!("Operator JSON-RPC Server running on {op_addr}");
                 }
@@ -1471,7 +1476,7 @@ async fn main() {
             Ok(l) => l,
             Err(e) => {
                 eprintln!("Metrics server bind error: {e}");
-                return;
+                std::process::exit(1);
             }
         };
         println!("Prometheus metrics on {metrics_bind}/metrics");
