@@ -4,7 +4,8 @@
 //! Closed-circuit principle: no text entering AI inference layer may contain an API key,
 //! token or password. This module cleans text in two layers:
 //! 1) key-name patterns (`api_key: x`, `token = "y"`),
-//! 2) known secret shapes (`sk-...`, `AKIA...`, `ghp_...`, JWT).
+//! 2) known secret shapes (`sk-...`, `AKIA...`, `ghp_...`, JWT),
+//! 3) PEM private key blocks (the base64 body lines carry no key name).
 
 /// The fixed token substituted after masking.
 pub const REDACTION_TOKEN: &str = "<SECRET:MASKED>";
@@ -22,6 +23,11 @@ const SECRET_KEYWORDS: &[&str] = &[
     "client_secret",
     "auth",
     "credential",
+    "passphrase",
+    "seed",
+    "mnemonic",
+    "privkey",
+    "wallet_key",
 ];
 
 /// Does a key name carry one of the secret keywords?
@@ -297,6 +303,11 @@ fn redact_key_value(line: &str, report: &mut RedactionReport) -> String {
     out
 }
 
+/// Does the line open a PEM private key block?
+fn is_pem_private_begin(line: &str) -> bool {
+    line.contains("-----BEGIN ") && line.contains("PRIVATE KEY")
+}
+
 /// Width of the leading white space of a line.
 fn indent_of(line: &str) -> usize {
     line.len() - line.trim_start().len()
@@ -365,7 +376,30 @@ pub fn redact_text(text: &str) -> RedactionResult {
     let mut lines: Vec<String> = Vec::new();
     // Indent of the key line of a secret block scalar we are inside.
     let mut block: Option<usize> = None;
+    // Are we inside a PEM private key block?
+    let mut in_pem = false;
     for line in text.lines() {
+        if in_pem {
+            if line.contains("-----END ") {
+                in_pem = false;
+                lines.push(line.to_string());
+            } else {
+                report.add("pem_private_key");
+                lines.push(REDACTION_TOKEN.to_string());
+            }
+            continue;
+        }
+        if is_pem_private_begin(line) {
+            // A one-line block (BEGIN and END together) is masked whole.
+            if line.contains("-----END ") {
+                report.add("pem_private_key");
+                lines.push(REDACTION_TOKEN.to_string());
+            } else {
+                in_pem = true;
+                lines.push(line.to_string());
+            }
+            continue;
+        }
         if let Some(indent) = block {
             if line.trim().is_empty() {
                 lines.push(line.to_string());
@@ -652,5 +686,39 @@ mod tests {
         assert!(!r.text().contains(body2));
         assert_eq!(r.text().lines().count(), input.lines().count());
         assert!(r.text().ends_with("next: ok"));
+    }
+
+    /// A PEM private key body has no key name on its lines.
+    #[test]
+    fn pem_private_key_body_is_masked() {
+        let begin = format!("-----BEGIN {} KEY-----", "RSA PRIVATE");
+        let end = format!("-----END {} KEY-----", "RSA PRIVATE");
+        let b1 = "MIIEowIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo";
+        let b2 = "4lgOEePzNm0tRgeLezV6ffAt0gunVTLw7onL";
+        let input = format!("before\n{begin}\n{b1}\n{b2}\n{end}\nafter");
+        let r = redact_text(&input);
+        assert!(!r.text().contains(b1));
+        assert!(!r.text().contains(b2));
+        assert!(r.text().contains(&begin));
+        assert!(r.text().contains(&end));
+        assert!(r.text().ends_with("after"));
+        assert_eq!(r.text().lines().count(), input.lines().count());
+        let one = format!("{begin}{b1}{end}");
+        assert!(!redact_text(&one).text().contains(b1));
+    }
+
+    /// Wallet material under seed-like key names is masked.
+    #[test]
+    fn seed_and_mnemonic_keys_are_masked() {
+        let seed = "0123456789abcdef".repeat(4);
+        let r = redact_text(&format!("seed: {seed}"));
+        assert!(!r.text().contains(&seed));
+        let words = "alpha bravo charlie delta echo foxtrot";
+        let r = redact_text(&format!("mnemonic = \"{words}\""));
+        assert!(!r.text().contains("alpha"));
+        let r = redact_text(&format!("privkey: {seed}"));
+        assert!(!r.text().contains(&seed));
+        let r = redact_text(&format!("wallet_key={seed}"));
+        assert!(!r.text().contains(&seed));
     }
 }
