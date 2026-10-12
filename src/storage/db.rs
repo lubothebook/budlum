@@ -519,17 +519,32 @@ impl Storage {
         Ok(())
     }
 
+    /// Whether a durable commit at `height` needs the `IN_PROGRESS_HEIGHT`
+    /// marker.
+    ///
+    /// The marker lets recovery delete a half written new height. The batch is
+    /// atomic, so a commit that replaces a height that already holds a block
+    /// leaves either the old rows or the new ones. A marker there would make
+    /// recovery delete the old, committed block, drop the tip to `height - 1`
+    /// and leave the account rows of `height` behind.
+    fn needs_progress_marker(&self, height: u64) -> std::io::Result<bool> {
+        let height_key = format!("HEIGHT:{height}");
+        Ok(self.db.get(height_key.as_bytes())?.is_none())
+    }
+
     /// # Errors
     ///
     /// Propagates `std::io::Error` from the step that failed; its variants name the refused
     /// conditions.
     pub fn commit_durable_batch(&self, batch: &DurableCommitBatch) -> std::io::Result<()> {
         // Write IN_PROGRESS_HEIGHT marker and flush it
-        self.db.insert(
-            b"IN_PROGRESS_HEIGHT",
-            batch.block.index.to_string().as_bytes(),
-        )?;
-        self.db.flush()?;
+        if self.needs_progress_marker(batch.block.index)? {
+            self.db.insert(
+                b"IN_PROGRESS_HEIGHT",
+                batch.block.index.to_string().as_bytes(),
+            )?;
+            self.db.flush()?;
+        }
 
         let mut b = sled::Batch::default();
 
@@ -2306,6 +2321,33 @@ mod tests {
             blocks.push(b);
         }
         (blocks, tx_hash)
+    }
+
+    /// P26-F07: a commit over a height that already holds a block writes no
+    /// recovery marker, so recovery can never delete the committed block.
+    #[test]
+    fn a_recommit_of_a_committed_height_needs_no_progress_marker() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        assert!(storage.needs_progress_marker(1).unwrap());
+
+        let mut block = Block::new(1, "0".repeat(64), vec![]);
+        block.hash = block.calculate_hash();
+        let batch = DurableCommitBatch {
+            block,
+            state_root: "root".to_string(),
+            finality_cert: None,
+            global_headers: vec![],
+            bridge_state: None,
+            accounts: vec![],
+        };
+        storage.commit_durable_batch(&batch).unwrap();
+        assert!(!storage.needs_progress_marker(1).unwrap());
+
+        storage.commit_durable_batch(&batch).unwrap();
+        assert!(storage.db.get(b"IN_PROGRESS_HEIGHT").unwrap().is_none());
+        assert_eq!(storage.get_canonical_height().unwrap(), 1);
+        assert!(storage.get_block_by_height(1).unwrap().is_some());
     }
 
     /// P26-F02: `delete_block` left the `TX_IDX` row pointing at a deleted block.
