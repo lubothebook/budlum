@@ -47,7 +47,7 @@ use crate::cross_domain::external::spec::{
     TimeUnit, TrustModel, VerificationPolicy,
 };
 use bud_proof::adapter::VerifyError;
-use bud_proof::{ExecutionPublicInputs, ProofEnvelope, ProverAdapter};
+use bud_proof::{ExecutionPublicInputs, ProofEnvelope};
 use serde::{Deserialize, Serialize};
 
 /// The evidence version this adapter reads.
@@ -238,8 +238,12 @@ impl ExternalFinalityAdapter for ZkVmFinalityAdapter {
         }
 
         // The verification itself. All three parts go in; the verifier is the
-        // chain's own STARK verifier, not a reimplementation.
-        <bud_proof::DefaultAdapter as ProverAdapter>::verify(
+        // chain's own STARK verifier, not a reimplementation. It runs under
+        // the default activation state and then requires the proven program
+        // to be in the canonical set. The proof and the opcode gate come
+        // first, so a staged opcode is refused as "not activated" even when
+        // its program is canonical.
+        bud_proof::DefaultAdapter::verify_canonical_program(
             &decoded.envelope,
             &decoded.inputs,
             &decoded.program,
@@ -349,6 +353,7 @@ fn hex32(bytes: &[u8; 32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bud_proof::ProverAdapter;
 
     #[test]
     fn the_adapter_declares_itself_trustless_and_proven() {
@@ -452,7 +457,8 @@ mod tests {
     /// under the default activation state, so an honest, verifying proof of a
     /// program that uses it is still not attestable. The same proof verifies
     /// under full activation, which is what shows the refusal is the opcode
-    /// gate and not a bad proof.
+    /// gate and not a bad proof. The program is in the canonical set, so this
+    /// also pins the order: the opcode gate answers before canonicality does.
     #[test]
     fn a_proof_of_a_verify_merkle_program_is_refused() {
         use bud_isa::{Instruction, Opcode};
