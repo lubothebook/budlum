@@ -17,14 +17,20 @@
 //!
 //! ## Flows
 //!
-//! - **EthToBud:** the Ethereum RPC `eth_getLogs` gives a deposit event, which
-//!   becomes an MPT and header chain proof, submitted to Budlum through
-//!   `bud_submitRelayProof`, behind the registry gate and the stake. The
-//!   binary checks the gate before it starts this direction; the node checks
-//!   it again on every submission. Slashing reports come from consensus, the
-//!   relayer files none.
-//! - **BudToEth:** a Budlum burn event plus a finality proof becomes a
-//!   `claimUnlock` transaction to the Ethereum bridge contract.
+//! Status: NOT mainnet ready. Neither direction relays anything yet.
+//!
+//! - **EthToBud (design):** the Ethereum RPC `eth_getLogs` gives a deposit
+//!   event, which becomes an MPT and header chain proof, submitted to Budlum
+//!   through `bud_submitRelayProof`, behind the registry gate and the stake.
+//!   Today the deposit log is a placeholder (no topic filter, amount 0) and
+//!   proof assembly always refuses, so nothing is submitted.
+//! - **BudToEth (design):** a Budlum burn event plus a finality proof becomes a
+//!   `claimUnlock` transaction to the Ethereum bridge contract. Today burns are
+//!   found and reported only; the bridge contract does not exist yet.
+//!
+//! The binary checks the registry gate before it starts EthToBud; the node
+//! checks it again on every submission. Slashing reports come from consensus,
+//! the relayer files none.
 //!
 //! ## Running it
 //!
@@ -441,8 +447,14 @@ pub fn parse_args(args: &[String]) -> Result<RelayerConfig, String> {
     Ok(config)
 }
 
+/// What the binary can do today. Shown in the usage text so `--help` does not
+/// promise a working relay.
+const STATUS_NOTICE: &str = "STATUS: not mainnet ready. No direction relays yet: eth-to-bud \
+cannot build deposit proofs, bud-to-eth only reports burns. Nothing is submitted.";
+
 fn print_usage() {
     eprintln!("budlum-relayer - F10 Universal Relayer (D1 permissionless + D4 unified registry)");
+    eprintln!("{STATUS_NOTICE}");
     eprintln!();
     eprintln!("Usage:");
     eprintln!("  budlum-relayer --eth-rpc <URL> --budlum-rpc <URL> --bridge-address <ADDR>");
@@ -551,6 +563,8 @@ async fn run_eth_to_bud_loop(config: RelayerConfig) -> Result<(), String> {
             config.relayer_address, config.min_stake
         ));
     }
+
+    eprintln!("EthToBud: WARNING {STATUS_NOTICE}");
 
     let mut interval = tokio::time::interval(Duration::from_secs(config.poll_interval_secs));
     let mut last_block: u64 = loop {
@@ -865,7 +879,14 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{block_by_number_params, burn_hashes_from_block, parse_hex_height};
+    use super::{block_by_number_params, burn_hashes_from_block, parse_hex_height, STATUS_NOTICE};
+
+    /// The usage text must say that nothing is relayed yet.
+    #[test]
+    fn the_status_notice_says_nothing_is_relayed() {
+        assert!(STATUS_NOTICE.contains("not mainnet ready"));
+        assert!(STATUS_NOTICE.contains("Nothing is submitted"));
+    }
 
     fn block_with(types: &[&str]) -> serde_json::Value {
         let txs: Vec<serde_json::Value> = types
