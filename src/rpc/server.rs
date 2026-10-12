@@ -3277,6 +3277,8 @@ impl BudlumApiServer for RpcServer {
         &self,
         manifest: crate::storage::ContentManifest,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        // Operator-only: this call changes node-local state outside a block.
+        self.require_operator("bud_storageRegisterManifest")?;
         let manifest_id = self
             .chain
             .register_storage_manifest(manifest.clone())
@@ -3914,6 +3916,8 @@ impl BudlumApiServer for RpcServer {
         payer_signature: String,
         operator_signature: String,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        // Operator-only: this call changes node-local state outside a block.
+        self.require_operator("bud_storageOpenDeal")?;
         let clean_shard = shard_id.strip_prefix("0x").unwrap_or(&shard_id);
         let s_bytes = hex::decode(clean_shard).map_err(|e| {
             ErrorObjectOwned::owned(-32602, format!("Invalid shard_id hex: {e}"), None::<()>)
@@ -4055,6 +4059,8 @@ impl BudlumApiServer for RpcServer {
         payer_signature: String,
         operator_signature: String,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        // Operator-only: this call changes node-local state outside a block.
+        self.require_operator("bud_storageAcceptReallocation")?;
         let op_addr = Address::from_hex(&replacement_operator).map_err(|e| {
             ErrorObjectOwned::owned(
                 -32602,
@@ -4288,6 +4294,8 @@ impl BudlumApiServer for RpcServer {
         &self,
         request: RetrievalChallengeRequest,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        // Operator-only: this call changes node-local state outside a block.
+        self.require_operator("bud_storageOpenChallenge")?;
         // + the opener is required and must be non-zero
         let opener = request
             .opener
@@ -4351,6 +4359,8 @@ impl BudlumApiServer for RpcServer {
         &self,
         response: RetrievalResponse,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        // Operator-only: this call changes node-local state outside a block.
+        self.require_operator("bud_storageAnswerChallenge")?;
         let responder = response.responder;
 
         // Responder must cryptographically prove ownership of the

@@ -1299,4 +1299,37 @@ mod rpc_tests {
             .expect_err("public listener must refuse external evidence");
         assert_eq!(refused.code(), -32004);
     }
+
+    /// Storage calls that change node-local state outside a block are
+    /// operator-only: the public listener refuses them with -32004.
+    #[tokio::test]
+    async fn rpc_tests_storage_mutations_refused_on_public_listener() {
+        let consensus = Arc::new(PoWEngine::new(0));
+        let blockchain = Blockchain::new(consensus, None, 45266, None);
+        let (chain_actor, chain) = ChainActor::new(blockchain);
+        tokio::spawn(async move {
+            chain_actor.run().await;
+        });
+        let node_struct = Node::new(chain.clone()).unwrap();
+        let node_client = node_struct.get_client();
+        let public_server = RpcServer::with_security_and_mode(
+            chain.clone(),
+            node_client,
+            RpcSecurityConfig::operator_default(),
+            RpcMode::Public,
+        );
+        let response = crate::domain::storage_deal::RetrievalResponse {
+            challenge_id: 1,
+            _range_hash: crate::storage::content_id::ContentId([0xAA; 32]),
+            responder: Address::from([9u8; 32]),
+            response_epoch: 1,
+            responder_signature: None,
+            proof_bytes: None,
+        };
+        let refused = public_server
+            .storage_answer_challenge(response)
+            .await
+            .expect_err("public listener must refuse storage_answer_challenge");
+        assert_eq!(refused.code(), -32004);
+    }
 }
