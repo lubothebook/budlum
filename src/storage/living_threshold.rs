@@ -299,10 +299,28 @@ impl AccessEstimate {
         self.scaled >> halvings
     }
 
+    /// The anchor epoch after bringing the estimate up to `epoch`.
+    ///
+    /// The anchor moves forward by whole half-lives only. The part of the
+    /// elapsed time that is shorter than one half-life stays pending, so a
+    /// steady stream of reads that are closer together than one half-life
+    /// still decays. Moving the anchor to `epoch` would drop that part and
+    /// the estimate would never decay.
+    const fn anchor_at(self, epoch: u64) -> u64 {
+        let elapsed = epoch.saturating_sub(self.last_epoch);
+        let halvings = elapsed / ACCESS_HALF_LIFE_EPOCHS;
+        if halvings >= 64 {
+            // The value is zero by now, so the anchor can jump.
+            return epoch;
+        }
+        self.last_epoch + halvings * ACCESS_HALF_LIFE_EPOCHS
+    }
+
     /// Record a read at `epoch`.
     pub fn record_read(&mut self, epoch: u64) {
+        let anchor = self.anchor_at(epoch);
         self.scaled = self.decayed_to(epoch).saturating_add(ACCESS_SCALE);
-        self.last_epoch = epoch;
+        self.last_epoch = anchor;
     }
 
     /// Estimated reads per half-life at `epoch`, scaled by [`ACCESS_SCALE`].
@@ -362,12 +380,14 @@ impl AccessEstimate {
             // Fold this event into the running estimate: decay both to the
             // event's epoch, add, and let the running estimate's epoch follow.
             let decayed_running = estimate.decayed_to(event.epoch);
+            let anchor = estimate.anchor_at(event.epoch);
             estimate.scaled = decayed_running.saturating_add(scaled_count);
-            estimate.last_epoch = event.epoch;
+            estimate.last_epoch = anchor;
         }
         // Bring the estimate up to the current epoch.
+        let anchor = estimate.anchor_at(current_epoch);
         estimate.scaled = estimate.decayed_to(current_epoch);
-        estimate.last_epoch = current_epoch;
+        estimate.last_epoch = anchor;
         estimate
     }
 }
@@ -1274,5 +1294,30 @@ mod tests {
         assert_eq!(far.rate_scaled(64 * 720), 0);
         let near = AccessEstimate::from_events(&events, 720);
         assert_eq!(near.rate_scaled(720), 50 * ACCESS_SCALE);
+    }
+
+    /// P27-F01: reads closer together than one half-life must still decay.
+    #[test]
+    fn steady_reads_inside_one_half_life_still_decay() {
+        let mut a = AccessEstimate::new(0);
+        // One read every 100 epochs for 10 half-lives.
+        let mut epoch = 0;
+        while epoch <= 10 * ACCESS_HALF_LIFE_EPOCHS {
+            a.record_read(epoch);
+            epoch += 100;
+        }
+        // Without decay the sum would be 73 reads. With decay it stays near
+        // 10 reads per half-life.
+        let reads = a.rate_scaled(epoch) / ACCESS_SCALE;
+        assert!(reads < 30, "estimate must not grow without bound: {reads}");
+
+        let events: Vec<AccessEvent> = (0..=72)
+            .map(|i| AccessEvent {
+                epoch: i * 100,
+                count: 1,
+            })
+            .collect();
+        let derived = AccessEstimate::from_events(&events, 7_200);
+        assert!(derived.rate_scaled(7_200) / ACCESS_SCALE < 30);
     }
 }
