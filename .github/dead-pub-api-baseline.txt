@@ -67,7 +67,6 @@ src/chain/blockchain.rs:mine_pending_transactions
 src/chain/blockchain.rs:print_info
 src/chain/blockchain.rs:reset_pending_storage_root
 src/chain/blockchain.rs:sovereign_template_root
-src/chain/chain_actor.rs:answer_coding_audit
 src/chain/chain_actor.rs:apply_snapshot
 src/chain/chain_actor.rs:bns_set_storage
 src/chain/chain_actor.rs:get_ai_request

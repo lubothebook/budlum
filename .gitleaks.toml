@@ -18,3 +18,14 @@ title = "Budlum gitleaks config"
 [extend]
 useDefault = true
 
+# One narrow exception, recorded 2026-10-12. The full-history scan flags a
+# documentation example in a skill bundle that a later change removed from the
+# tree: api-design SKILL.md showed a header example with the placeholder key
+# sk_live_abc123. The value is a doc placeholder, not a credential, and the
+# file no longer exists at the branch head; the commit stays in history, so
+# the fingerprint alone is allow-listed here. Nothing else is exempt.
+[allowlist]
+fingerprints = [
+    "6333d5a59f4610c8315036e88c01bb4c7c4e1822:.claude/.agents/skills/api-design/SKILL.md:generic-api-key:306",
+]
+
