@@ -113,14 +113,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P04 | BLG-0105 | registry/quarantine_ledger.rs:53-116 | P04-F23: FINDINGS.md:178; ham önem Low | AÇIK |  |  |
 | P04 | BLG-0106 | registry/evidence.rs:23-48 | P04-F24: FINDINGS.md:179; ham önem Info | AÇIK |  |  |
 | P04 | BLG-0107 | - | P04-F25: FINDINGS.md:180; ham önem Info | AÇIK |  |  |
-| P05 | BLG-0108 | src/tests/bridge_lifecycle.rs:80 | P05-F01: FINDINGS.md:199; ham önem High | AÇIK |  |  |
-| P05 | BLG-0109 | - | P05-F02: FINDINGS.md:200; ham önem High | AÇIK |  |  |
-| P05 | BLG-0110 | evm/mpt.rs:181-194 | P05-F03: FINDINGS.md:201; ham önem Medium | AÇIK |  |  |
-| P05 | BLG-0111 | evm/header.rs:117-158 | P05-F04: FINDINGS.md:202; ham önem Medium | AÇIK |  |  |
-| P05 | BLG-0112 | - | P05-F05: FINDINGS.md:203; ham önem Medium | AÇIK |  |  |
-| P05 | BLG-0113 | - | P05-F06: FINDINGS.md:204; ham önem Medium | AÇIK |  |  |
-| P05 | BLG-0114 | - | P05-F07: FINDINGS.md:205; ham önem Medium | AÇIK |  |  |
-| P05 | BLG-0115 | - | P05-F08: FINDINGS.md:206; ham önem Medium | AÇIK |  |  |
+| P05 | BLG-0108 | src/tests/bridge_lifecycle.rs:80 | P05-F01: FINDINGS.md:199; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P05 | BLG-0109 | - | P05-F02: FINDINGS.md:200; ham önem High / gp/P05-A:6ac3baa | KODLANIYOR |  |  |
+| P05 | BLG-0110 | evm/mpt.rs:181-194 | P05-F03: FINDINGS.md:201; ham önem Medium / gp/P05-A:55593f9 | KODLANIYOR |  |  |
+| P05 | BLG-0111 | evm/header.rs:117-158 | P05-F04: FINDINGS.md:202; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P05 | BLG-0112 | - | P05-F05: FINDINGS.md:203; ham önem Medium / gp/P05-A:4067958 kısmi: blockchain.rs:3270-3320 rollback BAĞIMLI | KODLANIYOR |  |  |
+| P05 | BLG-0113 | - | P05-F06: FINDINGS.md:204; ham önem Medium / BAĞIMLI: blockchain.rs, rpc/server.rs, node.rs; mesaj imzalı blok işlemi olmalı (tasarım) | AÇIK |  |  |
+| P05 | BLG-0114 | - | P05-F07: FINDINGS.md:205; ham önem Medium / gp/P05-A:4484de1 kısmi: prune sweep blockchain.rs BAĞIMLI | KODLANIYOR |  |  |
+| P05 | BLG-0115 | - | P05-F08: FINDINGS.md:206; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P05 | BLG-0116 | evm/bud_to_eth.rs:25-137 | P05-F09: FINDINGS.md:207; ham önem Medium | AÇIK |  |  |
 | P05 | BLG-0117 | - | P05-F10: FINDINGS.md:208; ham önem Medium | AÇIK |  |  |
 | P05 | BLG-0118 | - | P05-F11: FINDINGS.md:209; ham önem Low | AÇIK |  |  |
