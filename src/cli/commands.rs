@@ -600,7 +600,17 @@ pub struct LegacyFileConfig {
 }
 
 impl NodeConfig {
+    /// Clap leaves the `#[arg(skip)]` RPC fields at type defaults (auth off,
+    /// allow list empty). Restore the secure `Default` values before the file
+    /// and environment overlays, so a flags-only start keeps them.
+    fn apply_secure_rpc_defaults(&mut self) {
+        let secure = Self::default();
+        self.rpc_auth_required = secure.rpc_auth_required;
+        self.rpc_allowed_ips = secure.rpc_allowed_ips;
+    }
+
     pub fn load_with_file(&mut self) {
+        self.apply_secure_rpc_defaults();
         if let Some(path) = self.config.clone() {
             let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
                 eprintln!("CRITICAL ERROR: Failed to read config file at {path}: {e}");
@@ -1549,6 +1559,17 @@ mod tests {
         assert_eq!(parse_env_bool("true"), Ok(true));
         assert_eq!(parse_env_bool("OFF"), Ok(false));
         assert!(parse_env_bool("typo").is_err());
+    }
+
+    #[test]
+    fn flags_only_start_restores_secure_rpc_defaults() {
+        let mut cfg = NodeConfig::parse_from(["budlum", "--rpc-host", "0.0.0.0"]);
+        assert!(!cfg.rpc_auth_required);
+        assert!(cfg.rpc_allowed_ips.is_empty());
+        cfg.apply_secure_rpc_defaults();
+        assert!(cfg.rpc_auth_required);
+        assert_eq!(cfg.rpc_allowed_ips, NodeConfig::default().rpc_allowed_ips);
+        assert!(!cfg.rpc_allowed_ips.is_empty());
     }
 
     #[test]
