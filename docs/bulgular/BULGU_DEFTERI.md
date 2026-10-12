@@ -151,14 +151,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P06 | BLG-0143 | src/cross_domain/external/zkvm_proof.rs:86-108 | P06-F14: FINDINGS.md:393; ham önem Low | AÇIK |  |  |
 | P06 | BLG-0144 | src/cross_domain/evm/adapter.rs:1 | P06-F15: FINDINGS.md:403; ham önem Low | AÇIK |  |  |
 | P06 | BLG-0145 | src/cross_domain/evm/adapter.rs:343-357 | P06-F16: FINDINGS.md:413; ham önem Info | AÇIK |  |  |
-| P07 | BLG-0146 | src/rpc/server.rs:1712-1722 | P07-F01: FINDINGS.md:432; ham önem High | AÇIK |  |  |
-| P07 | BLG-0147 | src/cross_domain/external/intake.rs:64-131 | P07-F02: FINDINGS.md:443; ham önem High | AÇIK |  |  |
-| P07 | BLG-0148 | src/cross_domain/external/registry.rs:452-471 | P07-F03: FINDINGS.md:454; ham önem High | AÇIK |  |  |
-| P07 | BLG-0149 | src/cross_domain/external/registry.rs:51-52, 638-754 | P07-F04: FINDINGS.md:466; ham önem Medium | AÇIK |  |  |
-| P07 | BLG-0150 | src/cross_domain/external/registry.rs:337-371 | P07-F05: FINDINGS.md:477; ham önem Medium | AÇIK |  |  |
-| P07 | BLG-0151 | src/cross_domain/external/intake.rs:521-545 | P07-F06: FINDINGS.md:487; ham önem Medium | AÇIK |  |  |
-| P07 | BLG-0152 | src/cross_domain/external/intake_quorum.rs:251-271, 357-363 | P07-F07: FINDINGS.md:497; ham önem Medium | AÇIK |  |  |
-| P07 | BLG-0153 | src/cross_domain/external/intake.rs:391-403 | P07-F08: FINDINGS.md:508; ham önem Medium | AÇIK |  |  |
+| P07 | BLG-0146 | src/rpc/server.rs:1712-1722 | P07-F01: FINDINGS.md:432; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor | AÇIK |  |  |
+| P07 | BLG-0147 | src/cross_domain/external/intake.rs:64-131 | P07-F02: FINDINGS.md:443; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor | AÇIK |  |  |
+| P07 | BLG-0148 | src/cross_domain/external/registry.rs:452-471 | P07-F03: FINDINGS.md:454; ham önem High / gp/P07-A:11ce6db | KODLANIYOR |  |  |
+| P07 | BLG-0149 | src/cross_domain/external/registry.rs:51-52, 638-754 | P07-F04: FINDINGS.md:466; ham önem Medium / gp/P07-A:862f6c6 | KODLANIYOR |  |  |
+| P07 | BLG-0150 | src/cross_domain/external/registry.rs:337-371 | P07-F05: FINDINGS.md:477; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P07 | BLG-0151 | src/cross_domain/external/intake.rs:521-545 | P07-F06: FINDINGS.md:487; ham önem Medium / gp/P07-A:89d695c | KODLANIYOR |  |  |
+| P07 | BLG-0152 | src/cross_domain/external/intake_quorum.rs:251-271, 357-363 | P07-F07: FINDINGS.md:497; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P07 | BLG-0153 | src/cross_domain/external/intake.rs:391-403 | P07-F08: FINDINGS.md:508; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P07 | BLG-0154 | src/cross_domain/external/intake.rs:240-246 | P07-F09: FINDINGS.md:518; ham önem Medium | AÇIK |  |  |
 | P07 | BLG-0155 | src/cross_domain/external/registry.rs:173-293 | P07-F10: FINDINGS.md:528; ham önem Medium | AÇIK |  |  |
 | P07 | BLG-0156 | src/cross_domain/external/registry.rs:764-803 | P07-F11: FINDINGS.md:538; ham önem Low | AÇIK |  |  |
