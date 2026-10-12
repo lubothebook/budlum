@@ -820,7 +820,7 @@ mod tests {
             bytes: 700,
             demand: Demand::EveryToken,
         };
-        let forward = ResidencyPlan::plan(&[a, b], budget, profile())
+        let forward = ResidencyPlan::plan(&[a.clone(), b.clone()], budget, profile())
             .expect("1000 B of dense weights fit in 1100 B");
         let backward = ResidencyPlan::plan(&[b, a], budget, profile())
             .expect("the same device must give the same verdict");
