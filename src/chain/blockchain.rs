@@ -3264,7 +3264,11 @@ impl Blockchain {
                 })?
         };
 
-        // Process the relay through the Universal Relayer
+        // Process the relay through the Universal Relayer. The ledger record
+        // is written inside `process_relay`, so keep a copy: if the bridge or
+        // fee step fails afterwards, the record and the pending entry are put
+        // back and the relay can be tried again.
+        let relayer_backup = self.universal_relayer.clone();
         let message = self
             .universal_relayer
             .process_relay(
@@ -3276,13 +3280,36 @@ impl Blockchain {
                 current_height,
             )
             .map_err(|e| e.to_string())?;
+        if let Err(e) = self.apply_relay_effects(&message, relayer, current_height) {
+            self.universal_relayer = relayer_backup;
+            return Err(e);
+        }
         if let Some(store) = &self.storage {
             if let Err(e) = store.save_universal_relayer(&self.universal_relayer) {
                 tracing::error!(error = %e, "Failed to persist universal relayer state");
             }
         }
 
-        // Integrate BridgeState transition
+        if let Some(store) = &self.storage {
+            if let Err(e) = store.save_bridge_state(&self.state.bridge_state) {
+                tracing::error!("CRITICAL: Failed to persist bridge state: {e}");
+            }
+        }
+
+        Ok(message)
+    }
+
+    /// Bridge state change and credits for a relayed message.
+    ///
+    /// Every check that can fail runs before the first mutation, so an error
+    /// leaves the account and bridge state untouched. The caller restores the
+    /// relayer ledger on error.
+    fn apply_relay_effects(
+        &mut self,
+        message: &crate::cross_domain::CrossDomainMessage,
+        relayer: Address,
+        current_height: u64,
+    ) -> Result<(), String> {
         match message.kind {
             MessageKind::BridgeLock => {
                 // Same order as the verified-event path: amounts and ceiling
@@ -3310,9 +3337,16 @@ impl Blockchain {
                 self.state
                     .ensure_mint_headroom(minted)
                     .map_err(|e| format!("Bridge relay mint: {e}"))?;
+                // Both credits must fit before the bridge state moves, so a
+                // fee overflow cannot land after the recipient was paid.
+                Self::ensure_relay_credits_fit(
+                    &self.state,
+                    (transfer.recipient, final_amount.get()),
+                    (relayer, fee.get()),
+                )?;
                 self.state
                     .bridge_state
-                    .mint(&message, current_height)
+                    .mint(message, current_height)
                     .map_err(|e| e.to_string())?;
 
                 // Try_add_balance for relay bridge mint
@@ -3351,15 +3385,11 @@ impl Blockchain {
                     message.target_domain,
                 )
                 .map_err(|e| e.to_string())?;
-                self.state
-                    .bridge_state
-                    .unlock(transfer_id, message.source_domain, current_height)
-                    .map_err(|e| e.to_string())?;
                 let transfer = self
                     .state
                     .bridge_state
                     .get_transfer(&transfer_id)
-                    .ok_or_else(|| "Failed to retrieve transfer after unlock".to_string())?
+                    .ok_or_else(|| "Unknown bridge transfer".to_string())?
                     .clone();
 
                 // For unlock, the full amount goes back to the owner (Decision: relayer paid on target side)
@@ -3377,6 +3407,15 @@ impl Blockchain {
                 // refused a fee over u64::MAX and this side narrowed it
                 // with a cast) cannot exist: both legs are Bud before they
                 // reach a balance.
+                Self::ensure_relay_credits_fit(
+                    &self.state,
+                    (transfer.owner, final_amount.get()),
+                    (relayer, fee.get()),
+                )?;
+                self.state
+                    .bridge_state
+                    .unlock(transfer_id, message.source_domain, current_height)
+                    .map_err(|e| e.to_string())?;
                 self.state
                     .try_add_balance(&transfer.owner, final_amount.get())
                     .map_err(|e| format!("Bridge relay unlock overflow (owner): {e}"))?;
@@ -3392,13 +3431,34 @@ impl Blockchain {
             }
         }
 
-        if let Some(store) = &self.storage {
-            if let Err(e) = store.save_bridge_state(&self.state.bridge_state) {
-                tracing::error!("CRITICAL: Failed to persist bridge state: {e}");
-            }
-        }
+        Ok(())
+    }
 
-        Ok(message)
+    /// Check that two credits fit in their balances. When both go to the same
+    /// account the two amounts are added first.
+    fn ensure_relay_credits_fit(
+        state: &AccountState,
+        first: (Address, u64),
+        second: (Address, u64),
+    ) -> Result<(), String> {
+        let overflow = || "Bridge relay credit would overflow an account balance".to_string();
+        if first.0 == second.0 {
+            state
+                .get_balance(&first.0)
+                .checked_add(first.1)
+                .and_then(|total| total.checked_add(second.1))
+                .ok_or_else(overflow)?;
+        } else {
+            state
+                .get_balance(&first.0)
+                .checked_add(first.1)
+                .ok_or_else(overflow)?;
+            state
+                .get_balance(&second.0)
+                .checked_add(second.1)
+                .ok_or_else(overflow)?;
+        }
+        Ok(())
     }
 
     /// Get the number of pending relays.
@@ -6878,6 +6938,69 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    /// BLG-0112: a relay whose fee or mint step fails after the ledger step
+    /// must not stay consumed. The supply cap refuses the mint here.
+    #[test]
+    fn failed_relay_mint_restores_the_relayer_ledger() {
+        use crate::cross_domain::event_tree::DomainEventTree;
+        use crate::domain::plugin::default_domain;
+        use crate::domain::ConsensusKind;
+
+        let mut bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            None,
+            45262,
+            None,
+        );
+        let mut domains = Vec::new();
+        for id in [1u32, 2u32] {
+            let mut d = default_domain(id, ConsensusKind::PoW, 45262, "pow-header-chain-v1", 1);
+            d.bridge_enabled = true;
+            domains.push(d.clone());
+            bc.register_consensus_domain(d).unwrap();
+        }
+        let asset_id = crate::cross_domain::AssetId(crate::core::hash::hash_fields_bytes(&[b"A"]));
+        bc.register_bridge_asset(asset_id, 1).unwrap();
+        let owner = Address::from([0xAA; 32]);
+        let recipient = Address::from([0xBB; 32]);
+        let relayer = Address::from([0xCC; 32]);
+        bc.state.add_balance(&relayer, 100_000_000);
+        let epoch = bc.state.epoch_index;
+        bc.state
+            .registry
+            .register_relayer(relayer, 50_000_000, epoch)
+            .unwrap();
+        bc.state.add_balance(&owner, 1000);
+        let (_transfer, lock_event) = bc
+            .lock_bridge_transfer(1, 2, 10, 0, asset_id, owner, recipient, 100, 1000)
+            .unwrap();
+        let message = lock_event.message.clone().unwrap();
+        let message_id = message.message_id;
+        bc.enqueue_bridge_relay(lock_event.clone(), &message);
+        let mut tree = DomainEventTree::new();
+        tree.push(lock_event);
+        let mut block = Block::new(10, bc.last_block().hash.clone(), vec![]);
+        block.state_root = "22".repeat(32);
+        block.tx_root = block.calculate_tx_root();
+        block.hash = block.calculate_hash();
+        let commitment =
+            crate::domain::DomainCommitment::from_block(&domains[0], &block, tree.root(), [0u8; 32], 0)
+                .unwrap();
+        bc.submit_domain_commitment(commitment).unwrap();
+
+        // Fill the supply cap so the mint cannot fit.
+        let headroom = bc.state.supply_capacity_remaining();
+        bc.state.get_or_create(&recipient).balance += headroom;
+        let proof = tree.proof(0).unwrap();
+        assert!(bc.submit_relay_proof(message_id, relayer, &proof, 1).is_err());
+        assert!(!bc.universal_relayer.is_relayed(&message_id));
+        assert_eq!(bc.pending_relay_count(), 1);
+        assert!(matches!(
+            bc.state.bridge_state.get_transfer(&message_id).unwrap().status,
+            crate::cross_domain::bridge::BridgeStatus::Locked { .. }
+        ));
+    }
 
     /// Decode helper for the window tests.
     fn h32(hex_str: &str) -> crate::domain::Hash32 {
