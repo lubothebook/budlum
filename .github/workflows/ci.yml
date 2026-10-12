@@ -472,6 +472,7 @@ jobs:
         # produce a clippy failure nobody asked for.
         if: always() && steps.build.outcome == 'success'
         run: |
+          set -euo pipefail
           cargo clippy --release --manifest-path xtask/gates/Cargo.toml --all-targets 2>&1 \
             | tee /tmp/gates-clippy.log | tail -n 5
       - name: Clippy surface (annotations)
@@ -917,6 +918,7 @@ jobs:
         run: cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud-e2e --self-test
       - name: bud_e2e - 9 invariants + 3 e2e (name canary)
         run: |
+          set -euo pipefail
           cargo test --lib bud_e2e 2>&1 | tee /tmp/bud-e2e.txt
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud-e2e /tmp/bud-e2e.txt
 
@@ -1279,6 +1281,7 @@ jobs:
         run: cargo run --release --manifest-path xtask/gates/Cargo.toml -- bns-gate --self-test
       - name: bns - 8 tests (name canary)
         run: |
+          set -euo pipefail
           cargo test --lib bns 2>&1 | tee /tmp/bns-gate.txt
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- bns-gate /tmp/bns-gate.txt
 
