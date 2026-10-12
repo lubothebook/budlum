@@ -50,6 +50,9 @@ pub const FINALITY_DEPTH: usize = 50;
 /// Disk, and `record_validator_snapshot` trims as it grows. Two literals
 /// Would let a reload keep more than the live path is willing to hold.
 pub const MAX_VALIDATOR_SNAPSHOTS: usize = 100;
+/// Upper bound of the slashing evidence pool. The pool is copied into the next
+/// block, so it must stay small.
+const MAX_PENDING_SLASHING_EVIDENCE: usize = 64;
 #[cfg(test)]
 pub const EPOCH_LENGTH: u64 = 10;
 
@@ -1153,6 +1156,20 @@ impl Blockchain {
     }
 
     pub fn submit_slashing_evidence(&mut self, evidence: SlashingEvidence) -> Result<(), String> {
+        // Cheap checks first. Any peer can sign headers with a throwaway key,
+        // so the producer must be a known validator and the headers must be
+        // for this chain, and the pool is bounded (BLG-0171).
+        if evidence.header1.chain_id != self.chain_id || evidence.header2.chain_id != self.chain_id
+        {
+            return Err("Slashing evidence is for another chain".into());
+        }
+        let is_validator = evidence
+            .header1
+            .producer
+            .is_some_and(|producer| self.state.get_validator(&producer).is_some());
+        if !is_validator {
+            return Err("Slashing evidence producer is not a validator".into());
+        }
         if !Self::verify_slashing_evidence(&evidence) {
             return Err("Invalid slashing evidence".into());
         }
@@ -1163,6 +1180,9 @@ impl Blockchain {
                 && existing.signature2 == evidence.signature2
         }) {
             return Ok(());
+        }
+        if self.pending_slashing_evidence.len() >= MAX_PENDING_SLASHING_EVIDENCE {
+            return Err("Slashing evidence pool is full".into());
         }
         self.pending_slashing_evidence.push(evidence);
         Ok(())
@@ -6989,6 +7009,62 @@ impl Clone for Blockchain {
 mod tests {
     use super::*;
     use crate::consensus::poa::{PoAConfig, PoAEngine};
+
+    fn double_sign_evidence(
+        keys: &crate::crypto::primitives::ValidatorKeys,
+        index: u64,
+    ) -> SlashingEvidence {
+        use crate::core::block::BlockHeader;
+
+        let producer = Address::from(keys.sig_key.public_key_bytes());
+        let mut b1 = Block::new(index, "prev".into(), vec![]);
+        b1.producer = Some(producer);
+        b1.hash = b1.calculate_hash();
+        let sig1 = keys.sig_key.sign(&b1.calculate_hash_bytes()).to_vec();
+        let mut b2 = Block::new(index, "prev".into(), vec![]);
+        b2.timestamp += 1;
+        b2.producer = Some(producer);
+        b2.hash = b2.calculate_hash();
+        let sig2 = keys.sig_key.sign(&b2.calculate_hash_bytes()).to_vec();
+        SlashingEvidence::new(
+            BlockHeader::from_block(&b1),
+            BlockHeader::from_block(&b2),
+            sig1,
+            sig2,
+        )
+    }
+
+    /// BLG-0171: evidence from a key that is not a validator is refused, and
+    /// the pool has an upper bound.
+    #[test]
+    fn slashing_evidence_pool_needs_a_validator_and_is_bounded() {
+        let mut bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            None,
+            45262,
+            None,
+        );
+        let outsider = crate::crypto::primitives::ValidatorKeys::generate().unwrap();
+        assert!(bc
+            .submit_slashing_evidence(double_sign_evidence(&outsider, 10))
+            .is_err());
+        assert!(bc.pending_slashing_evidence.is_empty());
+
+        let insider = crate::crypto::primitives::ValidatorKeys::generate().unwrap();
+        let insider_addr = Address::from(insider.sig_key.public_key_bytes());
+        bc.state.add_validator(insider_addr, 2000);
+        for height in 0..MAX_PENDING_SLASHING_EVIDENCE as u64 {
+            bc.submit_slashing_evidence(double_sign_evidence(&insider, 10 + height))
+                .unwrap();
+        }
+        assert_eq!(
+            bc.pending_slashing_evidence.len(),
+            MAX_PENDING_SLASHING_EVIDENCE
+        );
+        assert!(bc
+            .submit_slashing_evidence(double_sign_evidence(&insider, 1000))
+            .is_err());
+    }
 
     /// BLG-0170: a parent hash mismatch freezes the domain, and the freeze must
     /// be on disk, not only in memory.
