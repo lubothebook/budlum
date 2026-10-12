@@ -1589,6 +1589,16 @@ fn encode_storage_tx(tx: &crate::domain::storage_tx::StorageTx, out: &mut Vec<u8
             put_fixed(out, &open.operator_consent.owner_key);
             put_bytes(out, &open.operator_consent.signature);
         }
+        crate::domain::storage_tx::StorageTx::AnswerCodingAudit {
+            audit_id,
+            data_column,
+            parity_byte,
+        } => {
+            put_u8(out, 4);
+            put_u64(out, *audit_id);
+            put_bytes(out, data_column);
+            put_u8(out, *parity_byte);
+        }
     }
 }
 

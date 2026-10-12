@@ -591,6 +591,21 @@ const REALLOCATION_RECORD_RETENTION_EPOCHS: u64 = 16 * REALLOCATION_ACCEPTANCE_E
 /// start.
 pub const CODING_AUDIT_RECORD_RETENTION_EPOCHS: u64 = REALLOCATION_RECORD_RETENTION_EPOCHS;
 
+/// Number of epochs an audited operator has to answer a coding audit opened
+/// at an epoch boundary. It is as long as [`RENEWAL_WINDOW_EPOCHS`], for the
+/// same reason: an operator that is online answers well inside it, and a
+/// short outage does not turn into a cooldown.
+///
+/// WIRING: used by `open_epoch_coding_audits`, called by ADIM 4b in
+/// `apply_block_effects`.
+pub const CODING_AUDIT_ANSWER_WINDOW_EPOCHS: u64 = 4;
+
+/// Most coding audits the chain opens at one epoch boundary.
+///
+/// WIRING: used by `open_epoch_coding_audits`, called by ADIM 4b in
+/// `apply_block_effects`.
+pub const CODING_AUDIT_OPENS_PER_EPOCH: usize = 1;
+
 /// How long before a deal matures its operator may renew it unopposed.
 ///
 /// Renewal exists because the two ways a deal ends are not symmetric. A
@@ -2603,6 +2618,61 @@ impl StorageRegistry {
     /// WIRING: called by ADIM 4b at the start of each epoch.
     pub fn sweep_settled_coding_audits(&mut self, now_epoch: u64) -> usize {
         self.sweep_coding_audits_older_than(now_epoch, CODING_AUDIT_RECORD_RETENTION_EPOCHS)
+    }
+
+    /// The stored coding audit with this id, while the registry holds it.
+    ///
+    /// WIRING: read by `StorageTx::AnswerCodingAudit` (storage_tx.rs) to bound
+    /// the answer by the audited manifest before the registry checks it.
+    #[must_use]
+    pub fn coding_audit(&self, audit_id: u64) -> Option<&StoredCodingAudit> {
+        self.coding_audits.get(&audit_id)
+    }
+
+    /// Open the coding audits of one epoch boundary.
+    ///
+    /// The walk starts at the manifest id `entropy` names and goes once round
+    /// the manifest map in key order. Every node visits the same manifests in
+    /// the same order, and the same manifest is not first at every epoch. A
+    /// manifest with no parity or with an `Open` audit is skipped. An open the
+    /// registry refuses (no eligible holder, every holder busy) is skipped too
+    /// and writes nothing. At most [`CODING_AUDIT_OPENS_PER_EPOCH`] audits
+    /// open, each with [`CODING_AUDIT_ANSWER_WINDOW_EPOCHS`] epochs to answer.
+    ///
+    /// Returns the ids opened, in order.
+    ///
+    /// WIRING: called by ADIM 4b in `apply_block_effects` when the epoch
+    /// advances.
+    pub fn open_epoch_coding_audits(&mut self, entropy: &Hash32, epoch: u64) -> Vec<u64> {
+        let mut opened = Vec::new();
+        let Some(deadline_epoch) = epoch.checked_add(CODING_AUDIT_ANSWER_WINDOW_EPOCHS) else {
+            return opened;
+        };
+        let audited: std::collections::BTreeSet<ContentId> = self
+            .coding_audits
+            .values()
+            .filter(|stored| stored.outcome == CodingAuditOutcome::Open)
+            .map(|stored| stored.audit.manifest_id)
+            .collect();
+        let start = ContentId(*entropy);
+        let candidates: Vec<ContentId> = self
+            .manifests
+            .range(start..)
+            .chain(self.manifests.range(..start))
+            .filter(|(id, m)| m.erasure.n > m.erasure.k && !audited.contains(*id))
+            .map(|(id, _)| *id)
+            .collect();
+        for manifest_id in candidates {
+            if opened.len() >= CODING_AUDIT_OPENS_PER_EPOCH {
+                break;
+            }
+            if let Ok(audit_id) =
+                self.open_coding_audit(entropy, manifest_id, epoch, deadline_epoch)
+            {
+                opened.push(audit_id);
+            }
+        }
+        opened
     }
 
     fn sweep_coding_audits_older_than(&mut self, now_epoch: u64, retention_epochs: u64) -> usize {
@@ -7364,6 +7434,87 @@ mod tests {
             assert_eq!(stored(&void, id).outcome, CodingAuditOutcome::Void);
             assert_eq!(stored(&missed, id).outcome, CodingAuditOutcome::Missed);
             assert_ne!(missed.root(), void.root());
+        }
+
+        #[test]
+        fn finalize_missed_coding_audits_settles_overdue_open_audits_and_cooldowns() {
+            let (mut reg, encoded, manifest) = coded();
+            let late = open(&mut reg, &manifest, 1);
+            // Three parity deals, so some later seed lands on a free one.
+            let answered = (2..=255u8)
+                .find_map(|seed| {
+                    reg.open_coding_audit(&[seed; 32], manifest.manifest_id, OPEN_EPOCH, DEADLINE)
+                        .ok()
+                })
+                .expect("a second deal is free");
+            let late_rec = stored(&reg, late);
+            let answered_rec = stored(&reg, answered);
+            let (column, parity) = honest(&encoded, &answered_rec.audit);
+            reg.answer_coding_audit(
+                answered,
+                answered_rec.operator,
+                &column,
+                parity,
+                DEADLINE,
+                NOW,
+            )
+            .expect("honest answer");
+
+            let closed = reg.finalize_missed_coding_audits(DEADLINE + 1, NOW);
+            assert_eq!(closed, vec![late], "only the open overdue audit closes");
+            assert_eq!(stored(&reg, late).outcome, CodingAuditOutcome::Missed);
+            assert_eq!(stored(&reg, answered).outcome, CodingAuditOutcome::Passed);
+            assert_eq!(
+                reg.operator_cooldown_until(&late_rec.operator, NOW),
+                Some(NOW + MISSED_CHALLENGE_COOLDOWN_SECS)
+            );
+        }
+
+        #[test]
+        fn finalize_missed_coding_audits_leaves_deadline_audits_open() {
+            let (mut reg, _, manifest) = coded();
+            let id = open(&mut reg, &manifest, 1);
+            let rec = stored(&reg, id);
+            let root = reg.root();
+            assert!(reg.finalize_missed_coding_audits(DEADLINE, NOW).is_empty());
+            assert!(reg
+                .finalize_missed_coding_audits(OPEN_EPOCH, NOW)
+                .is_empty());
+            assert_eq!(stored(&reg, id).outcome, CodingAuditOutcome::Open);
+            assert!(reg.operator_cooldown_until(&rec.operator, NOW).is_none());
+            assert_eq!(root, reg.root(), "an audit still in time changes nothing");
+        }
+
+        #[test]
+        fn an_epoch_opens_at_most_one_audit_and_skips_an_audited_manifest() {
+            let (mut reg, _, manifest) = coded();
+            let first = reg.open_epoch_coding_audits(&[1u8; 32], OPEN_EPOCH);
+            assert_eq!(first.len(), CODING_AUDIT_OPENS_PER_EPOCH);
+            let rec = stored(&reg, first[0]);
+            assert_eq!(rec.audit.manifest_id, manifest.manifest_id);
+            assert_eq!(
+                rec.deadline_epoch,
+                OPEN_EPOCH + CODING_AUDIT_ANSWER_WINDOW_EPOCHS
+            );
+            let root = reg.root();
+            assert!(
+                reg.open_epoch_coding_audits(&[2u8; 32], OPEN_EPOCH + 1)
+                    .is_empty(),
+                "the only manifest already has an open audit"
+            );
+            assert_eq!(root, reg.root());
+        }
+
+        #[test]
+        fn an_epoch_open_skips_a_replicated_manifest_and_writes_nothing() {
+            let mut reg = StorageRegistry::new();
+            let m = good_manifest();
+            open_one(&mut reg, &m);
+            let root = reg.root();
+            let opened = reg.open_epoch_coding_audits(&[1u8; 32], OPEN_EPOCH);
+            assert!(opened.is_empty());
+            assert_eq!(root, reg.root());
+            assert_eq!(reg.next_coding_audit_id, 0);
         }
 
         #[test]

@@ -2318,7 +2318,7 @@ mod tests {
                     last_seen_block: 9,
                 },
             }),
-            TransactionType::Storage(crate::domain::StorageTx::OpenDeal(
+            TransactionType::Storage(crate::domain::StorageTx::OpenDeal(Box::new(
                 crate::domain::StorageDealOpen {
                     domain_id: 7,
                     manifest_id: crate::storage::ContentId([1u8; 32]),
@@ -2338,7 +2338,12 @@ mod tests {
                         signature: vec![6u8; 64],
                     },
                 },
-            )),
+            ))),
+            TransactionType::Storage(crate::domain::StorageTx::AnswerCodingAudit {
+                audit_id: 11,
+                data_column: vec![1, 2, 3, 4],
+                parity_byte: 5,
+            }),
             TransactionType::Identity(crate::registry::IdentityTx::Register {
                 record: crate::registry::IdentityRecord::new(
                     from,

@@ -4568,6 +4568,8 @@ impl Blockchain {
                 .storage_registry
                 .prune_content(&content_id, epoch);
         }
+        let previous_epoch = base_state.epoch_index;
+        Self::apply_coding_audit_epoch_step(&mut next_state, previous_epoch, block.chain_id);
         Self::apply_bridge_sweep_to_state(&mut next_state, block.index)?;
         let boost_share = next_state.pending_bud_boost_share;
         Self::distribute_bud_boost_share_in_state(&mut next_state, boost_share)?;
@@ -4576,6 +4578,35 @@ impl Blockchain {
         // Credits the producer exactly once with flat fee, metabolic burn.
 
         Ok(next_state)
+    }
+
+    /// Coding audits for the block, after its transactions and the epoch
+    /// close. Overdue `Open` audits settle first, so a deal they free can be
+    /// audited again. Then, when the epoch advanced, the epoch's audit opens.
+    /// Then settled rows past the retention window leave.
+    ///
+    /// The epoch is `epoch_index`, the scale the in-block answer is checked
+    /// on, and the clock is the block timestamp. Nothing here reads a map in
+    /// hash order, the wall clock or local randomness, so a replay of the same
+    /// blocks opens and settles the same audits.
+    fn apply_coding_audit_epoch_step(state: &mut AccountState, previous_epoch: u64, chain_id: u64) {
+        let epoch = state.epoch_index;
+        let now_secs = state.current_block_unix_secs;
+        state
+            .storage_registry
+            .finalize_missed_coding_audits(epoch, now_secs);
+        if epoch > previous_epoch {
+            let entropy = crate::core::hash::hash_fields_bytes(&[
+                b"BDLM_STORAGE_CODING_AUDIT_ENTROPY_V1",
+                &chain_id.to_le_bytes(),
+                &epoch.to_le_bytes(),
+                &state.current_block_entropy,
+            ]);
+            state
+                .storage_registry
+                .open_epoch_coding_audits(&entropy, epoch);
+        }
+        state.storage_registry.sweep_settled_coding_audits(epoch);
     }
 
     fn apply_bridge_sweep_to_state(
@@ -6874,6 +6905,123 @@ mod tests {
             state_a.calculate_state_root(),
             state_b.calculate_state_root()
         );
+    }
+
+    /// A (4,6) object with one live deal on each parity shard.
+    fn state_with_an_erasure_deal() -> AccountState {
+        // Not a repeating pattern: equal shards share a content id.
+        let data: Vec<u8> = (0..800u32)
+            .map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8)
+            .collect();
+        let scheme = crate::storage::ErasureScheme { k: 4, n: 6 };
+        let encoded = crate::storage::encode_object(&data, scheme).expect("encode");
+        let manifest = encoded.to_manifest().expect("manifest");
+        let envelope = bud_proof::ProofEnvelope {
+            proof_format_version: 1,
+            backend: "test-backend".to_string(),
+            p3_version: "0.6".to_string(),
+            fri_params_id: "test-fri".to_string(),
+            public_inputs_hash: [0x42u8; 32],
+            proof_bytes: vec![0xABu8; 96],
+            degree_bits: 8,
+        };
+        let proof = bincode::serialize(&envelope).expect("envelope");
+        let mut state = AccountState::new();
+        state.storage_registry.register_manifest(&manifest);
+        for (shard, holder) in [(4usize, 10u8), (5, 12)] {
+            state
+                .storage_registry
+                .open_deal(
+                    42,
+                    &manifest,
+                    manifest.shards[shard].shard_id,
+                    Address::from([holder; 32]),
+                    0,
+                    0,
+                    1_000,
+                    crate::domain::storage_deal::StorageEconomicsParams {
+                        operator_bond: 5_000_000,
+                        fee_per_byte_epoch: 100,
+                    },
+                    &crate::domain::storage_params::StorageDomainParams {
+                        chunk_size: 256,
+                        max_committed_chunks: 1000,
+                        challenge_interval: 10,
+                        min_operator_bond: 1_000_000,
+                    },
+                    Some(proof.clone()),
+                    Some([0x42u8; 32]),
+                )
+                .expect("a parity shard deal opens");
+        }
+        state
+    }
+
+    /// The epoch step opens one audit when the epoch advances, leaves it open
+    /// through its answer window, settles it `Missed` after the deadline and
+    /// opens the next one. Two replays of the same blocks give the same audit
+    /// ids, outcomes and registry roots.
+    #[test]
+    fn epoch_boundary_opens_at_most_one_coding_audit_and_finalizes_missed_ones() {
+        use crate::domain::storage_deal::{CodingAuditOutcome, CODING_AUDIT_ANSWER_WINDOW_EPOCHS};
+        const CHAIN_ID: u64 = 1337;
+        let base = state_with_an_erasure_deal();
+        let epoch_len = crate::core::chain_config::epoch_len_for_chain_id(CHAIN_ID);
+        // Only the epoch boundary blocks move the epoch, so the chain under
+        // test is those blocks.
+        let blocks: Vec<Block> = (1..=7u64)
+            .map(|n| {
+                let mut block =
+                    Block::new_with_chain_id(n * epoch_len, "ab".repeat(32), Vec::new(), CHAIN_ID);
+                block.vrf_output = vec![n as u8; 32];
+                block
+            })
+            .collect();
+        let replay = || {
+            let mut states = Vec::new();
+            let mut state = base.clone();
+            for block in &blocks {
+                state = Blockchain::apply_block_effects(&state, block, &[]).expect("block applies");
+                states.push(state.clone());
+            }
+            states
+        };
+        let first = replay();
+        let second = replay();
+
+        let outcome = |state: &AccountState, id: u64| {
+            state
+                .storage_registry
+                .coding_audit(id)
+                .map(|stored| stored.outcome)
+        };
+        let deadline = 1 + CODING_AUDIT_ANSWER_WINDOW_EPOCHS;
+        assert_eq!(first[0].epoch_index, 1);
+        let opened = first[0].storage_registry.coding_audit(0).expect("opened");
+        assert_eq!(opened.deadline_epoch, deadline);
+        for state in &first[..5] {
+            assert_eq!(outcome(state, 0), Some(CodingAuditOutcome::Open));
+            assert_eq!(outcome(state, 1), None, "one open audit per manifest");
+        }
+        let after = &first[5];
+        assert_eq!(after.epoch_index, deadline + 1);
+        assert_eq!(outcome(after, 0), Some(CodingAuditOutcome::Missed));
+        assert_eq!(outcome(after, 1), Some(CodingAuditOutcome::Open));
+        assert_eq!(outcome(after, 2), None, "at most one audit per epoch");
+        assert!(after
+            .storage_registry
+            .operator_cooldown_until(&opened.operator, after.current_block_unix_secs)
+            .is_some());
+
+        for (a, b) in first.iter().zip(&second) {
+            assert_eq!(a.storage_registry.root(), b.storage_registry.root());
+            for id in 0..3 {
+                assert_eq!(
+                    a.storage_registry.coding_audit(id),
+                    b.storage_registry.coding_audit(id)
+                );
+            }
+        }
     }
 
     /// F-7: the settlement finality window is a pure function of the chain

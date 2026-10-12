@@ -584,7 +584,7 @@ mod open_deal {
             0,
             vec![],
             chain_id,
-            TransactionType::Storage(StorageTx::OpenDeal(body)),
+            TransactionType::Storage(StorageTx::OpenDeal(Box::new(body))),
         )
     }
 
@@ -795,7 +795,7 @@ mod open_deal {
             0,
             vec![],
             DEFAULT_CHAIN_ID,
-            TransactionType::Storage(StorageTx::OpenDeal(body)),
+            TransactionType::Storage(StorageTx::OpenDeal(Box::new(body))),
         );
 
         let before = state.get_balance(&op.address());
@@ -861,5 +861,145 @@ mod open_deal {
                 "{field} is not in the signing hash"
             );
         }
+    }
+}
+
+/// The answer to a coding audit, through the executor. The registry rules
+/// are unit-tested in `storage_tx.rs`; this pins the fee and nonce epilogue,
+/// that a refusal charges nothing, and that the signature commits every
+/// field of the answer.
+mod answer_coding_audit {
+    use super::*;
+    use crate::domain::storage_deal::CodingAuditOutcome;
+    use crate::storage::EncodedObject;
+
+    fn proof() -> Vec<u8> {
+        let envelope = bud_proof::ProofEnvelope {
+            proof_format_version: 1,
+            backend: "test-backend".to_string(),
+            p3_version: "0.6".to_string(),
+            fri_params_id: "test-fri".to_string(),
+            public_inputs_hash: [0x42u8; 32],
+            proof_bytes: vec![0xABu8; 96],
+            degree_bits: 8,
+        };
+        bincode::serialize(&envelope).expect("envelope")
+    }
+
+    /// A (4,6) object with one live deal on each parity shard and one open
+    /// audit. Returns the state, the encoded object and the audit id.
+    fn world() -> (AccountState, EncodedObject, u64) {
+        // Not a repeating pattern: equal shards share a content id.
+        let data: Vec<u8> = (0..800u32)
+            .map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8)
+            .collect();
+        let encoded = encode_object(&data, ErasureScheme { k: 4, n: 6 }).expect("encode");
+        let m = encoded.to_manifest().expect("manifest");
+        let mut state = AccountState::new();
+        state.storage_registry.register_manifest(&m);
+        for (shard, holder) in [(4usize, 10u8), (5, 12)] {
+            state
+                .storage_registry
+                .open_deal(
+                    42,
+                    &m,
+                    m.shards[shard].shard_id,
+                    addr(holder),
+                    0,
+                    100,
+                    200,
+                    crate::domain::storage_deal::StorageEconomicsParams {
+                        operator_bond: 5_000_000,
+                        fee_per_byte_epoch: 100,
+                    },
+                    &crate::domain::storage_params::StorageDomainParams {
+                        chunk_size: 256,
+                        max_committed_chunks: 1000,
+                        challenge_interval: 10,
+                        min_operator_bond: 1_000_000,
+                    },
+                    Some(proof()),
+                    Some([0x42u8; 32]),
+                )
+                .expect("a parity shard deal opens");
+        }
+        let id = state
+            .storage_registry
+            .open_coding_audit(&[1u8; 32], m.manifest_id, 120, 130)
+            .expect("the object can be audited");
+        state.epoch_index = 125;
+        state.current_block_unix_secs = 1_000_000;
+        (state, encoded, id)
+    }
+
+    /// The audited operator and its honest answer.
+    fn honest(state: &AccountState, encoded: &EncodedObject, id: u64) -> (Address, StorageTx) {
+        let stored = state
+            .storage_registry
+            .coding_audit(id)
+            .expect("audit is stored");
+        let column = stored.audit.column as usize;
+        let k = encoded.scheme.k as usize;
+        let body = StorageTx::AnswerCodingAudit {
+            audit_id: id,
+            data_column: (0..k).map(|j| encoded.shards[j][column]).collect(),
+            parity_byte: encoded.shards[k + stored.audit.parity_index as usize][column],
+        };
+        (stored.operator, body)
+    }
+
+    fn outcome(state: &AccountState, id: u64) -> CodingAuditOutcome {
+        state
+            .storage_registry
+            .coding_audit(id)
+            .expect("audit is stored")
+            .outcome
+    }
+
+    #[test]
+    fn an_answer_in_block_passes_moves_the_root_and_charges_the_fee() {
+        let (mut state, encoded, id) = world();
+        let (operator, body) = honest(&state, &encoded, id);
+        state.add_balance(&operator, 1_000);
+        let before = state.calculate_state_root();
+
+        apply(&mut state, storage_tx(operator, 0, body, 0)).expect("the operator answers");
+
+        assert_eq!(outcome(&state, id), CodingAuditOutcome::Passed);
+        assert_eq!(state.get_balance(&operator), 999);
+        assert_eq!(state.get_nonce(&operator), 1);
+        assert_ne!(state.calculate_state_root(), before);
+    }
+
+    #[test]
+    fn a_refused_answer_charges_nothing() {
+        let (mut state, encoded, id) = world();
+        let (_, body) = honest(&state, &encoded, id);
+        let stranger = addr(99);
+        state.add_balance(&stranger, 1_000);
+
+        let err = apply(&mut state, storage_tx(stranger, 0, body, 0)).unwrap_err();
+
+        assert!(err.contains("storage_tx_failed"), "{err}");
+        assert_eq!(outcome(&state, id), CodingAuditOutcome::Open);
+        assert_eq!(state.get_balance(&stranger), 1_000);
+        assert_eq!(state.get_nonce(&stranger), 0);
+    }
+
+    #[test]
+    fn the_signature_commits_every_answer_field() {
+        let hash_of = |audit_id: u64, data_column: Vec<u8>, parity_byte: u8| {
+            let body = StorageTx::AnswerCodingAudit {
+                audit_id,
+                data_column,
+                parity_byte,
+            };
+            storage_tx(addr(10), 0, body, 0).calculate_hash()
+        };
+        let honest = hash_of(1, vec![1, 2, 3, 4], 5);
+        assert_ne!(hash_of(2, vec![1, 2, 3, 4], 5), honest, "audit_id");
+        assert_ne!(hash_of(1, vec![1, 2, 3, 5], 5), honest, "data_column");
+        assert_ne!(hash_of(1, vec![1, 2, 3, 4, 0], 5), honest, "column length");
+        assert_ne!(hash_of(1, vec![1, 2, 3, 4], 6), honest, "parity_byte");
     }
 }

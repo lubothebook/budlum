@@ -9,16 +9,18 @@
 //!
 //! This family moves those writes into the block. Each variant is applied by
 //! the executor's `Storage` arm, inside block execution, from a transaction
-//! the sender signed. It has four variants: manifest registration, the
-//! operator class declaration, the self-host policy declaration and opening a
-//! deal. Challenges and coding audits follow in their own steps, so each one
-//! lands with its own tests.
+//! the sender signed. It has five variants: manifest registration, the
+//! operator class declaration, the self-host policy declaration, opening a
+//! deal and the answer to a coding audit. Challenges follow in their own
+//! steps, so each one lands with its own tests.
 
 use crate::core::account::AccountState;
 use crate::core::address::Address;
 use crate::core::hash::hash_fields_bytes;
 use crate::domain::deal_open::{open_deal_escrowed, DealOpenTerms};
-use crate::domain::storage_deal::{DealStatus, OperatorClass, StorageEconomicsParams};
+use crate::domain::storage_deal::{
+    DealStatus, OperatorClass, StorageEconomicsParams, StorageError,
+};
 use crate::domain::storage_params::STORAGE_MIN_OPERATOR_BOND;
 use crate::domain::Hash32;
 use crate::storage::{
@@ -26,6 +28,11 @@ use crate::storage::{
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+/// Longest data column a coding audit answer may carry. A column holds one
+/// byte per data shard, and no code word has more shards than this, so a
+/// longer answer is refused before the registry is read.
+const MAX_CODING_AUDIT_DATA_COLUMN_BYTES: usize = crate::storage::MAX_TOTAL_SHARDS;
 
 /// One storage write. The sender is `tx.from`, already signed; no variant
 /// carries an actor field a caller could fill with someone else's address.
@@ -49,8 +56,18 @@ pub enum StorageTx {
     },
     /// Open a paid storage deal. The sender is the payer: the fee is escrowed
     /// from the sender. The operator's bond is locked only when the body
-    /// carries the operator's own signed consent.
-    OpenDeal(StorageDealOpen),
+    /// carries the operator's own signed consent. Boxed: the consent key is
+    /// large and would make every other variant as large.
+    OpenDeal(Box<StorageDealOpen>),
+    /// Answer a coding audit the chain opened. The sender is the responder,
+    /// so only the audited operator's own signature can answer. The answer
+    /// is byte `column` of each data shard in shard order and the same column
+    /// of the audited parity shard.
+    AnswerCodingAudit {
+        audit_id: u64,
+        data_column: Vec<u8>,
+        parity_byte: u8,
+    },
 }
 
 /// The body of [`StorageTx::OpenDeal`].
@@ -140,6 +157,15 @@ pub enum StorageTxError {
     /// The deal-open rules refused the open: cooldown, balances, bond,
     /// placement, merkle envelope or epoch range.
     DealRefused(String),
+    /// A coding audit answer carries no data column.
+    EmptyDataColumn,
+    /// A coding audit answer carries more column bytes than the audited
+    /// object has data shards, or more than any object can have.
+    DataColumnTooLong { len: usize, max: usize },
+    /// The registry refused the coding audit answer: unknown or closed
+    /// audit, a signer other than the audited operator, or an answer after
+    /// the deadline.
+    CodingAuditRefused(String),
 }
 
 impl fmt::Display for StorageTxError {
@@ -184,6 +210,12 @@ impl fmt::Display for StorageTxError {
                 write!(f, "the operator's consent was refused: {e}")
             }
             Self::DealRefused(e) => write!(f, "storage deal refused: {e}"),
+            Self::EmptyDataColumn => write!(f, "the coding audit answer has no data column"),
+            Self::DataColumnTooLong { len, max } => write!(
+                f,
+                "the coding audit answer has {len} column bytes; at most {max} are allowed"
+            ),
+            Self::CodingAuditRefused(e) => write!(f, "coding audit answer refused: {e}"),
         }
     }
 }
@@ -214,7 +246,59 @@ pub fn execute_storage_tx(
             profile,
         } => declare_self_host_policy(state, sender, manifest_id, policy, profile),
         StorageTx::OpenDeal(open) => open_deal(state, ctx, open),
+        StorageTx::AnswerCodingAudit {
+            audit_id,
+            data_column,
+            parity_byte,
+        } => answer_coding_audit(state, sender, *audit_id, data_column, *parity_byte),
     }
+}
+
+/// Hand the sender's answer to the registry, which checks it against the
+/// stored audit. The epoch and the clock are the block's own: the epoch is
+/// `epoch_index`, the scale `apply_block_effects` opens and finalizes audits
+/// on, and the seconds are the block timestamp. A `Failed` outcome is an
+/// accepted transaction: the registry records it and starts the cooldown.
+fn answer_coding_audit(
+    state: &mut AccountState,
+    sender: &Address,
+    audit_id: u64,
+    data_column: &[u8],
+    parity_byte: u8,
+) -> Result<(), StorageTxError> {
+    if data_column.is_empty() {
+        return Err(StorageTxError::EmptyDataColumn);
+    }
+    if data_column.len() > MAX_CODING_AUDIT_DATA_COLUMN_BYTES {
+        return Err(StorageTxError::DataColumnTooLong {
+            len: data_column.len(),
+            max: MAX_CODING_AUDIT_DATA_COLUMN_BYTES,
+        });
+    }
+    let manifest_id = match state.storage_registry.coding_audit(audit_id) {
+        Some(stored) => stored.audit.manifest_id,
+        None => {
+            let unknown = StorageError::UnknownCodingAudit(audit_id);
+            return Err(StorageTxError::CodingAuditRefused(unknown.to_string()));
+        }
+    };
+    // A pruned manifest is the registry's case: it voids the audit.
+    if let Some(manifest) = state.storage_registry.get_manifest(&manifest_id) {
+        let data_shards = usize::try_from(manifest.erasure.k).unwrap_or(usize::MAX);
+        if data_column.len() > data_shards {
+            return Err(StorageTxError::DataColumnTooLong {
+                len: data_column.len(),
+                max: data_shards,
+            });
+        }
+    }
+    let epoch = state.epoch_index;
+    let now = state.current_block_unix_secs;
+    state
+        .storage_registry
+        .answer_coding_audit(audit_id, *sender, data_column, parity_byte, epoch, now)
+        .map(|_| ())
+        .map_err(|e| StorageTxError::CodingAuditRefused(e.to_string()))
 }
 
 /// Digest the operator signs to consent to one deal-open.
@@ -414,6 +498,7 @@ fn register_manifest(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::storage_deal::CodingAuditOutcome;
     use crate::storage::{encode_object, ErasureScheme};
 
     fn owner() -> Address {
@@ -843,5 +928,174 @@ mod tests {
         .unwrap_err();
         assert_eq!(err, StorageTxError::GeneratedRegistrationNotPriced);
         assert!(state.storage_registry.is_empty());
+    }
+
+    const AUDIT_OPEN_EPOCH: u64 = 120;
+    const AUDIT_DEADLINE: u64 = 130;
+
+    /// A (4,6) object whose two parity shards each have one live deal, with
+    /// one coding audit opened against it. Returns the encoded object, so a
+    /// test can compute the honest answer, and the audit id.
+    fn audited(state: &mut AccountState) -> (crate::storage::EncodedObject, u64) {
+        // Not a repeating pattern: equal shards share a content id.
+        let data: Vec<u8> = (0..800u32)
+            .map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8)
+            .collect();
+        let encoded = encode_object(&data, ErasureScheme { k: 4, n: 6 }).expect("encode");
+        let m = encoded.to_manifest().expect("manifest");
+        state.storage_registry.register_manifest(&m);
+        for (shard, holder) in [(4usize, 10u8), (5, 12)] {
+            state
+                .storage_registry
+                .open_deal(
+                    42,
+                    &m,
+                    m.shards[shard].shard_id,
+                    Address::from([holder; 32]),
+                    0,
+                    100,
+                    200,
+                    crate::domain::storage_deal::StorageEconomicsParams {
+                        operator_bond: 5_000_000,
+                        fee_per_byte_epoch: 100,
+                    },
+                    &crate::domain::storage_params::StorageDomainParams {
+                        chunk_size: 256,
+                        max_committed_chunks: 1000,
+                        challenge_interval: 10,
+                        min_operator_bond: 1_000_000,
+                    },
+                    Some(proof()),
+                    Some([0x42u8; 32]),
+                )
+                .expect("a parity shard deal opens");
+        }
+        let id = state
+            .storage_registry
+            .open_coding_audit(&[1u8; 32], m.manifest_id, AUDIT_OPEN_EPOCH, AUDIT_DEADLINE)
+            .expect("an erasure coded object with live parity deals can be audited");
+        state.epoch_index = AUDIT_OPEN_EPOCH;
+        state.current_block_unix_secs = 1_000_000;
+        (encoded, id)
+    }
+
+    /// The audited operator and the answer an operator with honest parity
+    /// sends: the stored column of each data shard and of the parity shard.
+    fn honest_answer(
+        state: &AccountState,
+        encoded: &crate::storage::EncodedObject,
+        audit_id: u64,
+    ) -> (Address, Vec<u8>, u8) {
+        let stored = state
+            .storage_registry
+            .coding_audit(audit_id)
+            .expect("audit is stored");
+        let column = stored.audit.column as usize;
+        let k = encoded.scheme.k as usize;
+        let data_column = (0..k).map(|j| encoded.shards[j][column]).collect();
+        let parity_byte = encoded.shards[k + stored.audit.parity_index as usize][column];
+        (stored.operator, data_column, parity_byte)
+    }
+
+    fn answer(audit_id: u64, data_column: Vec<u8>, parity_byte: u8) -> StorageTx {
+        StorageTx::AnswerCodingAudit {
+            audit_id,
+            data_column,
+            parity_byte,
+        }
+    }
+
+    fn outcome(state: &AccountState, audit_id: u64) -> CodingAuditOutcome {
+        state
+            .storage_registry
+            .coding_audit(audit_id)
+            .expect("audit is stored")
+            .outcome
+    }
+
+    fn in_cooldown(state: &AccountState, operator: &Address) -> bool {
+        state
+            .storage_registry
+            .operator_cooldown_until(operator, state.current_block_unix_secs)
+            .is_some()
+    }
+
+    #[test]
+    fn an_operator_answers_its_audit_in_block_and_passes() {
+        let mut state = AccountState::new();
+        let (encoded, id) = audited(&mut state);
+        let (operator, column, parity) = honest_answer(&state, &encoded, id);
+        execute_storage_tx(&mut state, &ctx(operator), &answer(id, column, parity))
+            .expect("an honest answer is accepted");
+        assert_eq!(outcome(&state, id), CodingAuditOutcome::Passed);
+        assert!(!in_cooldown(&state, &operator));
+    }
+
+    #[test]
+    fn a_wrong_parity_answer_is_accepted_and_fails_with_a_cooldown() {
+        let mut state = AccountState::new();
+        let (encoded, id) = audited(&mut state);
+        let (operator, column, parity) = honest_answer(&state, &encoded, id);
+        let wrong = answer(id, column, parity ^ 0x01);
+        execute_storage_tx(&mut state, &ctx(operator), &wrong)
+            .expect("a wrong answer is a recorded outcome");
+        assert_eq!(outcome(&state, id), CodingAuditOutcome::Failed);
+        assert!(in_cooldown(&state, &operator));
+    }
+
+    #[test]
+    fn an_answer_from_the_wrong_signer_is_refused() {
+        let mut state = AccountState::new();
+        let (encoded, id) = audited(&mut state);
+        let (_, column, parity) = honest_answer(&state, &encoded, id);
+        let stranger = Address::from([99u8; 32]);
+        let root = state.storage_registry.root();
+        let err = execute_storage_tx(&mut state, &ctx(stranger), &answer(id, column, parity))
+            .unwrap_err();
+        assert!(matches!(err, StorageTxError::CodingAuditRefused(_)));
+        assert_eq!(outcome(&state, id), CodingAuditOutcome::Open);
+        assert_eq!(state.storage_registry.root(), root);
+    }
+
+    #[test]
+    fn an_answer_after_the_deadline_is_refused() {
+        let mut state = AccountState::new();
+        let (encoded, id) = audited(&mut state);
+        let (operator, column, parity) = honest_answer(&state, &encoded, id);
+        state.epoch_index = AUDIT_DEADLINE + 1;
+        let root = state.storage_registry.root();
+        let err = execute_storage_tx(&mut state, &ctx(operator), &answer(id, column, parity))
+            .unwrap_err();
+        assert!(matches!(err, StorageTxError::CodingAuditRefused(_)));
+        assert_eq!(outcome(&state, id), CodingAuditOutcome::Open);
+        assert_eq!(state.storage_registry.root(), root);
+    }
+
+    #[test]
+    fn an_oversized_data_column_is_refused() {
+        let mut state = AccountState::new();
+        let (encoded, id) = audited(&mut state);
+        let (operator, mut column, parity) = honest_answer(&state, &encoded, id);
+        let k = encoded.scheme.k as usize;
+        let root = state.storage_registry.root();
+
+        column.push(0);
+        let len = column.len();
+        let err = execute_storage_tx(&mut state, &ctx(operator), &answer(id, column, parity))
+            .unwrap_err();
+        assert_eq!(err, StorageTxError::DataColumnTooLong { len, max: k });
+
+        let huge = vec![0u8; MAX_CODING_AUDIT_DATA_COLUMN_BYTES + 1];
+        let err =
+            execute_storage_tx(&mut state, &ctx(operator), &answer(id, huge, parity)).unwrap_err();
+        assert!(matches!(err, StorageTxError::DataColumnTooLong { .. }));
+
+        let err = execute_storage_tx(&mut state, &ctx(operator), &answer(id, Vec::new(), parity))
+            .unwrap_err();
+        assert_eq!(err, StorageTxError::EmptyDataColumn);
+
+        assert_eq!(outcome(&state, id), CodingAuditOutcome::Open);
+        assert!(!in_cooldown(&state, &operator));
+        assert_eq!(state.storage_registry.root(), root);
     }
 }
