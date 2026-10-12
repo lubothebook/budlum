@@ -936,6 +936,29 @@ mod tests {
         assert!(matches!(res, Err(CompileError::CodegenError(_))), "{res:?}");
     }
 
+    /// P35-F06: a `let` inside a match arm is scoped to the arm. It must not
+    /// replace an outer variable of the same name.
+    #[test]
+    fn test_match_arm_let_does_not_shadow_outer_variable() {
+        let source = r#"
+            contract ArmScope {
+                pub fn main() {
+                    let x = 1;
+                    let y = 0;
+                    match (y) {
+                        0 => { let x = 5; emit Result(x); },
+                        _ => { },
+                    };
+                    emit Result(x);
+                }
+            }
+        "#;
+        let bytecode = compile(source, IsaProfile::Production).expect("arm scope compiles");
+        let mut vm = bud_vm::Vm::new(8192);
+        vm.run(&bytecode).expect("VM should run");
+        assert_eq!(vm.events, vec![5, 1]);
+    }
+
     /// The wildcard arm (`_`) is required for exhaustive matching
     /// (semantic-checked); the parser only requires syntactic
     /// Validity. Verifies the parser rejects patterns that are not

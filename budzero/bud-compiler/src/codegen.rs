@@ -423,8 +423,11 @@ impl Codegen {
                     }
 
                     // Body of this arm.
+                    // Sema scopes an arm's bindings to the arm. Use a child
+                    // scope so an arm `let` cannot replace an outer variable.
+                    let mut arm_scope = scope.clone();
                     for s in &arm.body {
-                        self.generate_stmt(s, scope, storage);
+                        self.generate_stmt(s, &mut arm_scope, storage);
                     }
                     // After the body, jump to the end of the match.
                     let end_jump = self.instructions.len();
