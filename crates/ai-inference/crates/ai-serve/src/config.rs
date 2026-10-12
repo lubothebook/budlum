@@ -175,7 +175,18 @@ pub fn assert_served_name_is_ours(cfg: &ServeConfig) -> Result<(), String> {
             cfg.served_model_name
         ));
     }
-    Ok(())
+    // The name must have the tier shape `ai_inference-{tier}-{version}` for
+    // the configured tier, so a Light bridge cannot be listed under the
+    // Normal name and no third-party model name passes.
+    let prefix = cfg.tier.served_model_name("");
+    match cfg.served_model_name.strip_prefix(prefix.as_str()) {
+        Some(version) if !version.is_empty() => Ok(()),
+        _ => Err(format!(
+            "served_model_name must be {prefix}<version> for the {} tier: {}",
+            cfg.tier.as_str(),
+            cfg.served_model_name
+        )),
+    }
 }
 
 /// Whether this bridge may be put into the consensus path.
@@ -464,6 +475,28 @@ mod tests {
             ..Default::default()
         };
         assert!(assert_served_name_is_ours(&cfg).is_err());
+    }
+
+    #[test]
+    fn a_name_outside_the_tier_shape_is_rejected() {
+        for bad in [
+            "my-custom-model",
+            "llama-3-70b",
+            "ai_inference-normal-v0.1", // Normal name on a Light config
+            "ai_inference-light-",
+            "ai_inference-light",
+        ] {
+            let cfg = ServeConfig {
+                served_model_name: bad.to_string(),
+                ..Default::default()
+            };
+            assert!(
+                assert_served_name_is_ours(&cfg).is_err(),
+                "{bad} must be refused"
+            );
+        }
+        let normal = ServeConfig::for_tier(ModelTier::Normal, "v2");
+        assert!(assert_served_name_is_ours(&normal).is_ok());
     }
 
     #[test]
