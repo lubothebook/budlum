@@ -122,12 +122,12 @@ ourselves keeps the origin at `bud://<name>`.
 + * and the badge text. Opaque to C++. */
 +typedef struct BudPage BudPage;
 +
-+/* Run the name rule over a bud:// spec. */
++/* Run the name rule over a bare name (the URI host, no scheme or path). */
 +BudNameVerdict budscan_check_name(const char* spec);
 +uint8_t budscan_verdict_ok(BudNameVerdict verdict);
 +const char* budscan_verdict_reason(BudNameVerdict verdict);
 +
-+/* Resolve, fetch and verify a bud:// spec. Never null: a failure at any
++/* Resolve, fetch and verify "bud://<name>" (no path). Never null: a failure at any
 + * step comes back as a page whose strength is Refused. */
 +BudPage* budscan_open(const char* spec);
 +
@@ -220,7 +220,7 @@ ourselves keeps the origin at `bud://<name>`.
 +#endif  // mozilla_net_BudProtocolHandler_h
 --- /dev/null
 +++ b/netwerk/protocol/bud/BudProtocolHandler.cpp
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,59 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -258,8 +258,10 @@ ourselves keeps the origin at `bud://<name>`.
 +  NS_ENSURE_ARG_POINTER(aURI);
 +  NS_ENSURE_ARG_POINTER(aLoadInfo);
 +
-+  nsAutoCString spec;
-+  nsresult rv = aURI->GetSpec(spec);
++  // Only the host is the name. GetSpec would add the scheme separator and the
++  // trailing slash nsStandardURL appends, and the name rule refuses both.
++  nsAutoCString name;
++  nsresult rv = aURI->GetAsciiHost(name);
 +  NS_ENSURE_SUCCESS(rv, rv);
 +
 +  // The name rule runs here, before anything is resolved or fetched. It is
@@ -269,7 +271,7 @@ ourselves keeps the origin at `bud://<name>`.
 +  // A refusal is not an error return: the caller gets a channel that produces
 +  // an explanation page. "It did not open" without a reason is not an answer
 +  // a user can act on.
-+  BudNameVerdict verdict = budscan_check_name(spec.get());
++  BudNameVerdict verdict = budscan_check_name(name.get());
 +
 +  RefPtr<BudChannel> channel = new BudChannel(aURI, aLoadInfo, verdict);
 +  channel.forget(aResult);
@@ -346,7 +348,7 @@ ourselves keeps the origin at `bud://<name>`.
 +#endif  // mozilla_net_BudChannel_h
 --- /dev/null
 +++ b/netwerk/protocol/bud/BudChannel.cpp
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,84 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -378,9 +380,14 @@ ourselves keeps the origin at `bud://<name>`.
 +
 +nsresult BudChannel::OpenContentStream(bool aAsync, nsIInputStream** aStream,
 +                                       nsIChannel** aChannel) {
-+  nsAutoCString spec;
-+  nsresult rv = URI()->GetSpec(spec);
++  nsAutoCString host;
++  nsresult rv = URI()->GetAsciiHost(host);
 +  NS_ENSURE_SUCCESS(rv, rv);
++
++  // budscan classifies "bud://<name>". The trailing slash of GetSpec is not
++  // part of that spelling, and a path has no route in this version.
++  nsAutoCString spec("bud://");
++  spec.Append(host);
 +
 +  // A name that failed the rule never reaches resolution. The page it gets is
 +  // an explanation, not a blank refusal.
