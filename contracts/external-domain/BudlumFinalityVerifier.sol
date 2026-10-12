@@ -172,6 +172,10 @@ contract BudlumFinalityVerifier {
     // floor a chain with the precompiles will hit.
     // ---------------------------------------------------------------------
 
+    /// EIP-2537 pairing check costs 32600 * k + 37700 gas, so 70300 for the
+    /// one-pair probe. The stipend leaves headroom. A smaller stipend makes
+    /// the probe fail on a real chain.
+    uint256 internal constant GAS_BLS_PAIRING_PROBE = 100_000;
     uint256 internal constant GAS_MLDSA_VERIFY = 4500;      // EIP-8051
     uint256 internal constant GAS_P256_VERIFY = 3450;       // RIP-7212
     uint256 internal GAS_P256_SOLIDITY = 300_000;           // pure Solidity
@@ -601,7 +605,7 @@ contract BudlumFinalityVerifier {
         if (PRECOMPILE_BLS_PAIRING.code.length > 0) {
             return false;
         }
-        (bool ok, bytes memory out) = PRECOMPILE_BLS_PAIRING.staticcall{gas: 5_000}(probe);
+        (bool ok, bytes memory out) = PRECOMPILE_BLS_PAIRING.staticcall{gas: GAS_BLS_PAIRING_PROBE}(probe);
         return ok && out.length == 32;
     }
 
