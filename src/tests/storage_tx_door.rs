@@ -598,16 +598,18 @@ mod open_deal {
         )
     }
 
-    fn assert_refused_untouched(
+    /// Apply the transaction and, when it is refused, check that it wrote nothing.
+    fn apply_without_write(
         state: &mut AccountState,
         op: &Address,
         tx: Transaction,
-        expected: &str,
-    ) {
+    ) -> Result<(), String> {
         let before = snapshot(state, op);
-        let err = apply(state, tx).unwrap_err();
-        assert!(err.contains(expected), "got {err}, wanted {expected}");
-        assert_eq!(snapshot(state, op), before, "a refusal must not write");
+        let result = apply(state, tx);
+        if result.is_err() {
+            assert_eq!(snapshot(state, op), before, "a refusal must not write");
+        }
+        result
     }
 
     #[test]
@@ -641,12 +643,9 @@ mod open_deal {
         other.economics.fee_per_byte_epoch += 1;
         body.operator_consent = consent(&op, DEFAULT_CHAIN_ID, &payer(), 0, &other);
 
-        assert_refused_untouched(
-            &mut state,
-            &op.address(),
-            open_tx(body, DEFAULT_CHAIN_ID),
-            "consent",
-        );
+        let err = apply_without_write(&mut state, &op.address(), open_tx(body, DEFAULT_CHAIN_ID))
+            .unwrap_err();
+        assert!(err.contains("consent"), "got {err}");
         assert_eq!(state.storage_registry.deals_iter().count(), 0);
     }
 
@@ -656,12 +655,9 @@ mod open_deal {
         let mut body = unsigned_body(&m, &op);
         body.operator_consent = consent(&op, DEFAULT_CHAIN_ID, &payer(), 1, &body);
 
-        assert_refused_untouched(
-            &mut state,
-            &op.address(),
-            open_tx(body, DEFAULT_CHAIN_ID),
-            "consent",
-        );
+        let err = apply_without_write(&mut state, &op.address(), open_tx(body, DEFAULT_CHAIN_ID))
+            .unwrap_err();
+        assert!(err.contains("consent"), "got {err}");
     }
 
     #[test]
@@ -670,12 +666,9 @@ mod open_deal {
         let body = signed_body(&m, &op);
         apply(&mut state, open_tx(body.clone(), DEFAULT_CHAIN_ID)).expect("opens");
         // The same signed body again: the payer's nonce moved on.
-        assert_refused_untouched(
-            &mut state,
-            &op.address(),
-            open_tx(body, DEFAULT_CHAIN_ID),
-            "consent",
-        );
+        let err = apply_without_write(&mut state, &op.address(), open_tx(body, DEFAULT_CHAIN_ID))
+            .unwrap_err();
+        assert!(err.contains("consent"), "got {err}");
     }
 
     #[test]
@@ -687,23 +680,21 @@ mod open_deal {
         // operator named in the body.
         body.operator_consent = consent(&stranger, DEFAULT_CHAIN_ID, &payer(), 0, &body);
 
-        assert_refused_untouched(
-            &mut state,
-            &op.address(),
-            open_tx(body, DEFAULT_CHAIN_ID),
-            "consent",
-        );
+        let err = apply_without_write(&mut state, &op.address(), open_tx(body, DEFAULT_CHAIN_ID))
+            .unwrap_err();
+        assert!(err.contains("consent"), "got {err}");
     }
 
     #[test]
     fn a_missing_consent_signature_is_refused() {
         let (mut state, m, op) = world();
-        assert_refused_untouched(
+        let err = apply_without_write(
             &mut state,
             &op.address(),
             open_tx(unsigned_body(&m, &op), DEFAULT_CHAIN_ID),
-            "consent",
-        );
+        )
+        .unwrap_err();
+        assert!(err.contains("consent"), "got {err}");
     }
 
     #[test]
@@ -713,12 +704,9 @@ mod open_deal {
         body.manifest_id = ContentId([0xEEu8; 32]);
         body.operator_consent = consent(&op, DEFAULT_CHAIN_ID, &payer(), 0, &body);
 
-        assert_refused_untouched(
-            &mut state,
-            &op.address(),
-            open_tx(body, DEFAULT_CHAIN_ID),
-            "not registered",
-        );
+        let err = apply_without_write(&mut state, &op.address(), open_tx(body, DEFAULT_CHAIN_ID))
+            .unwrap_err();
+        assert!(err.contains("not registered"), "got {err}");
     }
 
     #[test]
@@ -731,12 +719,13 @@ mod open_deal {
         state.current_block_unix_secs = start;
         let body = signed_body(&m, &op);
 
-        assert_refused_untouched(
+        let err = apply_without_write(
             &mut state,
             &op.address(),
             open_tx(body.clone(), DEFAULT_CHAIN_ID),
-            "missed a challenge",
-        );
+        )
+        .unwrap_err();
+        assert!(err.contains("missed a challenge"), "got {err}");
 
         state.current_block_unix_secs = start + MISSED_CHALLENGE_COOLDOWN_SECS;
         apply(&mut state, open_tx(body, DEFAULT_CHAIN_ID)).expect("the cooldown has ended");
@@ -749,7 +738,9 @@ mod open_deal {
         let mut body = unsigned_body(&m, &op);
         body.operator_consent = consent(&op, MAINNET, &payer(), 0, &body);
 
-        assert_refused_untouched(&mut state, &op.address(), open_tx(body, MAINNET), "mainnet");
+        let err = apply_without_write(&mut state, &op.address(), open_tx(body, MAINNET))
+            .unwrap_err();
+        assert!(err.contains("mainnet"), "got {err}");
     }
 
     #[test]
@@ -757,7 +748,9 @@ mod open_deal {
         let (mut state, m, op) = world();
         let mut tx = open_tx(signed_body(&m, &op), DEFAULT_CHAIN_ID);
         tx.amount = 5;
-        assert_refused_untouched(&mut state, &op.address(), tx, "storage_amount_must_be_zero");
+        let err = apply_without_write(&mut state, &op.address(), tx)
+            .unwrap_err();
+        assert!(err.contains("storage_amount_must_be_zero"), "got {err}");
     }
 
     #[test]
@@ -768,12 +761,13 @@ mod open_deal {
         state.get_or_create(&payer()).balance = DEAL_FEE;
         assert!(funds > DEAL_FEE);
 
-        assert_refused_untouched(
+        let err = apply_without_write(
             &mut state,
             &op.address(),
             open_tx(signed_body(&m, &op), DEFAULT_CHAIN_ID),
-            "Insufficient payer balance",
-        );
+        )
+        .unwrap_err();
+        assert!(err.contains("Insufficient payer balance"), "got {err}");
     }
 
     #[test]
