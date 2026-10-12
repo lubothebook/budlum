@@ -301,38 +301,44 @@ pub fn pq_signature_len_acceptable(len: usize, expected: PqSigClass) -> bool {
 // itself stays behind the `bls12_381` crate; the accumulation is what decides
 // whether a certificate carries the quorum before that check runs.
 
-/// Maximum validators the bounded bitmap mirror accepts. The mirror test runs
-/// the same sizes against the production walk, so a drift is caught.
+/// Maximum validators the bounded bitmap mirror accepts.
 pub const MAX_MIRROR_VALIDATORS: usize = 4;
 
-/// Voted-stake accumulation, mirroring `FinalityCert::verify`'s bitmap walk.
+/// Voted-stake accumulation, mirroring `FinalityCert::verify`'s bitmap walk in
+/// `chain::finality`: a `u128` accumulator and a plain `+=`, as in production.
+/// The sum of at most `MAX_MIRROR_VALIDATORS` values of `u64` cannot overflow
+/// a `u128`, so no saturation is needed or used.
+///
+/// No test in `budlum-core` compares this copy with the production walk. The
+/// bound `voted <= total` is true for any non-negative terms, so the harness
+/// below also proves the exact selection rule (see its comment).
 #[must_use]
 pub fn bitmap_voted_stake(
     stakes: &[u64; MAX_MIRROR_VALIDATORS],
     n: usize,
     bitmap: &[u8; 1],
-) -> u64 {
-    let mut voted_stake: u64 = 0;
+) -> u128 {
+    let mut voted_stake: u128 = 0;
     let mut idx = 0;
     while idx < n {
         let byte_idx = idx / 8;
         let bit_idx = idx % 8;
         if byte_idx < bitmap.len() && (bitmap[byte_idx] & (1 << bit_idx)) != 0 {
-            voted_stake = voted_stake.saturating_add(stakes[idx]);
+            voted_stake += u128::from(stakes[idx]);
         }
         idx += 1;
     }
     voted_stake
 }
 
-/// The saturating sum of all stakes, the upper bound the accumulation above is
-/// checked against.
+/// The sum of all stakes in the set, the upper bound the accumulation above
+/// is checked against.
 #[must_use]
-pub fn saturating_stake_sum(stakes: &[u64; MAX_MIRROR_VALIDATORS], n: usize) -> u64 {
-    let mut total: u64 = 0;
+pub fn stake_sum(stakes: &[u64; MAX_MIRROR_VALIDATORS], n: usize) -> u128 {
+    let mut total: u128 = 0;
     let mut idx = 0;
     while idx < n {
-        total = total.saturating_add(stakes[idx]);
+        total += u128::from(stakes[idx]);
         idx += 1;
     }
     total
@@ -437,7 +443,7 @@ mod proofs {
     use super::{
         bitmap_voted_stake, classify_pq_signature_len, merkle_parent_layer_fold,
         merkle_rebuild_root_u64, merkle_root_u64, merkle_sibling_index, penalty_for,
-        pq_signature_len_acceptable, raw_quotient, saturating_stake_sum, PqSigClass,
+        pq_signature_len_acceptable, raw_quotient, stake_sum, PqSigClass,
         FIXED_POINT_SCALE, MAX_MIRROR_LEAVES, MAX_MIRROR_VALIDATORS, PQ_SIG_LEN_DILITHIUM5,
         PQ_SIG_LEN_ML_DSA_65, PQ_SIG_LEN_ML_DSA_87,
     };
@@ -959,13 +965,17 @@ mod proofs {
         assert_ne!(PQ_SIG_LEN_ML_DSA_65, PQ_SIG_LEN_ML_DSA_87);
     }
 
-    /// A finality bitmap can never vote more stake than the set holds.
+    /// A finality bitmap can never vote more stake than the set holds, and votes
+    /// exactly the stake of the validators it selects.
     ///
-    /// `FinalityCert::verify` compares the accumulated vote against the
-    /// quorum; an accumulation that could exceed the set's own total would
-    /// make the comparison meaningless. Saturating addition makes the bound
-    /// exact: votes are non-negative, so a subset's saturating sum never
-    /// exceeds the set's saturating sum.
+    /// `voted <= total` alone holds for any sum of non-negative terms, so it
+    /// would pass for a walk that ignored the bitmap. The harness therefore
+    /// also pins the selection rule, each of which fails on a different
+    /// broken walk:
+    ///
+    /// * an empty bitmap votes nothing,
+    /// * a bitmap with every in-range bit set votes the whole set,
+    /// * setting one more in-range bit adds exactly that validator's stake.
     #[kani::proof]
     #[kani::unwind(6)]
     fn bitmap_cannot_vote_more_stake_than_the_set_holds() {
@@ -975,16 +985,36 @@ mod proofs {
         }
         let n: usize = kani::any();
         kani::assume(n <= MAX_MIRROR_VALIDATORS);
-        let mut bitmap = [0u8; 1];
-        for byte in bitmap.iter_mut() {
-            *byte = kani::any();
-        }
+        let bitmap = [kani::any::<u8>(); 1];
 
         let voted = bitmap_voted_stake(&stakes, n, &bitmap);
-        let total = saturating_stake_sum(&stakes, n);
+        let total = stake_sum(&stakes, n);
         assert!(
             voted <= total,
             "the vote can never exceed the stake the set actually holds"
+        );
+
+        assert_eq!(
+            bitmap_voted_stake(&stakes, n, &[0u8]),
+            0,
+            "an empty bitmap must vote nothing"
+        );
+
+        let all_in_range = ((1u16 << n) - 1) as u8;
+        assert_eq!(
+            bitmap_voted_stake(&stakes, n, &[all_in_range]),
+            total,
+            "a full bitmap must vote the whole set"
+        );
+
+        let pick: usize = kani::any();
+        kani::assume(pick < n);
+        let bit = 1u8 << pick;
+        kani::assume(bitmap[0] & bit == 0);
+        assert_eq!(
+            bitmap_voted_stake(&stakes, n, &[bitmap[0] | bit]),
+            voted + u128::from(stakes[pick]),
+            "one more signer bit must add exactly that validator's stake"
         );
     }
 }
