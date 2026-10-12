@@ -486,6 +486,26 @@ impl GovernanceState {
                 // retargeted later (HIGH, CWE-345).
                 let _ = (app_id, developer, manifest_id, website_url_hash);
             }
+            // Same bounds as `AccountState::execute_proposal`: a proposal that
+            // execution would only warn about and drop must not take a slot.
+            ProposalType::ChangeBaseFee(new_fee) => {
+                use crate::core::account::{MAX_BASE_FEE, MIN_TX_FEE};
+                if !(MIN_TX_FEE..=MAX_BASE_FEE).contains(new_fee) {
+                    return Err(format!(
+                        "ChangeBaseFee must be between {MIN_TX_FEE} and {MAX_BASE_FEE}"
+                    ));
+                }
+            }
+            ProposalType::ChangeBlockReward(new_reward) => {
+                if *new_reward != 0 {
+                    return Err("ChangeBlockReward must be 0: validator income is fee-only".into());
+                }
+            }
+            ProposalType::SlashValidator { evidence_hash, .. } => {
+                if evidence_hash == &[0u8; 32] {
+                    return Err("SlashValidator evidence_hash must be non-zero".into());
+                }
+            }
             ProposalType::SetEncryptionPolicy(policy) => policy.validate()?,
             ProposalType::SetConstitutionParameter(parameter) => parameter.validate_update()?,
             ProposalType::UnfreezeConsensusDomain {
@@ -1071,6 +1091,30 @@ mod tests {
             .is_ok());
     }
 
+    /// P20-F07: proposals that execution would drop are refused up front.
+    #[test]
+    fn p20_f07_unexecutable_proposals_are_refused_at_creation() {
+        use crate::core::account::MAX_BASE_FEE;
+        let mut gov = GovernanceState::default();
+        let proposer = Address::from([0x01; 32]);
+        let bad = [
+            ProposalType::ChangeBaseFee(0),
+            ProposalType::ChangeBaseFee(MAX_BASE_FEE + 1),
+            ProposalType::ChangeBlockReward(1),
+            ProposalType::SlashValidator {
+                address: Address::from([0x02; 32]),
+                evidence_hash: [0u8; 32],
+            },
+        ];
+        for p_type in bad {
+            assert!(gov.create_proposal(proposer, p_type, 0, 10).is_err());
+        }
+        assert!(gov.proposals.is_empty());
+        assert!(gov
+            .create_proposal(proposer, ProposalType::ChangeBaseFee(42), 0, 10)
+            .is_ok());
+    }
+
     #[test]
     fn governance_rejects_non_whitelisted_parameter_proposal() {
         let mut gov = GovernanceState::default();
@@ -1361,10 +1405,10 @@ mod l4_tests {
         let proposer = Address::from([0x01; 32]);
         let every_type = [
             ProposalType::ChangeBaseFee(1),
-            ProposalType::ChangeBlockReward(1),
+            ProposalType::ChangeBlockReward(0),
             ProposalType::SlashValidator {
                 address: Address::from([0x02; 32]),
-                evidence_hash: [0u8; 32],
+                evidence_hash: [1u8; 32],
             },
             ProposalType::ParameterUpdate("min_stake".into(), "5000".into()),
             ProposalType::WhitelistVerifier {
