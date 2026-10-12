@@ -2557,6 +2557,17 @@ impl Node {
                                                    }
                                                    continue;
                                                }
+                                               // Cheap shape checks for the whole batch before any
+                                               // full validation or reorg work.
+                                               let batch_chain_id = self.chain.get_chain_id().await;
+                                               if !blocks.iter().all(|b| {
+                                                   Self::block_passes_cheap_checks(b, batch_chain_id)
+                                               }) {
+                                                   warn!("Rejected gossip block batch from {peer_id}: cheap checks failed");
+                                                   self.peer_manager_lock().report_invalid_block(&peer_id);
+                                                   continue;
+                                               }
+                                               let height_before = self.chain.get_height().await;
                                                if !blocks.is_empty() {
                                                    let start_idx = blocks[0].index;
                                                    let our_block_at_start = self.chain.get_block(start_idx).await;
@@ -2588,7 +2599,9 @@ impl Node {
                                                        }
                                                    }
                                                }
-                                               {
+                                               // A batch that moved nothing earns nothing: crediting
+                                               // it would offset the penalties of invalid batches.
+                                               if self.chain.get_height().await > height_before {
                                                    let mut pm = self.peer_manager_lock();
                                                    pm.report_good_behavior(&peer_id);
                                                }
@@ -2655,7 +2668,16 @@ impl Node {
                                                    self.peer_manager_lock().report_invalid_block(&peer_id);
                                                    continue;
                                                }
+                                               let snap_chain_id = self.chain.get_chain_id().await;
+                                               if !blocks.iter().all(|b| {
+                                                   Self::block_passes_cheap_checks(b, snap_chain_id)
+                                               }) {
+                                                   warn!("Rejected snap-sync batch from {peer_id}: cheap checks failed");
+                                                   self.peer_manager_lock().report_invalid_block(&peer_id);
+                                                   continue;
+                                               }
                                                info!("Snap-sync: {} blocks from {}", blocks.len(), peer_id);
+                                               let snap_height_before = self.chain.get_height().await;
                                                for block in blocks {
                                                    let h = self.chain.get_height().await;
                                                    if block.index > h {
@@ -2670,7 +2692,9 @@ impl Node {
                                                        }
                                                    }
                                                }
-                                               self.peer_manager_lock().report_good_behavior(&peer_id);
+                                               if self.chain.get_height().await > snap_height_before {
+                                                   self.peer_manager_lock().report_good_behavior(&peer_id);
+                                               }
                                            }
 
                                            NetworkMessage::Handshake { version_major, version_minor, chain_id, best_height, validator_set_hash, supported_schemes } => {
@@ -3725,6 +3749,18 @@ mod sync_handler_order_tests {
             let needle = format!("gossipsub::MessageAcceptance::{verdict}");
             assert!(src.contains(&needle), "missing verdict {verdict}");
         }
+    }
+
+    /// BLG-0204: gossip batches get the cheap checks and earn credit only
+    /// when the chain moved.
+    #[test]
+    fn gossip_block_batches_are_prechecked_and_not_credited_blindly() {
+        let src = production();
+        for marker in ["batch_chain_id", "snap_chain_id"] {
+            assert!(src.contains(&format!("block_passes_cheap_checks(b, {marker})")));
+        }
+        assert!(src.contains("> height_before"));
+        assert!(src.contains("> snap_height_before"));
     }
 
     /// BLG-0550: ban and rate limit run before the protobuf decode.
