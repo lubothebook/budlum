@@ -375,7 +375,30 @@ pub fn verify_and_report_at(
     let verified = crate::plonky3_prover::Plonky3Adapter::verify_canonical_program_with_activation(
         envelope, pi, program, activation,
     );
+    // P15-F04: the report signs `envelope.degree_bits`, so it must be the
+    // value the verifier derived from `trace_len`, not a free field.
+    let verified = verified.and_then(|()| check_degree_bits(envelope, pi));
     CanonicalRelayReport::from_outcome(envelope, pi, verified, at_unix)
+}
+
+/// The envelope `degree_bits` must equal the trace degree the verifier
+/// derives from the bound `trace_len` (the same formula as the prover).
+fn check_degree_bits(
+    envelope: &ProofEnvelope,
+    pi: &ExecutionPublicInputs,
+) -> Result<(), VerifyError> {
+    let rows = pi
+        .trace_len
+        .checked_mul(3)
+        .and_then(|n| n.checked_add(1))
+        .and_then(u64::checked_next_power_of_two)
+        .map(|n| n.max(16));
+    match rows {
+        Some(n) if n.trailing_zeros() == envelope.degree_bits => Ok(()),
+        _ => Err(VerifyError::InvalidEnvelope(
+            "degree_bits does not match trace_len".to_string(),
+        )),
+    }
 }
 
 /// Verify and re-run the canonical transfer program against the bound public
@@ -649,6 +672,28 @@ mod tests {
             event_digest: [0u8; 32],
             state_writes_digest: [0u8; 32],
         }
+    }
+
+    #[test]
+    fn degree_bits_must_match_trace_len() {
+        let program = vec![inst(Opcode::Halt, 0, 0, 0, 0)];
+        let mut vm = Vm::new(1024);
+        vm.run_receipt(&program);
+        let pi = dummy_pi(&vm, &program);
+        let envelope = ProofEnvelope {
+            proof_format_version: crate::adapter::PROOF_FORMAT_VERSION,
+            backend: "Plonky3-Keccak-Goldilocks".to_string(),
+            p3_version: "0.5.2".to_string(),
+            fri_params_id: "test_fri_params".to_string(),
+            public_inputs_hash: [0u8; 32],
+            proof_bytes: vec![0u8; 8],
+            degree_bits: 4,
+        };
+        assert!(pi.trace_len < 5, "the specimen must fit the 16 row floor");
+        assert!(check_degree_bits(&envelope, &pi).is_ok());
+        let mut wrong = envelope.clone();
+        wrong.degree_bits = 22;
+        assert!(check_degree_bits(&wrong, &pi).is_err());
     }
 
     fn prove_canonical() -> (ProofEnvelope, ExecutionPublicInputs, Vec<u64>) {
