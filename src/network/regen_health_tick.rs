@@ -183,7 +183,10 @@ impl RegenHealthTick {
         }
 
         let repair_cost = self.ledger.height;
-        let regrowth_cost = self.ledger.height.saturating_sub(view.previous.unwrap_or(0));
+        let regrowth_cost = self
+            .ledger
+            .height
+            .saturating_sub(view.previous.unwrap_or(0));
         let verdict = assess(
             &self.ledger,
             &self.policy,
@@ -205,9 +208,11 @@ impl RegenHealthTick {
             },
             HealthVerdict::RevertTo { target, stress } => {
                 let result = if self.ledger.validate().is_ok() {
-                    self.ledger.revert(&target, stress, &self.policy.reversion, &canonical)
+                    self.ledger
+                        .revert(&target, stress, &self.policy.reversion, &canonical)
                 } else {
-                    self.ledger.revert_after_forgery(&target, stress, &canonical)
+                    self.ledger
+                        .revert_after_forgery(&target, stress, &canonical)
                 };
                 match result {
                     Ok(reversion) => TickOutcome::Reverted(reversion),
@@ -334,7 +339,10 @@ mod tests {
             ..ReversionPolicy::default()
         };
         let mut tick = RegenHealthTick::new(policy);
-        assert!(matches!(tick.observe(&view(diverged(2000))), TickOutcome::Reverted(_)));
+        assert!(matches!(
+            tick.observe(&view(diverged(2000))),
+            TickOutcome::Reverted(_)
+        ));
         assert_eq!(tick.observe(&view(honest(2000))), TickOutcome::Healthy);
         assert_eq!(tick.ledger.stage, Stage::Medusa);
 
@@ -381,7 +389,10 @@ mod tests {
             local: None,
             ..honest(300)
         };
-        assert!(matches!(tick.observe(&view(live)), TickOutcome::Repair { .. }));
+        assert!(matches!(
+            tick.observe(&view(live)),
+            TickOutcome::Repair { .. }
+        ));
     }
 
     #[test]
