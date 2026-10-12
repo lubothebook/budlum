@@ -3,7 +3,7 @@
 //! WIRING: unwired - reached through the `verify` entry points re-exported by
 //! bud-proof, not by name from this workspace.
 
-use p3_air::symbolic::SymbolicAirBuilder;
+use p3_air::symbolic::{get_symbolic_constraints, SymbolicAirBuilder};
 use p3_air::{Air, RowWindow};
 use p3_challenger::{CanObserve, FieldChallenger};
 use p3_commit::{Pcs, PolynomialSpace};
@@ -246,6 +246,31 @@ where
     }
 }
 
+/// True when the AIR adds constraints once the auxiliary (LogUp) trace exists.
+///
+/// The answer comes from the AIR itself, never from the proof. The proof
+/// decides only whether it carries an aux commitment, and a prover that drops
+/// it would switch every constraint behind the aux guard off.
+fn air_requires_aux<F, A>(air: &A, layout: AirLayout) -> bool
+where
+    F: Field,
+    A: Air<SymbolicAirBuilder<F>>,
+{
+    let with_aux = AirLayout {
+        permutation_width: 3,
+        num_permutation_challenges: 3,
+        ..layout
+    };
+    let without_aux = AirLayout {
+        permutation_width: 0,
+        num_permutation_challenges: 0,
+        ..layout
+    };
+    let n_with = get_symbolic_constraints(air, with_aux).len();
+    let n_without = get_symbolic_constraints(air, without_aux).len();
+    n_with > n_without
+}
+
 #[instrument(skip_all)]
 pub fn verify<SC, A>(
     config: &SC,
@@ -336,6 +361,21 @@ where
     }
 
     let has_aux_trace = commitments.aux_trace.is_some();
+    // P15-F01: the proof must not choose to run without the aux trace. An AIR
+    // whose constraints depend on it (BudAir: register, memory and program
+    // LogUps) is checked in full or not at all. Only a proof that already
+    // lacks the aux commitment pays for the extra symbolic evaluation.
+    if !has_aux_trace {
+        let base_layout = AirLayout {
+            preprocessed_width,
+            main_width: air.width(),
+            num_public_values: air.num_public_values(),
+            ..Default::default()
+        };
+        if air_requires_aux::<Val<SC>, A>(air, base_layout) {
+            return Err(VerificationError::InvalidProofShape);
+        }
+    }
     let permutation_width = if has_aux_trace { 3 } else { 0 };
     let layout = AirLayout {
         preprocessed_width,
@@ -656,3 +696,26 @@ where
 }
 
 impl<PcsErr> std::error::Error for VerificationError<PcsErr> where PcsErr: core::fmt::Debug {}
+
+#[cfg(test)]
+mod tests {
+    use p3_goldilocks::Goldilocks;
+
+    use super::*;
+    use crate::plonky3_air::{BudAir, PREPROCESSED_WIDTH};
+
+    #[test]
+    fn bud_air_requires_the_aux_trace() {
+        let air = BudAir {
+            num_steps: 1,
+            program: vec![0],
+        };
+        let layout = AirLayout {
+            preprocessed_width: PREPROCESSED_WIDTH,
+            main_width: <BudAir as p3_air::BaseAir<Goldilocks>>::width(&air),
+            num_public_values: <BudAir as p3_air::BaseAir<Goldilocks>>::num_public_values(&air),
+            ..Default::default()
+        };
+        assert!(air_requires_aux::<Goldilocks, BudAir>(&air, layout));
+    }
+}
