@@ -625,79 +625,26 @@ mod proofs {
         );
     }
 
-    /// Without the bound, the penalty is no longer capped by the bond.
+    /// Without the bound, the raw quotient is no longer capped by the bond.
     ///
     /// The harnesses above *assume* `ratio <= FIXED_POINT_SCALE`. If
     /// `RegistryParams::validate` ever stopped enforcing it, they would all
     /// still pass while production became unsound, because an assumption is
     /// not a check. Here the precondition is dropped on purpose and the
-    /// consequence is asserted, so the bound is recorded as load-bearing.
+    /// consequence is asserted on the crate functions: `raw_quotient` takes at
+    /// least the bond, strictly more once `stake * excess` reaches one unit of
+    /// `FIXED_POINT_SCALE`, and `penalty_for` contains it at the bond.
     ///
-    /// The claim is `>=`, not `>`. Kani rejected the strict version and was
-    /// right to: at `stake = 1, ratio = 1_000_001` the quotient truncates back
-    /// down to 1, so the penalty equals the bond rather than exceeding it.
-    /// `an_unbounded_ratio_can_strictly_exceed_the_bond` pins the strict case.
+    /// The claim is `>=` in general, not `>`: at `stake = 1, ratio = 1_000_001`
+    /// the quotient truncates back down to 1. The strict case is asserted
+    /// under the exact condition that makes it true.
     ///
-    /// # Why the ratios are written out instead of iterated
-    ///
-    /// This harness was cancelled at the CI timeout five times while the
-    /// suspect was the arithmetic. It is not the arithmetic. The neighbouring
-    /// `an_unbounded_ratio_can_strictly_exceed_the_bond` does *more* work - a
-    /// 128-bit multiply **and** a 128-bit divide, on a symbolic stake - and
-    /// finishes in 0.04s. The only structural difference between the two was
-    /// that this one wrapped its asserts in a `for` loop over an array.
-    ///
-    /// CBMC unwinds loops. With no `--unwind` bound and no
-    /// `#[kani::unwind(n)]`, it has no reason to stop at the array's four
-    /// elements, so it keeps unwinding and never reaches a decision. Every
-    /// earlier attempt changed the operands and left the loop in place, which
-    /// is why each one produced the same cancellation and each diagnosis was
-    /// wrong:
-    ///
-    /// | attempt | changed | loop | result |
-    /// | :-- | :-- | :-- | :-- |
-    /// | 1 | symbolic `u64` ratio | yes | cancelled at 45m |
-    /// | 2 | ratio pair `{SCALE+1, 2*SCALE}` | yes | cancelled at 90m |
-    /// | 3 | dropped the division | yes | cancelled at 90m |
-    /// | 4 | concrete `u128` ratio list | yes | cancelled at 90m |
-    /// | - | neighbour harness, no loop | **no** | **0.04s** |
-    ///
-    /// Four asserts written out was not the whole fix either, and neither was
-    /// the first rewrite of this comment. The table now runs to six rows,
-    /// every one of them measured:
-    ///
-    /// | attempt | changed | symbolic operands | result |
-    /// | :-- | :-- | :-- | :-- |
-    /// | 1 | symbolic `u64` ratio | 2 | cancelled at 45m |
-    /// | 2 | ratio pair `{SCALE+1, 2*SCALE}` | 1 | cancelled at 90m |
-    /// | 3 | dropped the division | 1 | cancelled at 90m |
-    /// | 4 | concrete `u128` ratio list | 1 | cancelled at 90m |
-    /// | 5 | loop unrolled into four asserts | 1 | timed out at 90m |
-    /// | 6 | symbolic `u32` excess, `u64` `checked_mul` | **2** | still running at 20m |
-    ///
-    /// Attempt 6 was mine, and it went the wrong way. The harness next door
-    /// (`penalty_is_monotonic_in_the_ratio`) already records the rule -
-    /// "two symbolic operands in a 128-bit multiply is what CBMC cannot close
-    /// in CI time" - and narrows its pair to `u16` for exactly that reason. I
-    /// replaced four constant ratios with a symbolic one, which reads like
-    /// broader coverage and hands the solver a second free operand.
-    ///
-    /// What the earlier attempts got right and I lost: with a constant ratio
-    /// there is one unknown, and the multiply is a shift-and-add over known
-    /// bits. With both sides symbolic it is a full 64x64 product.
-    ///
-    /// So: one symbolic operand, and narrow. `stake` is `u16` here rather than
-    /// `u32`, which is the same trade the monotonicity harness makes, the
-    /// property is about the *shape* of the arithmetic, and no boundary in it
-    /// lives above 65535. The ratio stays a constant, and the four that
-    /// mattered are covered by four separate harnesses instead of four asserts
-    /// in one: a solver that has closed one has no work carried into the next,
-    /// which is not true of four asserts sharing a symbol.
-    ///
-    /// The claim itself never needed a solver at all. For `stake > 0` and
-    /// `k > 0`, `stake * (SCALE + k) >= stake * SCALE` reduces to
-    /// `stake * k >= 0`. What is worth checking is that the product does not
-    /// wrap, which is why `checked_mul` stays.
+    /// Each harness has one symbolic operand (`stake`, `u16`) and a constant
+    /// ratio. Loops and a second symbolic operand are what made the earlier
+    /// forms of this harness time out; the constant ratio keeps the quotient a
+    /// shift-and-add over known bits, the shape the sibling harness
+    /// `an_unbounded_ratio_can_strictly_exceed_the_bond` proves in under a
+    /// second.
     ///
     /// This is not a claim about a reachable state: every `set_params` caller
     /// runs `validate()` first.
@@ -706,19 +653,22 @@ mod proofs {
         kani::assume(stake > 0);
         let stake = u64::from(stake);
 
-        const SCALE: u64 = FIXED_POINT_SCALE;
-        let ratio = SCALE + excess;
-
-        let penalty = stake
-            .checked_mul(ratio)
-            .expect("a u16 stake times a ratio near SCALE fits in u64");
-        let bond = stake
-            .checked_mul(SCALE)
-            .expect("a u16 stake times SCALE fits in u64");
+        let ratio = FIXED_POINT_SCALE + excess;
+        let quotient = raw_quotient(stake, ratio);
 
         assert!(
-            penalty > bond,
-            "a ratio above FIXED_POINT_SCALE must take strictly more than the bond"
+            quotient >= u128::from(stake),
+            "a ratio above FIXED_POINT_SCALE must take at least the bond"
+        );
+        if u128::from(stake) * u128::from(excess) >= u128::from(FIXED_POINT_SCALE) {
+            assert!(
+                quotient > u128::from(stake),
+                "an excess of one full unit or more must take strictly more than the bond"
+            );
+        }
+        assert!(
+            penalty_for(stake, ratio) == stake,
+            "the clamp must hold the overshoot at the bond"
         );
     }
 
@@ -794,11 +744,14 @@ mod proofs {
         );
     }
 
-    /// And a concrete witness that it really does exceed the bond.
+    /// And a witness that the raw quotient really does exceed the bond.
     ///
     /// `>=` alone would be satisfied by a rule that merely reaches the bond.
-    /// This pins a case where the penalty is strictly larger, so the harness
-    /// above cannot be read as saying the overshoot is only theoretical.
+    /// This pins a case where the unclamped quotient is strictly larger, and
+    /// that the clamp then brings it back to the bond, so the harness above
+    /// cannot be read as saying the overshoot is only theoretical. Both
+    /// statements call crate functions: replacing `raw_quotient` with a
+    /// clamped form, or deleting the clamp in `penalty_for`, fails here.
     #[kani::proof]
     fn an_unbounded_ratio_can_strictly_exceed_the_bond() {
         let stake: u32 = kani::any();
@@ -806,10 +759,13 @@ mod proofs {
         kani::assume(stake >= 2);
 
         let ratio = 2 * FIXED_POINT_SCALE;
-        let quotient = (u128::from(stake) * u128::from(ratio)) / u128::from(FIXED_POINT_SCALE);
         assert!(
-            quotient > u128::from(stake),
+            raw_quotient(stake, ratio) > u128::from(stake),
             "a 200% ratio must take strictly more than the bond"
+        );
+        assert!(
+            penalty_for(stake, ratio) == stake,
+            "the clamp must hold a 200% ratio at the bond"
         );
     }
 
@@ -978,9 +934,20 @@ mod proofs {
     /// failure mode the length check exists to prevent.
     #[kani::proof]
     fn pq_signature_lengths_are_pairwise_distinct() {
-        assert_ne!(PQ_SIG_LEN_DILITHIUM5, PQ_SIG_LEN_ML_DSA_65);
-        assert_ne!(PQ_SIG_LEN_DILITHIUM5, PQ_SIG_LEN_ML_DSA_87);
-        assert_ne!(PQ_SIG_LEN_ML_DSA_65, PQ_SIG_LEN_ML_DSA_87);
+        // Through the classifier, not by comparing the constants: two equal
+        // lengths make the first branch win and the second assert fail.
+        assert_eq!(
+            classify_pq_signature_len(PQ_SIG_LEN_DILITHIUM5),
+            PqSigClass::Dilithium5
+        );
+        assert_eq!(
+            classify_pq_signature_len(PQ_SIG_LEN_ML_DSA_65),
+            PqSigClass::MlDsa65
+        );
+        assert_eq!(
+            classify_pq_signature_len(PQ_SIG_LEN_ML_DSA_87),
+            PqSigClass::MlDsa87
+        );
     }
 
     /// A finality bitmap can never vote more stake than the set holds, and votes
