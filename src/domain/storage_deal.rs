@@ -4122,7 +4122,7 @@ impl StorageRegistry {
     /// Left as-is (audit trail).
     ///
     /// Returns the number of active deals that were expired by this prune.
-    pub fn prune_content(&mut self, manifest_id: &ContentId, _now_epoch: u64) -> u64 {
+    pub fn prune_content(&mut self, manifest_id: &ContentId, now_epoch: u64) -> u64 {
         let deal_ids: Vec<u64> = self
             .deals_for_manifest(manifest_id)
             .iter()
@@ -4137,8 +4137,23 @@ impl StorageRegistry {
             }
         }
 
-        // Remove the manifest entry so it can no longer be referenced.
-        self.manifests.remove(manifest_id);
+        // Remove the manifest entry so it can no longer be referenced. The
+        // dictionary it held is released once, and only when the manifest was
+        // really registered, so a repeated prune cannot drop a reference that
+        // belongs to another object.
+        if let Some(manifest) = self.manifests.remove(manifest_id) {
+            if let Some(dict_id) = manifest.dictionary_id {
+                self.dictionaries.release_dictionary(&dict_id, now_epoch);
+            }
+        }
+        // Everything keyed by the manifest goes with it. Left behind, the read
+        // log would keep feeding the replica demand of an object that no
+        // longer exists, and the other rows would stay in the state root.
+        self.access_events.remove(manifest_id);
+        self.confidential_commits.remove(manifest_id);
+        self.confidential_owners.remove(manifest_id);
+        self.self_host_policies
+            .retain(|(policy_manifest, _), _| policy_manifest != manifest_id);
 
         pruned
     }
@@ -6573,6 +6588,42 @@ mod tests {
 
         // Manifest should be removed.
         assert!(reg.get_manifest(&manifest_id).is_none());
+    }
+
+    /// The rows keyed by the manifest leave with it, and the dictionary
+    /// reference drops exactly once.
+    #[test]
+    fn prune_content_clears_rows_keyed_by_the_manifest() {
+        let mut reg = StorageRegistry::new();
+        let dict = ContentId([9u8; 32]);
+        reg.dictionaries
+            .register_dictionary(dict, 4_096)
+            .expect("the dictionary must register");
+        let mut m = good_manifest();
+        m.dictionary_id = Some(dict);
+        reg.register_manifest_with_source(&m)
+            .expect("the manifest must register");
+        let manifest_id = m.manifest_id;
+        reg.record_proven_read(manifest_id, 10);
+        reg.self_host_policies.insert(
+            (manifest_id, m.shards[0].shard_id),
+            crate::storage::MobileSelfContentPolicy {
+                content_id: m.shards[0].shard_id,
+                owner: operator(),
+                critical: false,
+                required_paid_replicas: 0,
+                self_host_allowed: true,
+            },
+        );
+        assert_eq!(reg.dictionaries.reference_count(&dict), Some(1));
+
+        reg.prune_content(&manifest_id, 150);
+        assert!(reg.access_events.is_empty());
+        assert!(reg.self_host_policies.is_empty());
+        assert_eq!(reg.dictionaries.reference_count(&dict), Some(0));
+
+        reg.prune_content(&manifest_id, 151);
+        assert_eq!(reg.dictionaries.reference_count(&dict), Some(0));
     }
 
     #[test]
