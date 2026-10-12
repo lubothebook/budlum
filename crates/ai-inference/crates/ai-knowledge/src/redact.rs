@@ -255,16 +255,26 @@ fn redact_known_values(line: &str, report: &mut RedactionReport) -> String {
         if current.is_empty() {
             return;
         }
-        let detected = VALUE_PATTERNS
-            .iter()
-            .find(|(_, detect)| detect(current))
-            .map(|(kind, _)| *kind);
-        match detected {
-            Some(kind) => {
-                report.add(kind);
-                out.push_str(REDACTION_TOKEN);
-            }
-            None => out.push_str(current),
+        // Sentence dots around a word are not part of the secret.
+        let core = current.trim_matches('.');
+        let lead_len = current.len() - current.trim_start_matches('.').len();
+        let trail_len = current.len() - current.trim_end_matches('.').len();
+        let find = |word: &str| {
+            VALUE_PATTERNS
+                .iter()
+                .find(|(_, detect)| detect(word))
+                .map(|(kind, _)| *kind)
+        };
+        if let Some(kind) = find(current.as_str()) {
+            report.add(kind);
+            out.push_str(REDACTION_TOKEN);
+        } else if let Some(kind) = find(core).filter(|_| !core.is_empty()) {
+            report.add(kind);
+            out.push_str(&current[..lead_len]);
+            out.push_str(REDACTION_TOKEN);
+            out.push_str(&current[current.len() - trail_len..]);
+        } else {
+            out.push_str(current);
         }
         current.clear();
     };
@@ -512,5 +522,19 @@ mod tests {
         assert!(!out.contains("abc def"));
         assert!(out.contains("plain"));
         assert!(out.contains(REDACTION_TOKEN));
+    }
+
+    /// A known-shape secret followed by a full stop is still masked.
+    #[test]
+    fn secret_before_full_stop_is_masked() {
+        let secret = format!("sk-{}", "abcdefghijklmnopqrstuvwxyz123");
+        let r = redact_text(&format!("The key is {secret}."));
+        assert!(!r.text().contains(&secret));
+        assert!(r.report().total() >= 1);
+        assert_eq!(r.text(), format!("The key is {REDACTION_TOKEN}."));
+        let aws = format!("AKIA{}", "ABCDEFGHIJKLMNOP");
+        let r = redact_text(&format!("see ({aws}). Done"));
+        assert!(!r.text().contains(&aws));
+        assert!(r.text().ends_with(". Done"));
     }
 }
