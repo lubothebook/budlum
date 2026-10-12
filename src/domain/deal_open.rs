@@ -411,19 +411,20 @@ mod tests {
         )
     }
 
-    fn assert_refused_untouched(
+    /// Run the open and, when it is refused, check that it wrote nothing.
+    fn open_without_write(
         mut state: AccountState,
         t: &DealOpenTerms<'_>,
         payer_address: Address,
         now: u64,
         reserve: u64,
-        expected: &str,
-    ) {
+    ) -> Result<u64, String> {
         let before = snapshot(&state);
-        let err = open_deal_escrowed(&mut state, t, payer_address, now, BOND, reserve)
-            .expect_err("the open must be refused");
-        assert!(err.contains(expected), "got {err:?}, wanted {expected:?}");
-        assert_eq!(snapshot(&state), before, "a refusal must not write");
+        let result = open_deal_escrowed(&mut state, t, payer_address, now, BOND, reserve);
+        if result.is_err() {
+            assert_eq!(snapshot(&state), before, "a refusal must not write");
+        }
+        result
     }
 
     #[test]
@@ -434,7 +435,8 @@ mod tests {
         state
             .storage_registry
             .begin_operator_cooldown(operator(), 100);
-        assert_refused_untouched(state, &t, payer(), 200, 0, "missed a challenge");
+        let err = open_without_write(state, &t, payer(), 200, 0).unwrap_err();
+        assert!(err.contains("missed a challenge"), "got {err:?}");
     }
 
     #[test]
@@ -442,14 +444,9 @@ mod tests {
         let manifest = manifest();
         let mut t = terms(&manifest, operator());
         t.end_epoch = t.start_epoch;
-        assert_refused_untouched(
-            funded(5_000_000, 5_000_000),
-            &t,
-            payer(),
-            0,
-            0,
-            "Deal duration must be > 0",
-        );
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
+            .unwrap_err();
+        assert!(err.contains("Deal duration must be > 0"), "got {err:?}");
     }
 
     #[test]
@@ -457,14 +454,9 @@ mod tests {
         let manifest = manifest();
         let mut t = terms(&manifest, operator());
         t.shard_id = crate::storage::ContentId([0xEEu8; 32]);
-        assert_refused_untouched(
-            funded(5_000_000, 5_000_000),
-            &t,
-            payer(),
-            0,
-            0,
-            "is not part of manifest",
-        );
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
+            .unwrap_err();
+        assert!(err.contains("is not part of manifest"), "got {err:?}");
     }
 
     #[test]
@@ -473,7 +465,8 @@ mod tests {
         let t = terms(&manifest, operator());
         let mut state = funded(5_000_000, 5_000_000);
         open_deal_escrowed(&mut state, &t, payer(), 0, BOND, 0).unwrap();
-        assert_refused_untouched(state, &t, payer(), 0, 0, "refusing a replayed open");
+        let err = open_without_write(state, &t, payer(), 0, 0).unwrap_err();
+        assert!(err.contains("refusing a replayed open"), "got {err:?}");
     }
 
     #[test]
@@ -481,28 +474,18 @@ mod tests {
         let manifest = manifest();
         let t = terms(&manifest, operator());
         let fee = fee_of(&t);
-        assert_refused_untouched(
-            funded(fee - 1, 5_000_000),
-            &t,
-            payer(),
-            0,
-            0,
-            "Insufficient payer balance",
-        );
+        let err = open_without_write(funded(fee - 1, 5_000_000), &t, payer(), 0, 0)
+            .unwrap_err();
+        assert!(err.contains("Insufficient payer balance"), "got {err:?}");
     }
 
     #[test]
     fn a_short_operator_is_refused_without_a_write() {
         let manifest = manifest();
         let t = terms(&manifest, operator());
-        assert_refused_untouched(
-            funded(5_000_000, BOND - 1),
-            &t,
-            payer(),
-            0,
-            0,
-            "Insufficient operator balance",
-        );
+        let err = open_without_write(funded(5_000_000, BOND - 1), &t, payer(), 0, 0)
+            .unwrap_err();
+        assert!(err.contains("Insufficient operator balance"), "got {err:?}");
     }
 
     #[test]
@@ -510,14 +493,9 @@ mod tests {
         let manifest = manifest();
         let mut t = terms(&manifest, operator());
         t.merkle_proof = None;
-        assert_refused_untouched(
-            funded(5_000_000, 5_000_000),
-            &t,
-            payer(),
-            0,
-            0,
-            "open_deal failed",
-        );
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
+            .unwrap_err();
+        assert!(err.contains("open_deal failed"), "got {err:?}");
     }
 
     #[test]
@@ -525,14 +503,9 @@ mod tests {
         let manifest = manifest();
         let mut t = terms(&manifest, operator());
         t.economics.operator_bond = BOND - 1;
-        assert_refused_untouched(
-            funded(5_000_000, 5_000_000),
-            &t,
-            payer(),
-            0,
-            0,
-            "open_deal failed",
-        );
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
+            .unwrap_err();
+        assert!(err.contains("open_deal failed"), "got {err:?}");
     }
 
     #[test]
@@ -572,14 +545,15 @@ mod tests {
         let fee = fee_of(&t);
         let reserve = 7;
 
-        assert_refused_untouched(
+        let err = open_without_write(
             funded(fee + reserve - 1, 5_000_000),
             &t,
             payer(),
             0,
             reserve,
-            "Insufficient payer balance",
-        );
+        )
+        .unwrap_err();
+        assert!(err.contains("Insufficient payer balance"), "got {err:?}");
 
         let mut state = funded(fee + reserve, 5_000_000);
         open_deal_escrowed(&mut state, &t, payer(), 0, BOND, reserve).unwrap();
@@ -720,14 +694,9 @@ mod tests {
     fn a_hybrid_with_an_oversized_prefix_is_refused_without_a_write() {
         let manifest = hybrid_manifest(100);
         let t = unit_rate_terms(&manifest, operator());
-        assert_refused_untouched(
-            funded(5_000_000, 5_000_000),
-            &t,
-            payer(),
-            0,
-            0,
-            "held_bytes refused the source",
-        );
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
+            .unwrap_err();
+        assert!(err.contains("held_bytes refused the source"), "got {err:?}");
     }
 
     fn reallocation_terms(
