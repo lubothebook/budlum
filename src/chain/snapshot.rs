@@ -405,6 +405,13 @@ impl PruningManager {
                     continue;
                 }
             };
+            // A V1 file or a file from a newer release is not corrupt. Skip it
+            // without quarantine so the V1 fallback and a newer binary can
+            // still read it.
+            if let Some(reason) = v2_loader_skip_reason(&data) {
+                tracing::warn!("V2 loader skips {} ({reason})", path.display());
+                continue;
+            }
             let snapshot: StateSnapshotV2 = match serde_json::from_str(&data) {
                 Ok(s) => s,
                 Err(e) => {
@@ -438,6 +445,27 @@ impl PruningManager {
         }
         Ok(None)
     }
+}
+
+/// Why the V2 startup loader must leave a candidate file alone, if it must.
+///
+/// A file with no `schema_version` is a V1 snapshot; a file whose version is
+/// outside the supported window comes from another release. Neither is
+/// corrupt. A file that does not parse, or whose version is not a number, is
+/// not skipped here: the caller quarantines it.
+fn v2_loader_skip_reason(data: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(data).ok()?;
+    let object = value.as_object()?;
+    let Some(raw) = object.get("schema_version") else {
+        return Some("no schema_version, V1 file".to_string());
+    };
+    let version = raw.as_u64()?;
+    if version < u64::from(MIN_SUPPORTED_STATE_SNAPSHOT_SCHEMA_VERSION)
+        || version > u64::from(CURRENT_STATE_SNAPSHOT_SCHEMA_VERSION)
+    {
+        return Some(format!("schema_version {version} is outside the supported window"));
+    }
+    None
 }
 
 fn get_snapshot_height(path: &std::path::Path) -> Option<u64> {
@@ -1257,6 +1285,43 @@ mod tests {
         assert!(dir.path().join("snapshot_10.json").exists());
         assert!(dir.path().join("snapshot_20.json").exists());
         assert!(dir.path().join("snapshot_30.json.reorg").exists());
+    }
+
+    /// BLG-0208: the V2 startup loader leaves V1 and foreign-version files alone.
+    #[test]
+    fn v2_loader_does_not_quarantine_v1_or_out_of_window_files() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let v1 = dir.path().join("snapshot_10.json");
+        let future = dir.path().join("snapshot_20.json");
+        fs::write(&v1, r#"{"height":10}"#).unwrap();
+        let future_blob = format!(
+            r#"{{"schema_version":{}}}"#,
+            CURRENT_STATE_SNAPSHOT_SCHEMA_VERSION + 1
+        );
+        fs::write(&future, future_blob).unwrap();
+        let manager = PruningManager::new(100, 1000, dir.path().to_string_lossy().to_string());
+
+        assert!(manager.load_latest_snapshot_v2().unwrap().is_none());
+        assert!(v1.exists(), "a V1 file must not be renamed");
+        assert!(future.exists(), "a newer-release file must not be renamed");
+    }
+
+    /// BLG-0208: a corrupt file is still quarantined.
+    #[test]
+    fn v2_loader_still_quarantines_a_file_that_does_not_parse() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let bad = dir.path().join("snapshot_5.json");
+        fs::write(&bad, "not json").unwrap();
+        let manager = PruningManager::new(100, 1000, dir.path().to_string_lossy().to_string());
+
+        assert!(manager.load_latest_snapshot_v2().is_err());
+        assert!(dir.path().join("snapshot_5.json.corrupted").exists());
     }
 
     /// A character cannot move from `block_hash` into `genesis_hash`.
