@@ -5612,14 +5612,26 @@ impl Blockchain {
             }
         }
 
-        for tx in &self.mempool.get_sorted_transactions(1000) {
+        // Transactions of the orphaned blocks go back to the pool unless the
+        // new fork already holds them (BLG-0185).
+        for block in &old_chain[fork_point..] {
+            for tx in &block.transactions {
+                if !chain_txs.contains(&tx.hash) {
+                    new_pending.push(tx.clone());
+                }
+            }
+        }
+        for tx in &self.mempool.get_sorted_transactions(self.mempool.len()) {
             if !chain_txs.contains(&tx.hash) {
                 new_pending.push(tx.clone());
             }
         }
 
-        self.mempool =
-            crate::mempool::pool::Mempool::new(crate::mempool::pool::MempoolConfig::default());
+        // The per network pool limits, the same as at startup.
+        let mempool_config = Network::from_chain_id(self.chain_id)
+            .map(|network| network.mempool_config())
+            .unwrap_or_default();
+        self.mempool = crate::mempool::pool::Mempool::new(mempool_config);
         for tx in new_pending {
             let _ = self.mempool.add_transaction(tx);
         }
@@ -9101,6 +9113,57 @@ mod bond_and_reorg_tests {
         assert!(left
             .validator_snapshots
             .contains_key(&left.state.epoch_index));
+    }
+
+    /// BLG-0185: a reorg returns the transactions of the orphaned blocks to the
+    /// pool.
+    #[test]
+    fn reorg_returns_orphaned_transactions_to_the_pool() {
+        use crate::consensus::PoWEngine;
+        use crate::crypto::primitives::KeyPair;
+        use std::sync::Arc;
+
+        let kp = KeyPair::generate().unwrap();
+        let sender = Address::from(kp.public_key_bytes());
+        let genesis = || GenesisConfig::new(45262).with_allocation(sender, 10_000_000);
+        let mut left = Blockchain::new_with_genesis(
+            Arc::new(PoWEngine::new(0)),
+            None,
+            45262,
+            None,
+            Some(genesis()),
+        );
+        let mut right = Blockchain::new_with_genesis(
+            Arc::new(PoWEngine::new(0)),
+            None,
+            45262,
+            None,
+            Some(genesis()),
+        );
+        left.produce_block(Address::from([1u8; 32])).unwrap();
+        right.produce_block(Address::from([1u8; 32])).unwrap();
+
+        let mut tx = Transaction::new_with_fee(
+            sender,
+            Address::from([0x44; 32]),
+            10,
+            100_000,
+            left.get_nonce(&sender),
+            Vec::new(),
+        );
+        tx.sign(&kp);
+        let tx_hash = tx.hash.clone();
+        left.mempool.add_transaction(tx).unwrap();
+        left.produce_block(Address::from([2u8; 32])).unwrap();
+        left.produce_block(Address::from([2u8; 32])).unwrap();
+        assert!(left.chain[2].transactions.iter().any(|t| t.hash == tx_hash));
+        assert!(left.mempool.get(&tx_hash).is_none());
+
+        for _ in 0..3 {
+            right.produce_block(Address::from([3u8; 32])).unwrap();
+        }
+        assert!(left.try_reorg(right.chain).unwrap());
+        assert!(left.mempool.get(&tx_hash).is_some());
     }
 
     #[test]
