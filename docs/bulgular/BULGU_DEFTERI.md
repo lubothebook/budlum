@@ -7,18 +7,18 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | Parça | ID | Dosya:Satır | Kanıt | Durum | Commit SHA | CI run |
 |---|---|---|---|---|---|---|
 | P0 | BLG-0001 | .gitleaks.toml | CI #122 Secret Scan: `[[allowlists]] must contain at least one check`; düzeltme b35dd86 (parmak izi .gitleaksignore dosyasına taşındı); yeşil kanıt bekleniyor | CI BEKLİYOR | b35dd86 |  |
-| P0 | BLG-0002 | src/network/regen_health_tick.rs:337 | CI #124 Clippy: `field_reassign_with_default` (-D warnings), iş 115030778899 ve 115030778747 / gp/P0-A:fd859e7 | KODLANIYOR |  |  |
+| P0 | BLG-0002 | src/network/regen_health_tick.rs:337 | CI #124 Clippy: `field_reassign_with_default` (-D warnings), iş 115030778899 ve 115030778747 / gp/P0-A:fd859e7 | CI BEKLİYOR | 9aaedcc |  |
 | P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı | AÇIK |  |  |
-| P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile | KODLANIYOR |  |  |
+| P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile | CI BEKLİYOR | 11a9f19 |  |
 | P0 | BLG-0005 | PR9 mergeable_state | PR9 `dirty` idi, son iki commit için `pull_request` CI hiç çalışmadı; 030cc60 merge commit ile giderildi | CI BEKLİYOR | 030cc60 |  |
 | P01 | BLG-0006 | - | P01-F01: FINDINGS.md:11; ham önem Critical / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P01 | BLG-0007 | - | P01-F02: FINDINGS.md:18; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P01 | BLG-0008 | - | P01-F03: FINDINGS.md:24; ham önem High / BAĞIMLI: src/main.rs:1595 PoA üretim döngüsü | AÇIK |  |  |
+| P01 | BLG-0008 | - | P01-F03: FINDINGS.md:24; ham önem High / BAĞIMLI: src/main.rs:1595 PoA üretim döngüsü | CI BEKLİYOR | def3112 |  |
 | P01 | BLG-0009 | - | P01-F04: FINDINGS.md:29; ham önem Critical / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P01 | BLG-0010 | - | P01-F05: FINDINGS.md:35; ham önem High / gp/P01-A:9493856 kısmi: F05b suffix ile try_reorg src/network/node.rs:2375-2390,3040-3097 BAĞIMLI | KODLANIYOR |  |  |
-| P01 | BLG-0011 | - | P01-F06: FINDINGS.md:41; ham önem High / gp/P01-A:503a8c5 | KODLANIYOR |  |  |
+| P01 | BLG-0010 | - | P01-F05: FINDINGS.md:35; ham önem High / gp/P01-A:9493856 kısmi: F05b suffix ile try_reorg src/network/node.rs:2375-2390,3040-3097 BAĞIMLI | KODLANIYOR | 23026dc,ba9dbce |  |
+| P01 | BLG-0011 | - | P01-F06: FINDINGS.md:41; ham önem High / gp/P01-A:503a8c5 | CI BEKLİYOR | 7770e6f |  |
 | P01 | BLG-0012 | - | P01-F07: FINDINGS.md:46; ham önem High / BAĞIMLI: main.rs:545-560,1008,1033 ve executor.rs; genesis admin kararı gerekir | AÇIK |  |  |
-| P01 | BLG-0013 | - | P01-F08: FINDINGS.md:52; ham önem Medium / gp/P01-A:45e80cf | KODLANIYOR |  |  |
+| P01 | BLG-0013 | - | P01-F08: FINDINGS.md:52; ham önem Medium / gp/P01-A:45e80cf | CI BEKLİYOR | bc20f46 |  |
 | P01 | BLG-0014 | src/consensus/poa.rs:353-417 | P01-F09: FINDINGS.md:70; ham önem Medium; PARTLY | AÇIK |  |  |
 | P01 | BLG-0015 | - | P01-F09b: FINDINGS.md:78; ham önem Low | AÇIK |  |  |
 | P01 | BLG-0016 | - | P01-F09c: FINDINGS.md:78; ham önem Low | AÇIK |  |  |
@@ -43,13 +43,13 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P01 | BLG-0035 | - | P01-F26: FINDINGS.md:88; ham önem Info | AÇIK |  |  |
 | P01 | BLG-0036 | - | P01-F27: FINDINGS.md:89; ham önem Info | AÇIK |  |  |
 | P02 | BLG-0037 | src/crypto/pkcs11.rs:116-134, 417-418, 554-566 | P02-F01: FINDINGS.md:95; ham önem Medium; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P02 | BLG-0038 | - | P02-F02: FINDINGS.md:96; ham önem Low; CONFIRMED / BAĞIMLI: src/main.rs:659-677 (etiket constructor'a geçmeli) | AÇIK |  |  |
-| P02 | BLG-0039 | - | P02-F03: FINDINGS.md:97; ham önem Medium; CONFIRMED / gp/P02-A:3c7f4b2 | KODLANIYOR |  |  |
+| P02 | BLG-0038 | - | P02-F02: FINDINGS.md:96; ham önem Low; CONFIRMED / BAĞIMLI: src/main.rs:659-677 (etiket constructor'a geçmeli) | CI BEKLİYOR | 4eccdd2 |  |
+| P02 | BLG-0039 | - | P02-F03: FINDINGS.md:97; ham önem Medium; CONFIRMED / gp/P02-A:3c7f4b2 | CI BEKLİYOR | 7199182 |  |
 | P02 | BLG-0040 | .github/workflows/ci.yml | P02-F04: FINDINGS.md:98; ham önem Medium; PARTLY / BAĞIMLI: ci.yml bpqs işi; BLG-1047 (P58-F01) ile aynı kök | AÇIK |  |  |
 | P02 | BLG-0041 | settlement/mod.rs:27-28 | P02-F05: FINDINGS.md:99; ham önem Low; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P02 | BLG-0042 | crates/bpqs/src/wots.rs:26-32, 63-69, 137-148 | P02-F06: FINDINGS.md:100; ham önem Low; CONFIRMED / gp/P02-A:2a5a113 | KODLANIYOR |  |  |
-| P02 | BLG-0043 | src/crypto/primitives.rs:505-518, 677-689 | P02-F07: FINDINGS.md:101; ham önem Low; CONFIRMED / gp/P02-A:e7f02f6 kısmi: keygen create_new kısmı main.rs:341-362,452-459 BAĞIMLI | KODLANIYOR |  |  |
-| P02 | BLG-0044 | src/crypto/mainnet_policy.rs:119-124, 90-136 | P02-F08: FINDINGS.md:102; ham önem Medium / gp/P02-A:a78996d | KODLANIYOR |  |  |
+| P02 | BLG-0042 | crates/bpqs/src/wots.rs:26-32, 63-69, 137-148 | P02-F06: FINDINGS.md:100; ham önem Low; CONFIRMED / gp/P02-A:2a5a113 | CI BEKLİYOR | e018bd2 |  |
+| P02 | BLG-0043 | src/crypto/primitives.rs:505-518, 677-689 | P02-F07: FINDINGS.md:101; ham önem Low; CONFIRMED / gp/P02-A:e7f02f6 kısmi: keygen create_new kısmı main.rs:341-362,452-459 BAĞIMLI | KODLANIYOR | 68a679d,f10b9c6 |  |
+| P02 | BLG-0044 | src/crypto/mainnet_policy.rs:119-124, 90-136 | P02-F08: FINDINGS.md:102; ham önem Medium / gp/P02-A:a78996d | CI BEKLİYOR | f3c85e0 |  |
 | P02 | BLG-0045 | - | P02-F09: FINDINGS.md:103; ham önem Medium | AÇIK |  |  |
 | P02 | BLG-0046 | - | P02-F10: FINDINGS.md:104; ham önem Low | AÇIK |  |  |
 | P02 | BLG-0047 | - | P02-F11: FINDINGS.md:105; ham önem Low | AÇIK |  |  |
@@ -64,13 +64,13 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P02 | BLG-0056 | - | P02-F20: FINDINGS.md:114; ham önem Info | AÇIK |  |  |
 | P02 | BLG-0057 | - | P02-F21: FINDINGS.md:115; ham önem Info | AÇIK |  |  |
 | P03 | BLG-0058 | src/privacy/note_registry.rs:104-111, 163-173 | P03-F01: FINDINGS.md:121; ham önem Medium; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P03 | BLG-0059 | core/account.rs:2456-2458 | P03-F02: FINDINGS.md:122; ham önem Medium; CONFIRMED / gp/P03-A:7fbcd05 | KODLANIYOR |  |  |
-| P03 | BLG-0060 | - | P03-F03: FINDINGS.md:123; ham önem Low / gp/P03-A:509fe1e | KODLANIYOR |  |  |
-| P03 | BLG-0061 | - | P03-F04: FINDINGS.md:124; ham önem Low / gp/P03-A:059a7c5 | KODLANIYOR |  |  |
-| P03 | BLG-0062 | src/settlement/proof_market.rs:296-316, 634-650, 695-697 | P03-F05: FINDINGS.md:125; ham önem Low; CONFIRMED / gp/P03-A:3e30204 kısmi | KODLANIYOR |  |  |
-| P03 | BLG-0063 | - | P03-F06: FINDINGS.md:127; ham önem Low / gp/P03-A:99ed814 | KODLANIYOR |  |  |
+| P03 | BLG-0059 | core/account.rs:2456-2458 | P03-F02: FINDINGS.md:122; ham önem Medium; CONFIRMED / gp/P03-A:7fbcd05 | CI BEKLİYOR | f166834 |  |
+| P03 | BLG-0060 | - | P03-F03: FINDINGS.md:123; ham önem Low / gp/P03-A:509fe1e | CI BEKLİYOR | d3a1684 |  |
+| P03 | BLG-0061 | - | P03-F04: FINDINGS.md:124; ham önem Low / gp/P03-A:059a7c5 | CI BEKLİYOR | 5be8a61 |  |
+| P03 | BLG-0062 | src/settlement/proof_market.rs:296-316, 634-650, 695-697 | P03-F05: FINDINGS.md:125; ham önem Low; CONFIRMED / gp/P03-A:3e30204 kısmi | KODLANIYOR | 10ed1b1 |  |
+| P03 | BLG-0063 | - | P03-F06: FINDINGS.md:127; ham önem Low / gp/P03-A:99ed814 | CI BEKLİYOR | af58733 |  |
 | P03 | BLG-0064 | core/account.rs:1570 | P03-F07: FINDINGS.md:128; ham önem Medium / BAĞIMLI: executor.rs, account.rs; önce escrow kararı | AÇIK |  |  |
-| P03 | BLG-0065 | - | P03-F08: FINDINGS.md:129; ham önem Low / gp/P03-A:5683bd8 | KODLANIYOR |  |  |
+| P03 | BLG-0065 | - | P03-F08: FINDINGS.md:129; ham önem Low / gp/P03-A:5683bd8 | CI BEKLİYOR | 59ad42d |  |
 | P03 | BLG-0066 | - | P03-F09: FINDINGS.md:130; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0067 | - | P03-F10: FINDINGS.md:131; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0068 | src/settlement/cold_wallet.rs:498-513, 614-619, 635-653 | P03-F11: FINDINGS.md:132; ham önem Medium; CONFIRMED | AÇIK |  |  |
@@ -89,7 +89,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P03 | BLG-0081 | src/settlement/proof_verifier.rs:67-117 | P03-F24: FINDINGS.md:145; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0082 | - | P03-F25: FINDINGS.md:146; ham önem Info | AÇIK |  |  |
 | P04 | BLG-0083 | src/registry/invalid_vote.rs:66-107 | P04-F01: FINDINGS.md:152; ham önem Critical; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P04 | BLG-0084 | src/registry/permissionless.rs:480-515, 690-737 | P04-F02: FINDINGS.md:154; ham önem High; CONFIRMED / gp/P04-A:1bbd9f7 kısmi: registry yarısı; kalan yarı account.rs/blockchain.rs/executor.rs | KODLANIYOR |  |  |
+| P04 | BLG-0084 | src/registry/permissionless.rs:480-515, 690-737 | P04-F02: FINDINGS.md:154; ham önem High; CONFIRMED / gp/P04-A:1bbd9f7 kısmi: registry yarısı; kalan yarı account.rs/blockchain.rs/executor.rs | KODLANIYOR | e7c4ad7 |  |
 | P04 | BLG-0085 | - | P04-F03: FINDINGS.md:155; ham önem High; CONFIRMED / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | AÇIK |  |  |
 | P04 | BLG-0086 | rpc/tests.rs:1146 | P04-F04: FINDINGS.md:157; ham önem Medium; PARTLY / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | AÇIK |  |  |
 | P04 | BLG-0087 | - | P04-F05: FINDINGS.md:160; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -114,12 +114,12 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P04 | BLG-0106 | registry/evidence.rs:23-48 | P04-F24: FINDINGS.md:179; ham önem Info | AÇIK |  |  |
 | P04 | BLG-0107 | - | P04-F25: FINDINGS.md:180; ham önem Info | AÇIK |  |  |
 | P05 | BLG-0108 | src/tests/bridge_lifecycle.rs:80 | P05-F01: FINDINGS.md:199; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P05 | BLG-0109 | - | P05-F02: FINDINGS.md:200; ham önem High / gp/P05-A:6ac3baa | KODLANIYOR |  |  |
-| P05 | BLG-0110 | evm/mpt.rs:181-194 | P05-F03: FINDINGS.md:201; ham önem Medium / gp/P05-A:55593f9 | KODLANIYOR |  |  |
+| P05 | BLG-0109 | - | P05-F02: FINDINGS.md:200; ham önem High / gp/P05-A:6ac3baa | CI BEKLİYOR | be0ed19 |  |
+| P05 | BLG-0110 | evm/mpt.rs:181-194 | P05-F03: FINDINGS.md:201; ham önem Medium / gp/P05-A:55593f9 | CI BEKLİYOR | b53aab1 |  |
 | P05 | BLG-0111 | evm/header.rs:117-158 | P05-F04: FINDINGS.md:202; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P05 | BLG-0112 | - | P05-F05: FINDINGS.md:203; ham önem Medium / gp/P05-A:4067958 kısmi: blockchain.rs:3270-3320 rollback BAĞIMLI | KODLANIYOR |  |  |
+| P05 | BLG-0112 | - | P05-F05: FINDINGS.md:203; ham önem Medium / gp/P05-A:4067958 kısmi: blockchain.rs:3270-3320 rollback BAĞIMLI | KODLANIYOR | 63a82c0 |  |
 | P05 | BLG-0113 | - | P05-F06: FINDINGS.md:204; ham önem Medium / BAĞIMLI: blockchain.rs, rpc/server.rs, node.rs; mesaj imzalı blok işlemi olmalı (tasarım) | AÇIK |  |  |
-| P05 | BLG-0114 | - | P05-F07: FINDINGS.md:205; ham önem Medium / gp/P05-A:4484de1 kısmi: prune sweep blockchain.rs BAĞIMLI | KODLANIYOR |  |  |
+| P05 | BLG-0114 | - | P05-F07: FINDINGS.md:205; ham önem Medium / gp/P05-A:4484de1 kısmi: prune sweep blockchain.rs BAĞIMLI | KODLANIYOR | 8157dcb |  |
 | P05 | BLG-0115 | - | P05-F08: FINDINGS.md:206; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P05 | BLG-0116 | evm/bud_to_eth.rs:25-137 | P05-F09: FINDINGS.md:207; ham önem Medium | AÇIK |  |  |
 | P05 | BLG-0117 | - | P05-F10: FINDINGS.md:208; ham önem Medium | AÇIK |  |  |
@@ -137,7 +137,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P05 | BLG-0129 | - | P05-F22: FINDINGS.md:220; ham önem Info | AÇIK |  |  |
 | P06 | BLG-0130 | src/cross_domain/external/ethereum.rs:393-406 | P06-F01: FINDINGS.md:250; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P06 | BLG-0131 | src/cross_domain/external/ethereum.rs:255-257, 299-306, 344-376, 399-425 | P06-F02: FINDINGS.md:266; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P06 | BLG-0132 | src/cross_domain/external/ethereum.rs:361-425 | P06-F03: FINDINGS.md:281; ham önem Medium / gp/P06-A:afa7834 kısmi: politika yarısı | KODLANIYOR |  |  |
+| P06 | BLG-0132 | src/cross_domain/external/ethereum.rs:361-425 | P06-F03: FINDINGS.md:281; ham önem Medium / gp/P06-A:afa7834 kısmi: politika yarısı | KODLANIYOR | 2ad2ec8 |  |
 | P06 | BLG-0133 | src/cross_domain/external/domain_bridge.rs:108-160 | P06-F04: FINDINGS.md:291; ham önem Medium / BAĞIMLI: spec.rs, blockchain.rs | AÇIK |  |  |
 | P06 | BLG-0134 | src/cross_domain/external/zkvm_proof.rs:202-263 | P06-F05: FINDINGS.md:302; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P06 | BLG-0135 | src/cross_domain/evm/adapter.rs:153-172, 328-357, 221-272 | P06-F06: FINDINGS.md:312; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -153,10 +153,10 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P06 | BLG-0145 | src/cross_domain/evm/adapter.rs:343-357 | P06-F16: FINDINGS.md:413; ham önem Info | AÇIK |  |  |
 | P07 | BLG-0146 | src/rpc/server.rs:1712-1722 | P07-F01: FINDINGS.md:432; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor | AÇIK |  |  |
 | P07 | BLG-0147 | src/cross_domain/external/intake.rs:64-131 | P07-F02: FINDINGS.md:443; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor | AÇIK |  |  |
-| P07 | BLG-0148 | src/cross_domain/external/registry.rs:452-471 | P07-F03: FINDINGS.md:454; ham önem High / gp/P07-A:11ce6db | KODLANIYOR |  |  |
-| P07 | BLG-0149 | src/cross_domain/external/registry.rs:51-52, 638-754 | P07-F04: FINDINGS.md:466; ham önem Medium / gp/P07-A:862f6c6 | KODLANIYOR |  |  |
+| P07 | BLG-0148 | src/cross_domain/external/registry.rs:452-471 | P07-F03: FINDINGS.md:454; ham önem High / gp/P07-A:11ce6db | CI BEKLİYOR | 3e553e0 |  |
+| P07 | BLG-0149 | src/cross_domain/external/registry.rs:51-52, 638-754 | P07-F04: FINDINGS.md:466; ham önem Medium / gp/P07-A:862f6c6 | CI BEKLİYOR | b0493bc |  |
 | P07 | BLG-0150 | src/cross_domain/external/registry.rs:337-371 | P07-F05: FINDINGS.md:477; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P07 | BLG-0151 | src/cross_domain/external/intake.rs:521-545 | P07-F06: FINDINGS.md:487; ham önem Medium / gp/P07-A:89d695c | KODLANIYOR |  |  |
+| P07 | BLG-0151 | src/cross_domain/external/intake.rs:521-545 | P07-F06: FINDINGS.md:487; ham önem Medium / gp/P07-A:89d695c | CI BEKLİYOR | 59a5429 |  |
 | P07 | BLG-0152 | src/cross_domain/external/intake_quorum.rs:251-271, 357-363 | P07-F07: FINDINGS.md:497; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P07 | BLG-0153 | src/cross_domain/external/intake.rs:391-403 | P07-F08: FINDINGS.md:508; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P07 | BLG-0154 | src/cross_domain/external/intake.rs:240-246 | P07-F09: FINDINGS.md:518; ham önem Medium | AÇIK |  |  |
@@ -223,8 +223,8 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P12 | BLG-0215 | - | P12-F02: FINDINGS.md:808; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P12 | BLG-0216 | - | P12-F03: FINDINGS.md:809; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P12 | BLG-0217 | - | P12-F04: FINDINGS.md:810; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P12 | BLG-0218 | - | P12-F05: FINDINGS.md:811; ham önem Low / gp/P12-A:2ba5cd8 | KODLANIYOR |  |  |
-| P12 | BLG-0219 | - | P12-F06: FINDINGS.md:812; ham önem Low / gp/P12-A:f5453d3 | KODLANIYOR |  |  |
+| P12 | BLG-0218 | - | P12-F05: FINDINGS.md:811; ham önem Low / gp/P12-A:2ba5cd8 | CI BEKLİYOR | fcfcae1 |  |
+| P12 | BLG-0219 | - | P12-F06: FINDINGS.md:812; ham önem Low / gp/P12-A:f5453d3 | CI BEKLİYOR | 443dd86 |  |
 | P12 | BLG-0220 | - | P12-F07: FINDINGS.md:813; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P13 | BLG-0221 | - | P13-F01: FINDINGS.md:875; ham önem High | AÇIK |  |  |
 | P13 | BLG-0222 | - | P13-F02: FINDINGS.md:876; ham önem Medium | AÇIK |  |  |
@@ -397,14 +397,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P26 | BLG-0389 | gateway/service.rs:39 | P26-F11: FINDINGS.md:1102; ham önem Low | AÇIK |  |  |
 | P26 | BLG-0390 | - | P26-F12: FINDINGS.md:1102; ham önem Low | AÇIK |  |  |
 | P26 | BLG-0391 | - | P26-F13: FINDINGS.md:1102; ham önem Low | AÇIK |  |  |
-| P27 | BLG-0392 | src/storage/living_threshold.rs:293-306, 346-372 | P27-F01: notes/P27-scan.md:36; ham önem Medium | AÇIK |  |  |
-| P27 | BLG-0393 | src/storage/living_threshold.rs:346-357 | P27-F02: notes/P27-scan.md:55; ham önem Low | AÇIK |  |  |
+| P27 | BLG-0392 | src/storage/living_threshold.rs:293-306, 346-372 | P27-F01: notes/P27-scan.md:36; ham önem Medium | CI BEKLİYOR | 47b9b36 |  |
+| P27 | BLG-0393 | src/storage/living_threshold.rs:346-357 | P27-F02: notes/P27-scan.md:55; ham önem Low | CI BEKLİYOR | c610480 |  |
 | P27 | BLG-0394 | src/storage/dictionary.rs:242-271, 348-394 | P27-F03: notes/P27-scan.md:70; ham önem Medium | AÇIK |  |  |
 | P27 | BLG-0395 | src/storage/erasure.rs:783-866 | P27-F04: notes/P27-scan.md:87; ham önem Medium | AÇIK |  |  |
 | P27 | BLG-0396 | src/storage/lrc.rs | P27-F05: notes/P27-scan.md:100; ham önem Medium | AÇIK |  |  |
-| P27 | BLG-0397 | src/storage/erasure.rs:783-866 | P27-F06: notes/P27-scan.md:118; ham önem Low | AÇIK |  |  |
-| P27 | BLG-0398 | src/storage/erasure.rs:818-866 | P27-F07: notes/P27-scan.md:132; ham önem Low | AÇIK |  |  |
-| P27 | BLG-0399 | src/storage/payload_crypt.rs:40-48, 146-167 | P27-F08: notes/P27-scan.md:149; ham önem Low | AÇIK |  |  |
+| P27 | BLG-0397 | src/storage/erasure.rs:783-866 | P27-F06: notes/P27-scan.md:118; ham önem Low | CI BEKLİYOR | f89ea31 |  |
+| P27 | BLG-0398 | src/storage/erasure.rs:818-866 | P27-F07: notes/P27-scan.md:132; ham önem Low | CI BEKLİYOR | 5ced5f8 |  |
+| P27 | BLG-0399 | src/storage/payload_crypt.rs:40-48, 146-167 | P27-F08: notes/P27-scan.md:149; ham önem Low | CI BEKLİYOR | 0c31d97 |  |
 | P27 | BLG-0400 | src/storage/pact_binding.rs:38, 85, 107 | P27-F09: notes/P27-scan.md:164; ham önem Low | AÇIK |  |  |
 | P27 | BLG-0401 | src/storage/pact_binding.rs:20-30, 115-118 | P27-F10: notes/P27-scan.md:179; ham önem Low | AÇIK |  |  |
 | P27 | BLG-0402 | src/storage/dictionary.rs:217-221, 242-271, 364-394 | P27-F11: notes/P27-scan.md:189; ham önem Low | AÇIK |  |  |
@@ -463,9 +463,9 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P31 | BLG-0455 | src/ai/types.rs:253-284 | P31-F02: notes/P31-scan.md:60; ham önem Medium | AÇIK |  |  |
 | P31 | BLG-0456 | src/ai/types.rs:661-673 | P31-F03: notes/P31-scan.md:77; ham önem Low | AÇIK |  |  |
 | P31 | BLG-0457 | src/ai/types.rs:944-951, 982-995 | P31-F04: notes/P31-scan.md:94; ham önem Low | AÇIK |  |  |
-| P31 | BLG-0458 | src/ai/types.rs:202-251 | P31-F05: notes/P31-scan.md:111; ham önem Low | AÇIK |  |  |
-| P31 | BLG-0459 | src/ai/types.rs:87-117 | P31-F06: notes/P31-scan.md:126; ham önem Low | AÇIK |  |  |
-| P31 | BLG-0460 | src/ai/types.rs:716-726, 955-962 | P31-F07: notes/P31-scan.md:141; ham önem Info | AÇIK |  |  |
+| P31 | BLG-0458 | src/ai/types.rs:202-251 | P31-F05: notes/P31-scan.md:111; ham önem Low | CI BEKLİYOR | b0347aa |  |
+| P31 | BLG-0459 | src/ai/types.rs:87-117 | P31-F06: notes/P31-scan.md:126; ham önem Low | CI BEKLİYOR | 3fba7e9 |  |
+| P31 | BLG-0460 | src/ai/types.rs:716-726, 955-962 | P31-F07: notes/P31-scan.md:141; ham önem Info | CI BEKLİYOR | 4436e86 |  |
 | P31 | BLG-0461 | src/ai/types.rs:738-751, 953-979 | P31-F08: notes/P31-scan.md:156; ham önem Info | AÇIK |  |  |
 | P31 | BLG-0462 | src/ai/types.rs:357-385, 433-443 | P31-F09: notes/P31-scan.md:166; ham önem Info | AÇIK |  |  |
 | P31 | BLG-0463 | src/ai/types.rs:1119-1175 | P31-F10: notes/P31-scan.md:176; ham önem Low | AÇIK |  |  |
@@ -527,14 +527,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P34 | BLG-0519 | crates/ai-inference/crates/ai-knowledge/src/redact.rs:12-25, 106-118 | P34-F16: notes/P34-scan.md:297; ham önem Low | AÇIK |  |  |
 | P34 | BLG-0520 | crates/ai-inference/crates/ai-ops/src/main.rs:86-92 | P34-F17: notes/P34-scan.md:307; ham önem Info | AÇIK |  |  |
 | P34 | BLG-0521 | crates/ai-inference/crates/ai-core/src/system_prompt.rs:317-357 | P34-F18: notes/P34-scan.md:321; ham önem Low | AÇIK |  |  |
-| P35 | BLG-0522 | budzero/bud-compiler/src/codegen.rs:367-398 | P35-F01: notes/P35-scan.md:39; ham önem High | AÇIK |  |  |
-| P35 | BLG-0523 | budzero/bud-compiler/src/codegen.rs:215-221, 271-287, 437-441, 647-649 | P35-F02: notes/P35-scan.md:59; ham önem High | AÇIK |  |  |
-| P35 | BLG-0524 | budzero/bud-compiler/src/codegen.rs:702-704, 718-744, 751-754 | P35-F03: notes/P35-scan.md:79; ham önem High | AÇIK |  |  |
+| P35 | BLG-0522 | budzero/bud-compiler/src/codegen.rs:367-398 | P35-F01: notes/P35-scan.md:39; ham önem High | CI BEKLİYOR | 93c1c55 |  |
+| P35 | BLG-0523 | budzero/bud-compiler/src/codegen.rs:215-221, 271-287, 437-441, 647-649 | P35-F02: notes/P35-scan.md:59; ham önem High | CI BEKLİYOR | 27b3681 |  |
+| P35 | BLG-0524 | budzero/bud-compiler/src/codegen.rs:702-704, 718-744, 751-754 | P35-F03: notes/P35-scan.md:79; ham önem High | CI BEKLİYOR | 19e70b6 |  |
 | P35 | BLG-0525 | budzero/bud-compiler/src/codegen.rs:263-268, 691-699 | P35-F04: notes/P35-scan.md:100; ham önem High | AÇIK |  |  |
-| P35 | BLG-0526 | budzero/bud-compiler/src/codegen.rs:389-392 | P35-F05: notes/P35-scan.md:117; ham önem Medium | AÇIK |  |  |
-| P35 | BLG-0527 | budzero/bud-compiler/src/codegen.rs:346-430 | P35-F06: notes/P35-scan.md:132; ham önem Medium | AÇIK |  |  |
-| P35 | BLG-0528 | budzero/bud-compiler/src/sema.rs:534-553 | P35-F07: notes/P35-scan.md:147; ham önem Medium | AÇIK |  |  |
-| P35 | BLG-0529 | budzero/bud-compiler/src/parser.rs:514-583 | P35-F08: notes/P35-scan.md:165; ham önem Medium | AÇIK |  |  |
+| P35 | BLG-0526 | budzero/bud-compiler/src/codegen.rs:389-392 | P35-F05: notes/P35-scan.md:117; ham önem Medium | CI BEKLİYOR | 741eb5d |  |
+| P35 | BLG-0527 | budzero/bud-compiler/src/codegen.rs:346-430 | P35-F06: notes/P35-scan.md:132; ham önem Medium | CI BEKLİYOR | 87e6634 |  |
+| P35 | BLG-0528 | budzero/bud-compiler/src/sema.rs:534-553 | P35-F07: notes/P35-scan.md:147; ham önem Medium | CI BEKLİYOR | 5014fa8 |  |
+| P35 | BLG-0529 | budzero/bud-compiler/src/parser.rs:514-583 | P35-F08: notes/P35-scan.md:165; ham önem Medium | CI BEKLİYOR | 7302e59 |  |
 | P35 | BLG-0530 | budzero/bud-compiler/src/lexer.rs:95-97 | P35-F09: notes/P35-scan.md:181; ham önem Medium | AÇIK |  |  |
 | P35 | BLG-0531 | budzero/bud-compiler/src/parser.rs:693-712 | P35-F10: notes/P35-scan.md:195; ham önem Medium | AÇIK |  |  |
 | P35 | BLG-0532 | budzero/bud-compiler/src/parser.rs:220-227 | P35-F11: notes/P35-scan.md:211; ham önem Medium | AÇIK |  |  |
@@ -573,13 +573,13 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P36 | BLG-0565 | src/network/gossip_dedup.rs:20-383 | P36-F18: notes/P36-scan.md:309; ham önem Info | AÇIK |  |  |
 | P36 | BLG-0566 | src/network/node.rs:2114 | P36-F19: notes/P36-scan.md:322; ham önem Medium | AÇIK |  |  |
 | P37 | BLG-0567 | bud/Cargo.toml:1-3 | P37-F01: notes/P37-scan.md:49; ham önem Medium | AÇIK |  |  |
-| P37 | BLG-0568 | bud/src/bud_format.rs:189-190, 245-250, 397-406 | P37-F02: notes/P37-scan.md:59; ham önem Medium | AÇIK |  |  |
-| P37 | BLG-0569 | bud/src/bud_format.rs:272-291, 344-374, 351-358 | P37-F03: notes/P37-scan.md:76; ham önem Medium | AÇIK |  |  |
-| P37 | BLG-0570 | bud/src/bud_format.rs:376-427 | P37-F04: notes/P37-scan.md:94; ham önem Medium | AÇIK |  |  |
+| P37 | BLG-0568 | bud/src/bud_format.rs:189-190, 245-250, 397-406 | P37-F02: notes/P37-scan.md:59; ham önem Medium | CI BEKLİYOR | 8e2861a |  |
+| P37 | BLG-0569 | bud/src/bud_format.rs:272-291, 344-374, 351-358 | P37-F03: notes/P37-scan.md:76; ham önem Medium | CI BEKLİYOR | b003a70 |  |
+| P37 | BLG-0570 | bud/src/bud_format.rs:376-427 | P37-F04: notes/P37-scan.md:94; ham önem Medium | CI BEKLİYOR | eaf1cf8 |  |
 | P37 | BLG-0571 | bud/src/bud_format.rs:302-326, 360-365 | P37-F05: notes/P37-scan.md:104; ham önem Low | AÇIK |  |  |
 | P37 | BLG-0572 | bud/src/bin/bud.rs:819-826 | P37-F06: notes/P37-scan.md:114; ham önem Medium | AÇIK |  |  |
-| P37 | BLG-0573 | bud/src/bud_format.rs:626-772, 774-796 | P37-F07: notes/P37-scan.md:130; ham önem Medium | AÇIK |  |  |
-| P37 | BLG-0574 | bud/src/bud_format.rs:382, 399, 401, 409, 421, 429-609 | P37-F08: notes/P37-scan.md:144; ham önem Low | AÇIK |  |  |
+| P37 | BLG-0573 | bud/src/bud_format.rs:626-772, 774-796 | P37-F07: notes/P37-scan.md:130; ham önem Medium | CI BEKLİYOR | b487f03 |  |
+| P37 | BLG-0574 | bud/src/bud_format.rs:382, 399, 401, 409, 421, 429-609 | P37-F08: notes/P37-scan.md:144; ham önem Low | CI BEKLİYOR | e27b13d |  |
 | P37 | BLG-0575 | bud/src/bud_format.rs:834-841 | P37-F09: notes/P37-scan.md:154; ham önem Low | AÇIK |  |  |
 | P37 | BLG-0576 | bud/src/bud_fixed_point.rs:26-31 | P37-F10: notes/P37-scan.md:171; ham önem Low | AÇIK |  |  |
 | P37 | BLG-0577 | bud/src/bud_fixed_point.rs:116-119 | P37-F11: notes/P37-scan.md:187; ham önem Low | AÇIK |  |  |
@@ -1052,14 +1052,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P57 | BLG-1044 | xtask/tools/src/rpc.rs:62-77, 86-94 | P57-F17: notes/P57-scan.md:285; ham önem Low | AÇIK |  |  |
 | P57 | BLG-1045 | xtask/tools/src/docker_smoke.rs:36, 177-193 | P57-F18: notes/P57-scan.md:302; ham önem Info | AÇIK |  |  |
 | P57 | BLG-1046 | xtask/tools/src/bin/budlum-tools.rs:25-27, 109-130 | P57-F19: notes/P57-scan.md:312; ham önem Info | AÇIK |  |  |
-| P58 | BLG-1047 | - | P58-F01: FINDINGS.md:981; ham önem Medium / gp/P58-A:9584395 | KODLANIYOR |  |  |
+| P58 | BLG-1047 | - | P58-F01: FINDINGS.md:981; ham önem Medium / gp/P58-A:9584395 | CI BEKLİYOR | d90c11c |  |
 | P58 | BLG-1048 | - | P58-F02: FINDINGS.md:982; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P58 | BLG-1049 | workflows/benchmark.yml:30-71 | P58-F03: FINDINGS.md:983; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P58 | BLG-1050 | workflows/miri.yml:159, 219 | P58-F04: FINDINGS.md:984; ham önem Medium / BAĞIMLI: src/storage Miri uyumlu test yolu | AÇIK |  |  |
-| P58 | BLG-1051 | codeql/codeql-config.yml:36-68 | P58-F05: FINDINGS.md:985; ham önem Medium / gp/P58-A:981cfed | KODLANIYOR |  |  |
-| P58 | BLG-1052 | - | P58-F06: FINDINGS.md:986; ham önem Low / gp/P58-A:2bc16f1 kısmi: kalan CodeQL kararı PR9 yorumunda | KODLANIYOR |  |  |
-| P58 | BLG-1053 | - | P58-F07: FINDINGS.md:987; ham önem Low / gp/P58-A:5291dfa | KODLANIYOR |  |  |
-| P58 | BLG-1054 | - | P58-F08: FINDINGS.md:988; ham önem Low / gp/P58-A:69de1e7 | KODLANIYOR |  |  |
+| P58 | BLG-1051 | codeql/codeql-config.yml:36-68 | P58-F05: FINDINGS.md:985; ham önem Medium / gp/P58-A:981cfed | CI BEKLİYOR | b328cbf |  |
+| P58 | BLG-1052 | - | P58-F06: FINDINGS.md:986; ham önem Low / gp/P58-A:2bc16f1 kısmi: kalan CodeQL kararı PR9 yorumunda | KODLANIYOR | 6ea2584 |  |
+| P58 | BLG-1053 | - | P58-F07: FINDINGS.md:987; ham önem Low / gp/P58-A:5291dfa | CI BEKLİYOR | 7e6bf80 |  |
+| P58 | BLG-1054 | - | P58-F08: FINDINGS.md:988; ham önem Low / gp/P58-A:69de1e7 | CI BEKLİYOR | 2955a1c |  |
 | P58 | BLG-1055 | - | P58-F09: FINDINGS.md:989; ham önem Low | AÇIK |  |  |
 | P58 | BLG-1056 | - | P58-F10: FINDINGS.md:990; ham önem Low | AÇIK |  |  |
 | P58 | BLG-1057 | - | P58-F11: FINDINGS.md:991; ham önem Low | AÇIK |  |  |
@@ -1074,13 +1074,13 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P59 | BLG-1066 | crates/wallet-core/Cargo.toml:47 | P59-F08: FINDINGS.md:1000; ham önem Low | AÇIK |  |  |
 | P59 | BLG-1067 | - | P59-F09: FINDINGS.md:1001; ham önem Info | AÇIK |  |  |
 | P60 | BLG-1068 | - | P60-F01: FINDINGS.md:670; ham önem Critical / kanıt: zaten düzeltilmiş (03ec495); BudlumFinalityVerifier.sol:331-339 ve 487-501 anahtarlar constructor'da sabit, H(root) kontratta türetilir | YANLIŞ POZİTİF |  |  |
-| P60 | BLG-1069 | - | P60-F02: FINDINGS.md:671; ham önem High / gp/P60-A:a90594b | KODLANIYOR |  |  |
-| P60 | BLG-1070 | - | P60-F03: FINDINGS.md:672; ham önem Medium / gp/P60-A:d3af635 | KODLANIYOR |  |  |
+| P60 | BLG-1069 | - | P60-F02: FINDINGS.md:671; ham önem High / gp/P60-A:a90594b | CI BEKLİYOR | 3f78f96 |  |
+| P60 | BLG-1070 | - | P60-F03: FINDINGS.md:672; ham önem Medium / gp/P60-A:d3af635 | CI BEKLİYOR | ff0096d |  |
 | P60 | BLG-1071 | - | P60-F04: FINDINGS.md:673; ham önem Medium / kanıt: zaten düzeltilmiş (2988db9); BudlumFinalityVerifier.sol:287-298 imza noktalarını hash'lemez | YANLIŞ POZİTİF |  |  |
 | P60 | BLG-1072 | - | P60-F05: FINDINGS.md:674; ham önem Medium / BAĞIMLI: evm_hybrid.rs (P06 sahibi); kodlama özeti /tmp/ledger/notes/BLG-1072.txt | AÇIK |  |  |
-| P60 | BLG-1073 | - | P60-F06: FINDINGS.md:675; ham önem Medium / gp/P60-A:0821fb7 | KODLANIYOR |  |  |
+| P60 | BLG-1073 | - | P60-F06: FINDINGS.md:675; ham önem Medium / gp/P60-A:0821fb7 | CI BEKLİYOR | 65cce06 |  |
 | P60 | BLG-1074 | xtask/tools/src/audit_guard.rs:43 | P60-F07: FINDINGS.md:676; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P60 | BLG-1075 | - | P60-F08: FINDINGS.md:677; ham önem Low / gp/P60-A:e0be240 | KODLANIYOR |  |  |
+| P60 | BLG-1075 | - | P60-F08: FINDINGS.md:677; ham önem Low / gp/P60-A:e0be240 | CI BEKLİYOR | 6bda4df |  |
 | P60 | BLG-1076 | - | P60-F09: FINDINGS.md:678; ham önem Info / kanıt: bilinçli ve belgeli; buf.yaml:9-19, protocol.proto:198-211 | YANLIŞ POZİTİF |  |  |
 | P61 | BLG-1077 | config/archive.toml:5-7 | P61-F01: FINDINGS.md:1027; ham önem High | AÇIK |  |  |
 | P61 | BLG-1078 | src/rpc/server.rs:128-135 | P61-F02: FINDINGS.md:1028; ham önem High | AÇIK |  |  |
