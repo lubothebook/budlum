@@ -1753,7 +1753,13 @@ impl AccountState {
                 } else if let Some(v) = self.validators.get_mut(address) {
                     v.slashed = true;
                     v.active = false;
+                    v.jailed = true;
+                    v.jail_until = self.epoch_index.saturating_add(7);
                     v.stake = 0;
+                    // A full governance slash also takes the stake that is
+                    // still waiting to unbond. Otherwise unstake before the
+                    // vote would keep it whole.
+                    self.unbonding_queue.retain(|entry| entry.address != *address);
                     tracing::info!(
                         "Executing Governance: Slashed validator {address} (evidence-verified)"
                     );
@@ -3256,6 +3262,55 @@ mod tests {
             "the badge already has a writer; emitting the action here would \
              apply the same vote twice"
         );
+    }
+
+    /// A passed governance slash takes the stake in the unbonding queue and
+    /// jails the validator, like the consensus slash path does.
+    #[test]
+    fn governance_slash_takes_unbonding_stake_and_jails() {
+        use crate::core::governance::{Proposal, ProposalType};
+        let who = test_addr_from_byte(5u8);
+        let other = test_addr_from_byte(6u8);
+        let mut state = AccountState::new();
+        state.add_validator(who, 1_000);
+        for (address, amount) in [(who, 700), (other, 300)] {
+            state.unbonding_queue.push(UnbondingEntry {
+                address,
+                amount,
+                release_epoch: 99,
+            });
+        }
+        let report = crate::registry::evidence::SlashingReport::consensus_double_sign(
+            who,
+            7,
+            "aa".into(),
+            "bb".into(),
+            vec![1],
+            vec![2],
+            None,
+        );
+        assert!(state.slash_from_report(&report).unwrap().is_some());
+        let record_bytes = bincode::serialize(&state.registry.slashing_history()[0].report)
+            .unwrap_or_default();
+        let evidence_hash: [u8; 32] = sha2::Sha256::digest(&record_bytes).into();
+        let p = Proposal::new(
+            1,
+            other,
+            ProposalType::SlashValidator {
+                address: who,
+                evidence_hash,
+            },
+            0,
+            10,
+        );
+        state.execute_proposal(&p);
+        let validator = state.get_validator(&who).unwrap();
+        assert_eq!(validator.stake, 0);
+        assert!(validator.jailed);
+        assert!(validator.jail_until > state.epoch_index);
+        assert_eq!(state.unbonding_queue.len(), 1);
+        assert_eq!(state.unbonding_queue[0].address, other);
+        assert_eq!(state.unbonding_queue[0].amount, 300);
     }
 
     #[test]
