@@ -72,8 +72,11 @@ pub fn open_deal_escrowed(
     let (epochs, listed_bytes) = epochs_and_listed_bytes(terms)?;
 
     // Replay guard: a signed deal-open must not debit escrow and lock bond
-    // twice for the same placement. An ACTIVE deal that already covers this
-    // (manifest, shard, operator, replica, epoch range) refuses the open.
+    // twice for the same placement. An ACTIVE deal of the same operator on
+    // this shard whose epoch range overlaps refuses the open. The replica
+    // index and the exact range are not part of the test: one operator holds
+    // one copy of a shard, so a second deal with another index or a shifted
+    // range adds a replica on paper and no durability.
     let duplicate = state
         .storage_registry
         .deals_for_shard(&manifest.manifest_id, &shard_id)
@@ -81,9 +84,8 @@ pub fn open_deal_escrowed(
         .any(|d| {
             d.status == DealStatus::Active
                 && d.operator == operator
-                && d.replica_index == terms.replica_index
-                && d.deal_start_epoch == terms.start_epoch
-                && d.deal_end_epoch == terms.end_epoch
+                && d.deal_start_epoch < terms.end_epoch
+                && terms.start_epoch < d.deal_end_epoch
         });
     if duplicate {
         return Err(format!(
@@ -457,6 +459,19 @@ mod tests {
         let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
             .unwrap_err();
         assert!(err.contains("is not part of manifest"), "got {err:?}");
+    }
+
+    #[test]
+    fn a_second_replica_of_the_same_operator_is_refused_without_a_write() {
+        let manifest = manifest();
+        let t = terms(&manifest, operator());
+        let mut state = funded(5_000_000, 5_000_000);
+        open_deal_escrowed(&mut state, &t, payer(), 0, BOND, 0).unwrap();
+        let mut shifted = terms(&manifest, operator());
+        shifted.replica_index = 1;
+        shifted.start_epoch = t.start_epoch + 1;
+        let err = open_without_write(state, &shifted, payer(), 0, 0).unwrap_err();
+        assert!(err.contains("refusing a replayed open"), "got {err:?}");
     }
 
     #[test]

@@ -983,6 +983,13 @@ pub enum StorageError {
     /// B.U.D.: the provided merkle proof failed format validation
     /// Or STARK verification. The proof must be a valid ProofEnvelope.
     InvalidMerkleProof(String),
+    /// The replica index is not below [`STORAGE_REPLICATION_TARGET`]. No
+    /// object has more replica slots than that, so a larger index names a
+    /// slot that does not exist.
+    ReplicaIndexOutOfRange {
+        replica_index: u8,
+        max: u8,
+    },
     /// Too many concurrent open challenges for a single deal.
     TooManyOpenChallenges {
         deal_id: u64,
@@ -1136,6 +1143,9 @@ impl std::fmt::Display for StorageError {
             ),
             Self::InvalidMerkleProof(ref reason) => {
                 write!(f, "invalid merkle proof - {reason}")
+            }
+            Self::ReplicaIndexOutOfRange { replica_index, max } => {
+                write!(f, "replica index {replica_index} is not below {max}")
             }
             Self::TooManyOpenChallenges { deal_id, max } => {
                 write!(f, "too many open challenges for deal {deal_id} (max {max})")
@@ -1971,6 +1981,12 @@ impl StorageRegistry {
             return Err(StorageError::InvalidEpochRange {
                 start: start_epoch,
                 end: end_epoch,
+            });
+        }
+        if replica_index >= STORAGE_REPLICATION_TARGET {
+            return Err(StorageError::ReplicaIndexOutOfRange {
+                replica_index,
+                max: STORAGE_REPLICATION_TARGET,
             });
         }
         if u128::from(economics.operator_bond) < u128::from(domain_params.min_operator_bond) {
@@ -6751,6 +6767,32 @@ mod tests {
         ));
         reg.open_challenge(second_deal, 4, 8, 114, 124, opener(), 50)
             .expect("the configured four-epoch interval permits a new challenge");
+    }
+
+    #[test]
+    fn a_replica_index_beyond_the_target_is_refused() {
+        let m = good_manifest();
+        let mut reg = StorageRegistry::new();
+        let err = reg
+            .open_deal(
+                42,
+                &m,
+                m.shards[0].shard_id,
+                operator(),
+                STORAGE_REPLICATION_TARGET,
+                100,
+                200,
+                good_econ(),
+                &params(),
+                Some(valid_merkle_proof()),
+                Some([0x42u8; 32]),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(err, StorageError::ReplicaIndexOutOfRange { .. }),
+            "got {err:?}"
+        );
+        assert!(reg.all_deals().is_empty());
     }
 
     #[test]
