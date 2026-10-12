@@ -677,73 +677,85 @@ impl AccountState {
         );
     }
 
-    /// Bond `amount` from the account's spendable balance into the
-    /// Relayer role. The bond remains locked but slashable until the relayer
-    /// Begins unbonding.
+    /// Shared bond path for the independently debited roles.
+    ///
+    /// `upsert_stake` takes the new TOTAL stake, so the total is the existing
+    /// Active bond plus `amount`. Every check runs before the balance debit, so
+    /// a refused bond cannot consume funds.
+    fn bond_role(
+        &mut self,
+        address: &Address,
+        role: crate::registry::role::RoleId,
+        amount: u64,
+    ) -> Result<u64, crate::registry::RegistryError> {
+        use crate::registry::RegistryError;
+        if amount == 0 {
+            return Err(RegistryError::InsufficientStake {
+                required: 1,
+                provided: 0,
+            });
+        }
+        let balance = self.get_balance(address);
+        if balance < amount {
+            return Err(RegistryError::InsufficientStake {
+                required: amount,
+                provided: balance,
+            });
+        }
+        let total = match self.registry.get(address, role) {
+            Some(existing) => {
+                if !matches!(existing.status, crate::registry::MemberStatus::Active) {
+                    return Err(RegistryError::NotActive {
+                        account: *address,
+                        role,
+                    });
+                }
+                existing
+                    .stake
+                    .checked_add(amount)
+                    .ok_or(RegistryError::InsufficientStake {
+                        required: amount,
+                        provided: existing.stake,
+                    })?
+            }
+            None => {
+                let min_stake = self.registry.params().min_stake;
+                if amount < min_stake {
+                    return Err(RegistryError::InsufficientStake {
+                        required: min_stake,
+                        provided: amount,
+                    });
+                }
+                amount
+            }
+        };
+        let account = self.get_or_create(address);
+        account.balance -= amount;
+        self.dirty_accounts.insert(*address);
+        self.registry
+            .upsert_stake(*address, role, total, self.epoch_index);
+        Ok(amount)
+    }
+
+    /// Bond `amount` from the account's balance into the Relayer role. The
+    /// Bond remains locked but slashable until the relayer begins unbonding.
     pub fn bond_relayer(
         &mut self,
         address: &Address,
         amount: u64,
     ) -> Result<u64, crate::registry::RegistryError> {
-        if amount == 0 {
-            return Err(crate::registry::RegistryError::InsufficientStake {
-                required: 1,
-                provided: 0,
-            });
-        }
-        // Pull the bond from the account's spendable balance (so we can't
-        // Bond funds the team vesting has locked). Use the underlying
-        // Balance field directly - there is no team vesting on the test
-        // Path we exercise.
-        let account = self.get_or_create(address);
-        if account.balance < amount {
-            return Err(crate::registry::RegistryError::InsufficientStake {
-                required: amount,
-                provided: account.balance,
-            });
-        }
-        account.balance -= amount;
-        self.dirty_accounts.insert(*address);
-        self.registry.upsert_stake(
-            *address,
-            crate::registry::role::roles::RELAYER,
-            amount,
-            self.epoch_index,
-        );
-        Ok(amount)
+        self.bond_role(address, crate::registry::role::roles::RELAYER, amount)
     }
 
-    /// Bond `amount` from the account's spendable balance into the
-    /// Prover role. Unlike the relayer role, prover registration is NOT a
-    /// Submission gate (proofs are self-verifying), it only controls
-    /// Whether a successful proof earns its submitter a reward.
+    /// Bond `amount` into the Prover role. Unlike the relayer role, prover
+    /// Registration is NOT a submission gate (proofs are self-verifying), it
+    /// Only controls whether a successful proof earns its submitter a reward.
     pub fn bond_prover(
         &mut self,
         address: &Address,
         amount: u64,
     ) -> Result<u64, crate::registry::RegistryError> {
-        if amount == 0 {
-            return Err(crate::registry::RegistryError::InsufficientStake {
-                required: 1,
-                provided: 0,
-            });
-        }
-        let account = self.get_or_create(address);
-        if account.balance < amount {
-            return Err(crate::registry::RegistryError::InsufficientStake {
-                required: amount,
-                provided: account.balance,
-            });
-        }
-        account.balance -= amount;
-        self.dirty_accounts.insert(*address);
-        self.registry.upsert_stake(
-            *address,
-            crate::registry::role::roles::PROVER,
-            amount,
-            self.epoch_index,
-        );
-        Ok(amount)
+        self.bond_role(address, crate::registry::role::roles::PROVER, amount)
     }
 
     /// Bond `amount` into the STORAGE_OPERATOR role (permissionless).
@@ -753,28 +765,11 @@ impl AccountState {
         address: &Address,
         amount: u64,
     ) -> Result<u64, crate::registry::RegistryError> {
-        if amount == 0 {
-            return Err(crate::registry::RegistryError::InsufficientStake {
-                required: 1,
-                provided: 0,
-            });
-        }
-        let account = self.get_or_create(address);
-        if account.balance < amount {
-            return Err(crate::registry::RegistryError::InsufficientStake {
-                required: amount,
-                provided: account.balance,
-            });
-        }
-        account.balance -= amount;
-        self.dirty_accounts.insert(*address);
-        self.registry.upsert_stake(
-            *address,
+        self.bond_role(
+            address,
             crate::registry::role::roles::STORAGE_OPERATOR,
             amount,
-            self.epoch_index,
-        );
-        Ok(amount)
+        )
     }
 
     /// Begin unbonding an independently-debited role bond (`RELAYER`,
@@ -2575,6 +2570,22 @@ mod tests {
             err.contains("zero-address sender is only valid for the canonical genesis transaction"),
             "expected the canonical-genesis-only rejection, got: {err}"
         );
+    }
+    #[test]
+    fn role_bond_adds_to_total_and_refusal_keeps_balance() {
+        let mut state = AccountState::new();
+        let who = Address::from([7u8; 32]);
+        let min = state.registry.params().min_stake;
+        state.add_balance(&who, min * 3);
+        // Below the floor and unregistered: refused, balance untouched.
+        assert!(state.bond_relayer(&who, min - 1).is_err());
+        assert_eq!(state.get_balance(&who), min * 3);
+        // Two bonds must add up in the registry (BLG-0086).
+        state.bond_relayer(&who, min).unwrap();
+        state.bond_relayer(&who, 1).unwrap();
+        let role = crate::registry::role::roles::RELAYER;
+        assert_eq!(state.registry.get(&who, role).unwrap().stake, min + 1);
+        assert_eq!(state.get_balance(&who), min * 2 - 1);
     }
     #[test]
     fn test_new_account() {
