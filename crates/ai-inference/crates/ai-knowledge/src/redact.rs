@@ -24,6 +24,12 @@ const SECRET_KEYWORDS: &[&str] = &[
     "credential",
 ];
 
+/// Does a key name carry one of the secret keywords?
+fn is_secret_key(key: &str) -> bool {
+    let key_norm = key.to_lowercase().replace('-', "_");
+    SECRET_KEYWORDS.iter().any(|kw| key_norm.contains(kw))
+}
+
 fn is_generic_sk_key(v: &str) -> bool {
     v.len() >= 18
         && v.starts_with("sk-")
@@ -211,8 +217,7 @@ fn redact_key_value(line: &str, report: &mut RedactionReport) -> String {
     };
 
     let key = line[..pos].trim();
-    let key_norm = key.to_lowercase().replace('-', "_");
-    if !SECRET_KEYWORDS.iter().any(|kw| key_norm.contains(kw)) {
+    if !is_secret_key(key) {
         return line.to_string();
     }
 
@@ -305,9 +310,33 @@ pub fn looks_secretish(value: &str) -> bool {
     VALUE_PATTERNS.iter().any(|(_, detect)| detect(value))
 }
 
+/// Masks every string below a secret-named key (the whole value, whatever its shape).
+fn mask_all_strings(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(s) => {
+            if s.is_empty() || s.starts_with(REDACTION_TOKEN) {
+                serde_json::Value::String(s.clone())
+            } else {
+                serde_json::Value::String(REDACTION_TOKEN.to_string())
+            }
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(mask_all_strings).collect())
+        }
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), mask_all_strings(v)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 /// Runs every string in a structured value through the masking function
 /// (rewrites the JSON tree). Cache records and LLM outputs are not written to
-/// disk without passing through this function.
+/// disk without passing through this function. A string under a key that names
+/// a secret (`password`, `api_key`, ...) is masked whole, even when its shape is
+/// not a known one.
 #[must_use]
 pub fn redact_model_strings(value: &serde_json::Value) -> serde_json::Value {
     match value {
@@ -320,7 +349,13 @@ pub fn redact_model_strings(value: &serde_json::Value) -> serde_json::Value {
         }
         serde_json::Value::Object(map) => serde_json::Value::Object(
             map.iter()
-                .map(|(k, v)| (k.clone(), redact_model_strings(v)))
+                .map(|(k, v)| {
+                    if is_secret_key(k) {
+                        (k.clone(), mask_all_strings(v))
+                    } else {
+                        (k.clone(), redact_model_strings(v))
+                    }
+                })
                 .collect(),
         ),
         other => other.clone(),
@@ -459,5 +494,23 @@ mod tests {
         assert!(looks_secretish("password hint"));
         assert!(!looks_secretish(&format!("x {REDACTION_TOKEN} y")));
         assert!(!looks_secretish("hello world"));
+    }
+
+    /// A secret under a secret-named JSON key is masked even with no known shape.
+    #[test]
+    fn json_secret_key_masks_unshaped_value() {
+        let pw = format!("hunter{}", 2);
+        let hex = "a1b2c3d4".repeat(5);
+        let v = serde_json::json!({
+            "password": pw,
+            "nested": {"api_key": hex, "note": "plain"},
+            "list": [{"token": "abc def"}],
+        });
+        let out = redact_model_strings(&v).to_string();
+        assert!(!out.contains(&pw));
+        assert!(!out.contains(&hex));
+        assert!(!out.contains("abc def"));
+        assert!(out.contains("plain"));
+        assert!(out.contains(REDACTION_TOKEN));
     }
 }
