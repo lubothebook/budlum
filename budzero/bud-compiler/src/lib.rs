@@ -959,6 +959,34 @@ mod tests {
         assert_eq!(vm.events, vec![5, 1]);
     }
 
+    /// P35-F07: sema enforces what codegen assumes: the last arm is the
+    /// wildcard, a wildcard is never in the middle, patterns are unique.
+    #[test]
+    fn test_match_shape_is_checked_by_sema() {
+        for (arms, needle) in [
+            ("0 => { emit Result(1); },", "must end with a wildcard"),
+            (
+                "_ => { emit Result(0); }, 1 => { emit Result(1); },",
+                "must be the last arm",
+            ),
+            (
+                "1 => { emit Result(1); }, 1 => { emit Result(2); }, _ => { emit Result(0); },",
+                "duplicate match pattern 1",
+            ),
+        ] {
+            let source = format!(
+                "contract M {{ pub fn main() {{ let x = 0; match (x) {{ {arms} }}; }} }}"
+            );
+            match compile(&source, IsaProfile::Production) {
+                Ok(_) => panic!("malformed match compiled: {arms}"),
+                Err(CompileError::SemanticError(msg)) => {
+                    assert!(msg.contains(needle), "wrong reason for {arms}: {msg}")
+                }
+                Err(other) => panic!("expected a SemanticError for {arms}, got {other:?}"),
+            }
+        }
+    }
+
     /// The wildcard arm (`_`) is required for exhaustive matching
     /// (semantic-checked); the parser only requires syntactic
     /// Validity. Verifies the parser rejects patterns that are not
