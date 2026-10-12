@@ -196,14 +196,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P09 | BLG-0188 | - | P09-F09: FINDINGS.md:733; ham önem Low | AÇIK |  |  |
 | P09 | BLG-0189 | - | P09-F10: FINDINGS.md:734; ham önem Low | AÇIK |  |  |
 | P09 | BLG-0190 | - | P09-F11: FINDINGS.md:735; ham önem Low | AÇIK |  |  |
-| P10 | BLG-0191 | - | P10-F01: FINDINGS.md:762; ham önem High | AÇIK |  |  |
-| P10 | BLG-0192 | ai/registry.rs:1921-1923, 1952-1953 | P10-F02: FINDINGS.md:763; ham önem High | AÇIK |  |  |
-| P10 | BLG-0193 | - | P10-F03: FINDINGS.md:764; ham önem High | AÇIK |  |  |
-| P10 | BLG-0194 | - | P10-F04: FINDINGS.md:765; ham önem Medium | AÇIK |  |  |
-| P10 | BLG-0195 | - | P10-F05: FINDINGS.md:766; ham önem Low | AÇIK |  |  |
-| P10 | BLG-0196 | - | P10-F06: FINDINGS.md:767; ham önem Low | AÇIK |  |  |
-| P10 | BLG-0197 | - | P10-F07: FINDINGS.md:768; ham önem Low | AÇIK |  |  |
-| P10 | BLG-0198 | - | P10-F08: FINDINGS.md:769; ham önem Low | AÇIK |  |  |
+| P10 | BLG-0191 | - | P10-F01: FINDINGS.md:762; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P10 | BLG-0192 | ai/registry.rs:1921-1923, 1952-1953 | P10-F02: FINDINGS.md:763; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P10 | BLG-0193 | - | P10-F03: FINDINGS.md:764; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P10 | BLG-0194 | - | P10-F04: FINDINGS.md:765; ham önem Medium | CI BEKLİYOR | 31144df |  |
+| P10 | BLG-0195 | - | P10-F05: FINDINGS.md:766; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P10 | BLG-0196 | - | P10-F06: FINDINGS.md:767; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P10 | BLG-0197 | - | P10-F07: FINDINGS.md:768; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P10 | BLG-0198 | - | P10-F08: FINDINGS.md:769; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 8cb6f78 |  |
 | P10 | BLG-0199 | - | P10-F09: FINDINGS.md:770; ham önem Low | AÇIK |  |  |
 | P10 | BLG-0200 | - | P10-F10: FINDINGS.md:771; ham önem Low | AÇIK |  |  |
 | P10 | BLG-0201 | - | P10-F11: FINDINGS.md:772; ham önem Info | AÇIK |  |  |
@@ -249,17 +249,17 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P15 | BLG-0241 | - | P15-F03: FINDINGS.md:839; ham önem Medium | AÇIK |  |  |
 | P15 | BLG-0242 | - | P15-F04: FINDINGS.md:840; ham önem Low | AÇIK |  |  |
 | P15 | BLG-0243 | - | P15-F05: FINDINGS.md:841; ham önem Low | AÇIK |  |  |
-| P16 | BLG-0244 | bud-vm/src/lib.rs:538-547, 363-367, 453-487 | P16-F01: FINDINGS.md:891; ham önem Medium | AÇIK |  |  |
-| P16 | BLG-0245 | bud-vm/src/lib.rs:1034-1046, 581-615 | P16-F02: FINDINGS.md:892; ham önem Medium | AÇIK |  |  |
-| P16 | BLG-0246 | - | P16-F03: FINDINGS.md:893; ham önem Low | AÇIK |  |  |
-| P16 | BLG-0247 | - | P16-F04: FINDINGS.md:894; ham önem Low | AÇIK |  |  |
-| P16 | BLG-0248 | - | P16-F05: FINDINGS.md:895; ham önem Low | AÇIK |  |  |
-| P16 | BLG-0249 | bud-isa/src/lib.rs:215-268 | P16-F06: FINDINGS.md:896; ham önem Info | AÇIK |  |  |
-| P16 | BLG-0250 | bud-isa/src/lib.rs:59-61, 271-309 | P16-F07: FINDINGS.md:897; ham önem Low | AÇIK |  |  |
-| P16 | BLG-0251 | verifier-registry/src/evidence.rs:140-216, 64-71 | P16-F08: FINDINGS.md:898; ham önem Medium | AÇIK |  |  |
+| P16 | BLG-0244 | bud-vm/src/lib.rs:538-547, 363-367, 453-487 | P16-F01: FINDINGS.md:891; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P16 | BLG-0245 | bud-vm/src/lib.rs:1034-1046, 581-615 | P16-F02: FINDINGS.md:892; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | bdc83be |  |
+| P16 | BLG-0246 | - | P16-F03: FINDINGS.md:893; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P16 | BLG-0247 | - | P16-F04: FINDINGS.md:894; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | a4cc5d0 |  |
+| P16 | BLG-0248 | - | P16-F05: FINDINGS.md:895; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P16 | BLG-0249 | bud-isa/src/lib.rs:215-268 | P16-F06: FINDINGS.md:896; ham önem Info / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P16 | BLG-0250 | bud-isa/src/lib.rs:59-61, 271-309 | P16-F07: FINDINGS.md:897; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P16 | BLG-0251 | verifier-registry/src/evidence.rs:140-216, 64-71 | P16-F08: FINDINGS.md:898; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P16 | BLG-0252 | - | P16-F09: FINDINGS.md:899; ham önem Low | AÇIK |  |  |
-| P16 | BLG-0253 | src/registry/permissionless.rs | P16-F10: FINDINGS.md:900; ham önem Medium | AÇIK |  |  |
-| P16 | BLG-0254 | src/core/account.rs:672-771 | P16-F11: FINDINGS.md:901; ham önem Medium | AÇIK |  |  |
+| P16 | BLG-0253 | src/registry/permissionless.rs | P16-F10: FINDINGS.md:900; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P16 | BLG-0254 | src/core/account.rs:672-771 | P16-F11: FINDINGS.md:901; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
 | P16 | BLG-0255 | - | P16-F12: FINDINGS.md:902; ham önem Low | AÇIK |  |  |
 | P16 | BLG-0256 | - | P16-F13: FINDINGS.md:903; ham önem Low | AÇIK |  |  |
 | P16 | BLG-0257 | - | P16-F14: FINDINGS.md:904; ham önem Low | AÇIK |  |  |
@@ -272,14 +272,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P16 | BLG-0264 | - | P16-F21: FINDINGS.md:911; ham önem Low | AÇIK |  |  |
 | P16 | BLG-0265 | - | P16-F22: FINDINGS.md:912; ham önem Info | AÇIK |  |  |
 | P16 | BLG-0266 | bud-isa/src/lib.rs:595-616 | P16-F23: FINDINGS.md:913; ham önem Info | AÇIK |  |  |
-| P17 | BLG-0267 | wallet-core/src/privacy_crypto.rs:81-122 | P17-F01: FINDINGS.md:949; ham önem High | AÇIK |  |  |
-| P17 | BLG-0268 | account_abstraction/registry.rs:128-149, 225-261 | P17-F02: FINDINGS.md:950; ham önem Medium | AÇIK |  |  |
-| P17 | BLG-0269 | - | P17-F03: FINDINGS.md:951; ham önem Medium | AÇIK |  |  |
-| P17 | BLG-0270 | - | P17-F04: FINDINGS.md:952; ham önem Medium | AÇIK |  |  |
-| P17 | BLG-0271 | - | P17-F05: FINDINGS.md:953; ham önem Medium | AÇIK |  |  |
-| P17 | BLG-0272 | - | P17-F06: FINDINGS.md:954; ham önem Medium | AÇIK |  |  |
-| P17 | BLG-0273 | - | P17-F07: FINDINGS.md:955; ham önem Medium | AÇIK |  |  |
-| P17 | BLG-0274 | - | P17-F08: FINDINGS.md:956; ham önem Medium | AÇIK |  |  |
+| P17 | BLG-0267 | wallet-core/src/privacy_crypto.rs:81-122 | P17-F01: FINDINGS.md:949; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P17 | BLG-0268 | account_abstraction/registry.rs:128-149, 225-261 | P17-F02: FINDINGS.md:950; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P17 | BLG-0269 | - | P17-F03: FINDINGS.md:951; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P17 | BLG-0270 | - | P17-F04: FINDINGS.md:952; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P17 | BLG-0271 | - | P17-F05: FINDINGS.md:953; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | acc751c |  |
+| P17 | BLG-0272 | - | P17-F06: FINDINGS.md:954; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P17 | BLG-0273 | - | P17-F07: FINDINGS.md:955; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P17 | BLG-0274 | - | P17-F08: FINDINGS.md:956; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P17 | BLG-0275 | - | P17-F09: FINDINGS.md:957; ham önem Medium | AÇIK |  |  |
 | P17 | BLG-0276 | - | P17-F10: FINDINGS.md:958; ham önem Medium | AÇIK |  |  |
 | P17 | BLG-0277 | settlement/pq_anchor.rs:14 | P17-F11: FINDINGS.md:959; ham önem Medium | AÇIK |  |  |
@@ -337,14 +337,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P21 | BLG-0329 | - | P21-F06: FINDINGS.md:1052; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P21 | BLG-0330 | - | P21-F07: FINDINGS.md:1052; ham önem Low | CI BEKLİYOR | d2c792e |  |
 | P21 | BLG-0331 | - | P21-F08: FINDINGS.md:1052; ham önem Low | CI BEKLİYOR | 47e4c1d |  |
-| P22 | BLG-0332 | cli/commands.rs:116-123, 246-250 | P22-F01: FINDINGS.md:1038; ham önem Medium | AÇIK |  |  |
-| P22 | BLG-0333 | cli/commands.rs:1180-1290 | P22-F02: FINDINGS.md:1039; ham önem Medium | AÇIK |  |  |
-| P22 | BLG-0334 | - | P22-F03: FINDINGS.md:1040; ham önem Medium | AÇIK |  |  |
-| P22 | BLG-0335 | rpc/tests.rs | P22-F04: FINDINGS.md:1041; ham önem Medium | AÇIK |  |  |
-| P22 | BLG-0336 | rpc/server.rs:3273 | P22-F05: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
-| P22 | BLG-0337 | cli/commands.rs:605 | P22-F06: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
-| P22 | BLG-0338 | - | P22-F07: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
-| P22 | BLG-0339 | - | P22-F08: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
+| P22 | BLG-0332 | cli/commands.rs:116-123, 246-250 | P22-F01: FINDINGS.md:1038; ham önem Medium | CI BEKLİYOR | 8fdab67 |  |
+| P22 | BLG-0333 | cli/commands.rs:1180-1290 | P22-F02: FINDINGS.md:1039; ham önem Medium | CI BEKLİYOR | 990898e |  |
+| P22 | BLG-0334 | - | P22-F03: FINDINGS.md:1040; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P22 | BLG-0335 | rpc/tests.rs | P22-F04: FINDINGS.md:1041; ham önem Medium | CI BEKLİYOR | 2aec019 |  |
+| P22 | BLG-0336 | rpc/server.rs:3273 | P22-F05: FINDINGS.md:1042; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P22 | BLG-0337 | cli/commands.rs:605 | P22-F06: FINDINGS.md:1042; ham önem Low | CI BEKLİYOR | 4017a13 |  |
+| P22 | BLG-0338 | - | P22-F07: FINDINGS.md:1042; ham önem Low / kanıt: commands.rs üretim bölümünde unwrap/expect/panic yok (rg komutu boş döner) | YANLIŞ POZİTİF |  |  |
+| P22 | BLG-0339 | - | P22-F08: FINDINGS.md:1042; ham önem Low | CI BEKLİYOR | 5f7f8cc |  |
 | P22 | BLG-0340 | - | P22-F09: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
 | P22 | BLG-0341 | - | P22-F10: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
 | P22 | BLG-0342 | - | P22-F11: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
