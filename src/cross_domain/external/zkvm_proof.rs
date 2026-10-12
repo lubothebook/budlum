@@ -546,6 +546,117 @@ mod tests {
         }
     }
 
+    /// Runs `program` on a fresh VM, proves it honestly and wraps the result
+    /// as evidence for `adapter`. Programs here log at most, so the event
+    /// digest is the only public input beyond the trace shape.
+    fn honest_evidence(adapter: &ZkVmFinalityAdapter, program: Vec<u64>) -> RawConsensusEvidence {
+        let mut vm = bud_vm::Vm::new(1024);
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success, "the test program must halt cleanly");
+        let inputs = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash: bud_proof::canonical_set::program_hash_of(&program),
+            initial_state_root: bud_proof::initial_state_root_of(
+                bud_proof::memory_image_commitment_of_reads(&bud_proof::initial_memory_reads(
+                    &vm.trace,
+                )),
+                bud_proof::register_image_commitment_of_reads(&bud_proof::initial_register_reads(
+                    &vm.trace,
+                )),
+            ),
+            final_state_root: [0; 32],
+            sender: vm.context.sender,
+            nonce: vm.context.nonce,
+            block_height: 1,
+            gas_limit: vm.gas_limit,
+            gas_used: vm.gas_used,
+            exit_code: 0,
+            trace_len: vm.trace.len() as u64,
+            event_digest: bud_proof::event_digest_from_events(&receipt.events),
+            state_writes_digest: [0; 32],
+        };
+        let envelope =
+            bud_proof::DefaultAdapter::prove(&vm.trace, &inputs, &program).expect("honest proof");
+        let payload = ZkFinalityEvidence {
+            envelope,
+            inputs,
+            program,
+        }
+        .encode()
+        .expect("encodes");
+        RawConsensusEvidence {
+            adapter: adapter.descriptor().id,
+            evidence_version: EVIDENCE_VERSION,
+            network: "testnet".to_string(),
+            payload,
+            declared_height: 1,
+            declared_root: [0; 32],
+            submitter: crate::core::address::Address([1; 32]),
+        }
+    }
+
+    /// The canonical set is checked at this boundary, after the proof and the
+    /// opcode activation gate. Each row proves a program honestly, so the
+    /// only thing that can differ between the rows is canonicality.
+    #[test]
+    fn only_a_program_in_the_canonical_set_is_attested() {
+        use bud_isa::{Instruction, Opcode};
+
+        let inst = |opcode, rd, rs1, imm| {
+            Instruction {
+                opcode,
+                rd,
+                rs1,
+                rs2: 0,
+                imm,
+            }
+            .encode()
+        };
+        let adapter = ZkVmFinalityAdapter::new("testnet");
+        let canonical = bud_vm::syscall_context::build_syscall_context_check_program()
+            .expect("canonical build");
+        let outside = vec![
+            inst(Opcode::Load, 1, 0, 7),
+            inst(Opcode::Log, 0, 1, 0),
+            inst(Opcode::Halt, 0, 0, 0),
+        ];
+        // (name, program, whether the canonical set holds it)
+        let rows: [(&str, Vec<u64>, bool); 2] = [
+            (
+                "a valid proof of a canonical program is attested",
+                canonical,
+                true,
+            ),
+            (
+                "a valid proof of a program outside the canonical set is refused",
+                outside,
+                false,
+            ),
+        ];
+        for (name, program, canonical) in rows {
+            let hash = bud_proof::canonical_set::program_hash_of(&program);
+            assert_eq!(
+                bud_proof::canonical_set::is_canonical_program_hash(&hash),
+                canonical,
+                "row `{name}` is mislabeled"
+            );
+            let evidence = honest_evidence(&adapter, program);
+            let got = adapter.verify(&evidence, &VerificationPolicy::proven(10));
+            if canonical {
+                let attestation = got.unwrap_or_else(|e| panic!("row `{name}`: {e:?}"));
+                assert_eq!(attestation.height, 1, "row `{name}`");
+            } else {
+                match got {
+                    Err(AdapterError::Crypto { what }) => assert!(
+                        what.contains("not in the canonical set") && what.contains(&hex32(&hash)),
+                        "row `{name}`: the refusal names the canonical set: {what}"
+                    ),
+                    other => panic!("row `{name}`: wanted a canonical refusal, got {other:?}"),
+                }
+            }
+        }
+    }
+
     #[test]
     fn the_probe_set_is_offset_independent_and_covers_every_edge() {
         let probes = ZkVmFinalityAdapter::new("testnet").fault_probes();
