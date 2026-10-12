@@ -5,9 +5,11 @@
 //! in every regime it grows the compressed bytes 12-18x; it is a derivative, it is not kept, it is produced on demand.
 //!
 //! This module encodes the pipeline:
-//!   payload -> zlib-9 (ONLY if it shrinks) -> container (magic, version, flags, orig_len, sha256)
-//!   -> systematic carousel (ordered blocks first, then repair drops) -> frame packing
-//!   -> QR byte-mode frame -> video frame. RECEIVE: decode frame -> drop pool -> peel -> decompress -> verify SHA.
+//!   payload -> zstd-19 (ONLY if it shrinks) -> stream header (magic, version, flags, k, body_len,
+//!   orig_len, sha3 of the body) -> systematic carousel (ordered blocks first, then repair drops)
+//!   -> frame packing -> QR byte-mode frame -> video frame.
+//!   RECEIVE: parse the stream header -> decode frame -> drop pool -> peel -> verify the digest
+//!   -> decompress -> check the original length.
 //! Gate: K-QR-GENISLEME - a QR-video kind cannot be written to persistent storage (a derivative stays a derivative).
 
 #![forbid(unsafe_code)]
@@ -28,6 +30,14 @@ pub struct DamlaHdr {
 
 pub const DAMLA_HDR_LEN: usize = 20;
 pub const BLOCK: usize = 200; // spec section 6
+/// The stream header length: magic 8, version 1, flags 1, k 4, body_len 8, orig_len 8, digest 32.
+const QRV_HDR_LEN: usize = 62;
+/// Stream header flag: the carousel body is zstd compressed.
+const QRV_FLAG_ZSTD: u8 = 0x01;
+/// Frame flags (spec section 2).
+const FRAME_REPAIR: u8 = 0x01;
+const FRAME_COMPRESSED: u8 = 0x02;
+const FRAME_LAST: u8 = 0x04;
 /// Extra repair rows kept beyond k. Rank needs k rows; the rest is slack.
 const PENDING_SLACK: usize = 256;
 /// The most memory `eliminate` may use for its dense rows.
@@ -175,9 +185,11 @@ pub fn derive_stream(data: &[u8], compression: u8, turns: u64) -> Option<Vec<u8>
         return None;
     }
     // 1) compress (if it shrinks)
+    let mut compressed = false;
     let body: Vec<u8> = if compression > 0 {
         let comp = zstd_compress(data)?;
         if comp.len() < data.len() {
+            compressed = true;
             comp
         } else {
             data.to_vec()
@@ -185,14 +197,16 @@ pub fn derive_stream(data: &[u8], compression: u8, turns: u64) -> Option<Vec<u8>
     } else {
         data.to_vec()
     };
-    // 2) carousel
+    // 2) carousel, behind a stream header the receiver can parse
     let k = Karusel::new(&body)?;
-    let mut out = Vec::new();
+    let digest = body_digest(&body);
+    let mut out = stream_header(k.k, body.len(), data.len(), compressed, digest).to_vec();
+    let comp_flag = if compressed { FRAME_COMPRESSED } else { 0 };
     for t in 0..turns {
         // The systematic turn: block t mod k, in order
         for i in 0..k.k {
             let (seq, b) = k.systematic_drop((t as usize + i) % k.k)?;
-            out.extend_from_slice(&k.pack(seq, (t % 2) as u16, 0, &b)?);
+            out.extend_from_slice(&k.pack(seq, (t % 2) as u16, comp_flag, &b)?);
         }
         // Repair drops: each drop is seeded from its ABSOLUTE sequence -
         // k DIFFERENT drops within one turn, and no repetition across turns either.
@@ -200,10 +214,35 @@ pub fn derive_stream(data: &[u8], compression: u8, turns: u64) -> Option<Vec<u8>
         for i in 0..k.k {
             let abs_seq = t.wrapping_mul(k.k as u64).wrapping_add(i as u64);
             let (seq, b) = k.repair_drop(abs_seq);
-            out.extend_from_slice(&k.pack(seq, (t % 2) as u16, 0x01, &b)?);
+            let last = if t + 1 == turns && i + 1 == k.k {
+                FRAME_LAST
+            } else {
+                0
+            };
+            let flags = FRAME_REPAIR | comp_flag | last;
+            out.extend_from_slice(&k.pack(seq, (t % 2) as u16, flags, &b)?);
         }
     }
     Some(out)
+}
+
+/// The stream header: the side information a receiver needs to decode a stream.
+fn stream_header(
+    k: usize,
+    body_len: usize,
+    orig_len: usize,
+    compressed: bool,
+    digest: [u8; 32],
+) -> [u8; QRV_HDR_LEN] {
+    let mut h = [0u8; QRV_HDR_LEN];
+    h[..8].copy_from_slice(&QRV_MAGIC);
+    h[8] = QRV_VERSION;
+    h[9] = if compressed { QRV_FLAG_ZSTD } else { 0 };
+    h[10..14].copy_from_slice(&(k as u32).to_le_bytes());
+    h[14..22].copy_from_slice(&(body_len as u64).to_le_bytes());
+    h[22..30].copy_from_slice(&(orig_len as u64).to_le_bytes());
+    h[30..62].copy_from_slice(&digest);
+    h
 }
 
 /// The zstd-19 proxy (zstd is in Cargo; the lossless counterpart of the spec's zlib-9).
@@ -224,9 +263,12 @@ pub fn zstd_decompress(data: &[u8]) -> Option<Vec<u8>> {
 /// k=3, 11 correct drops, the single lost degree-1 drop -> pure peeling stalled).
 /// If the rank is insufficient it returns None. If the assembled body does not
 /// match the expected digest it returns None too, so it never returns wrong data.
+/// The decoder is built from the stream header that `derive_stream` writes first.
 pub struct KaruselDecoder {
     k: usize,
     total_len: usize,
+    orig_len: usize,
+    compressed: bool,
     expected_digest: [u8; 32],
     solved: Vec<Option<Vec<u8>>>,
     solved_count: usize,
@@ -234,13 +276,44 @@ pub struct KaruselDecoder {
 }
 
 impl KaruselDecoder {
-    pub fn new(k: usize, total_len: usize, expected_digest: [u8; 32]) -> Option<Self> {
-        if k == 0 || k > 65_535 || total_len == 0 || total_len > k * BLOCK {
+    /// Build a decoder from the first `QRV_HDR_LEN` bytes of a stream.
+    pub fn new(header: &[u8]) -> Option<Self> {
+        if header.len() < QRV_HDR_LEN
+            || header[..8] != QRV_MAGIC
+            || header[8] != QRV_VERSION
+            || header[9] & !QRV_FLAG_ZSTD != 0
+        {
+            return None;
+        }
+        let k = u32::from_le_bytes(header[10..14].try_into().ok()?) as usize;
+        let body_len = u64::from_le_bytes(header[14..22].try_into().ok()?);
+        let orig_len = u64::from_le_bytes(header[22..30].try_into().ok()?);
+        let mut expected_digest = [0u8; 32];
+        expected_digest.copy_from_slice(&header[30..62]);
+        Self::with_params(
+            k,
+            usize::try_from(body_len).ok()?,
+            usize::try_from(orig_len).ok()?,
+            header[9] & QRV_FLAG_ZSTD != 0,
+            expected_digest,
+        )
+    }
+
+    fn with_params(
+        k: usize,
+        total_len: usize,
+        orig_len: usize,
+        compressed: bool,
+        expected_digest: [u8; 32],
+    ) -> Option<Self> {
+        if orig_len == 0 || k == 0 || k > 65_535 || total_len == 0 || total_len > k * BLOCK {
             return None;
         }
         Some(Self {
             k,
             total_len,
+            orig_len,
+            compressed,
             expected_digest,
             solved: vec![None; k],
             solved_count: 0,
@@ -265,7 +338,7 @@ impl KaruselDecoder {
             return false;
         }
         let payload = &frame[DAMLA_HDR_LEN..];
-        let idx = Karusel::composition(self.k, seq, flags & 0x01 != 0);
+        let idx = Karusel::composition(self.k, seq, flags & FRAME_REPAIR != 0);
         self.add_drop(&idx, payload);
         true
     }
@@ -407,7 +480,15 @@ impl KaruselDecoder {
         if body_digest(&out) != self.expected_digest {
             return None;
         }
-        Some(out)
+        let original = if self.compressed {
+            zstd_decompress(&out)?
+        } else {
+            out
+        };
+        if original.len() != self.orig_len {
+            return None;
+        }
+        Some(original)
     }
 }
 
@@ -446,6 +527,49 @@ pub fn qrv_digest(derived: &[u8]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn decoder_for(data: &[u8]) -> KaruselDecoder {
+        let k = Karusel::new(data).unwrap();
+        let h = stream_header(k.k, data.len(), data.len(), false, body_digest(data));
+        KaruselDecoder::new(&h).unwrap()
+    }
+
+    fn feed_stream(stream: &[u8]) -> (KaruselDecoder, Vec<u8>) {
+        let mut dec = KaruselDecoder::new(&stream[..QRV_HDR_LEN]).unwrap();
+        let mut flags = Vec::new();
+        let mut pos = QRV_HDR_LEN;
+        while pos < stream.len() {
+            let l = u16::from_le_bytes([stream[pos + 8], stream[pos + 9]]) as usize;
+            let frame = &stream[pos..pos + DAMLA_HDR_LEN + l];
+            flags.push(frame[6]);
+            assert!(dec.add_frame(frame));
+            pos += DAMLA_HDR_LEN + l;
+        }
+        (dec, flags)
+    }
+
+    #[test]
+    fn derived_stream_decodes_without_side_information() {
+        // Compressible: the zstd body and flag 0x02.
+        let data = b"compressible content ".repeat(300);
+        let stream = derive_stream(&data, 1, 1).unwrap();
+        let (mut dec, flags) = feed_stream(&stream);
+        assert_eq!(dec.assemble().unwrap(), data);
+        assert!(flags.iter().all(|f| f & FRAME_COMPRESSED != 0));
+        assert_eq!(flags.iter().filter(|f| *f & FRAME_LAST != 0).count(), 1);
+        assert!(flags.last().is_some_and(|f| f & FRAME_LAST != 0));
+        // Raw: zstd does not shrink it, so the body is raw and the flag is clear.
+        let mut rng = LcRng::new(7);
+        let raw: Vec<u8> = (0..1000).map(|_| (rng.next() >> 24) as u8).collect();
+        let stream = derive_stream(&raw, 1, 1).unwrap();
+        let (mut dec, flags) = feed_stream(&stream);
+        assert_eq!(dec.assemble().unwrap(), raw);
+        assert!(flags.iter().all(|f| f & FRAME_COMPRESSED == 0));
+        // A bad header is refused.
+        let mut bad = stream[..QRV_HDR_LEN].to_vec();
+        bad[0] ^= 1;
+        assert!(KaruselDecoder::new(&bad).is_none());
+    }
 
     #[test]
     fn carousel_systematic_is_streamable() {
@@ -527,7 +651,7 @@ mod tests {
         // Spec section 4 closure: produce -> frames -> decoder -> byte-equal
         let data: Vec<u8> = (0u8..=255).cycle().take(13 * BLOCK + 77).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
+        let mut dec = decoder_for(&data);
         // The systematic turn only (a lossless channel): it must finish in k frames
         for i in 0..k.k {
             let (seq, b) = k.systematic_drop(i).unwrap();
@@ -546,7 +670,7 @@ mod tests {
         // 30% systematic frame loss -> the repair drops close it (the K1 pattern)
         let data: Vec<u8> = (7u8..=200).cycle().take(11 * BLOCK).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
+        let mut dec = decoder_for(&data);
         for i in 0..k.k {
             if i % 3 == 0 {
                 continue; // every 3rd frame is lost
@@ -574,7 +698,7 @@ mod tests {
         // NEGATIVE CANARY: k/2 drops -> assemble returns None (never wrong data)
         let data: Vec<u8> = (1u8..=100).cycle().take(10 * BLOCK).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
+        let mut dec = decoder_for(&data);
         for i in 0..k.k / 2 {
             let (seq, b) = k.systematic_drop(i).unwrap();
             dec.add_frame(&k.pack(seq, 0, 0, &b).unwrap());
@@ -589,7 +713,7 @@ mod tests {
     fn decoder_drops_a_corrupt_frame_silently() {
         let data: Vec<u8> = (3u8..=90).cycle().take(5 * BLOCK).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
+        let mut dec = decoder_for(&data);
         // Corrupt magic -> refused
         assert!(!dec.add_frame(b"XXXXXXXXXXXXXXXXXXXXXXXX"));
         // Inconsistent length -> refused
@@ -605,7 +729,7 @@ mod tests {
         // One wrong payload byte in a systematic frame must not give a wrong body.
         let data: Vec<u8> = (3u8..=90).cycle().take(5 * BLOCK).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
+        let mut dec = decoder_for(&data);
         for i in 0..k.k {
             let (seq, mut b) = k.systematic_drop(i).unwrap();
             if i == 2 {
@@ -622,7 +746,7 @@ mod tests {
         let k_blocks = 4000usize;
         let data: Vec<u8> = (0..k_blocks * BLOCK).map(|i| (i % 251) as u8).collect();
         let k = Karusel::new(&data).unwrap();
-        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
+        let mut dec = decoder_for(&data);
         for abs_seq in 0..20_000u64 {
             let (seq, b) = k.repair_drop(abs_seq);
             dec.add_frame(&k.pack(seq, 0, 0x01, &b).unwrap());
