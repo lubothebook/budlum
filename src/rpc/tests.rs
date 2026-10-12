@@ -1222,4 +1222,43 @@ mod rpc_tests {
             .expect_err("empty peer id must fail format validation");
         assert_eq!(empty.code(), -32602);
     }
+
+    #[tokio::test]
+    async fn bud_storage_reconstruct_object_recovers_from_k_shards_and_refuses_corruption() {
+        let (rpc, _chain) = setup().await;
+        let data: Vec<u8> = (0..=200u8).cycle().take(1000).collect();
+        let scheme = crate::storage::ErasureScheme { k: 4, n: 6 };
+        let encoded = crate::storage::encode_object(&data, scheme).expect("encode");
+        let manifest = encoded.to_manifest().expect("manifest");
+        let to_hex = |bytes: &[u8]| format!("0x{}", hex::encode(bytes));
+
+        // Two shards lost, four survive: exactly k, so recovery must succeed.
+        let mut present: Vec<Option<String>> =
+            encoded.shards.iter().map(|s| Some(to_hex(s))).collect();
+        present[0] = None;
+        present[5] = None;
+        let out = rpc
+            .storage_reconstruct_object(present.clone(), manifest.clone())
+            .await
+            .expect("k shards must reconstruct");
+        assert_eq!(out["dataHex"], serde_json::json!(to_hex(&data)));
+
+        // A corrupted survivor with no spare shard to fall back on is refused.
+        let mut corrupted = present.clone();
+        corrupted[1] = Some(to_hex(&vec![0u8; encoded.shards[1].len()]));
+        let err = rpc
+            .storage_reconstruct_object(corrupted, manifest.clone())
+            .await
+            .expect_err("a corrupted survivor must not be returned as data");
+        assert_eq!(err.code(), -32602);
+
+        // Fewer than k shards cannot rebuild the object.
+        let mut too_few = present.clone();
+        too_few[2] = None;
+        let err = rpc
+            .storage_reconstruct_object(too_few, manifest)
+            .await
+            .expect_err("fewer than k shards must fail");
+        assert_eq!(err.code(), -32602);
+    }
 }

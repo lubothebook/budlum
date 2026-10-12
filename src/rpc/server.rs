@@ -3281,6 +3281,50 @@ impl BudlumApiServer for RpcServer {
         }))
     }
 
+    async fn storage_reconstruct_object(
+        &self,
+        present: Vec<Option<String>>,
+        manifest: crate::storage::ContentManifest,
+    ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        if matches!(
+            manifest.source,
+            crate::storage::generated::ContentSource::Generated(_)
+                | crate::storage::generated::ContentSource::SealedGenerated(_)
+                | crate::storage::generated::ContentSource::Derived(_)
+        ) {
+            return Err(ErrorObjectOwned::owned(
+                -32602,
+                "reconstruct refuses recipe sources (Generated/SealedGenerated/Derived): there is no body to rebuild",
+                None::<()>,
+            ));
+        }
+        let shards = present
+            .iter()
+            .map(|slot| match slot {
+                None => Ok(None),
+                Some(text) => {
+                    let hex = text.strip_prefix("0x").unwrap_or(text.as_str());
+                    hex::decode(hex).map(Some).map_err(|e| {
+                        ErrorObjectOwned::owned(
+                            -32602,
+                            format!("shard hex decode failed: {e}"),
+                            None::<()>,
+                        )
+                    })
+                }
+            })
+            .collect::<Result<Vec<Option<Vec<u8>>>, ErrorObjectOwned>>()?;
+        let data = crate::storage::reconstruct_object(&manifest, &shards).map_err(|e| {
+            ErrorObjectOwned::owned(-32602, format!("reconstruct failed: {e}"), None::<()>)
+        })?;
+        Ok(serde_json::json!({
+            "ok": true,
+            "manifestId": format!("0x{}", hex::encode(manifest.manifest_id.0)),
+            "totalSize": manifest.total_size,
+            "dataHex": format!("0x{}", hex::encode(&data)),
+        }))
+    }
+
     async fn storage_qr_feed_preview(
         &self,
         data_hex: String,

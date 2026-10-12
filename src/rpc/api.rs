@@ -536,6 +536,19 @@ pub trait BudlumApi {
         manifest: crate::storage::ContentManifest,
     ) -> Result<serde_json::Value, ErrorObjectOwned>;
 
+    /// Rebuild an object from the shards a reader still holds. `present` has
+    /// one entry per shard of the code word, in manifest order, with `null`
+    /// for a lost shard. Every recovered shard is checked against the
+    /// manifest, so a corrupted survivor is refused instead of returned.
+    /// Read-only: chain state does not change. Recipe sources have no body
+    /// and are refused.
+    #[method(name = "bud_storageReconstructObject")]
+    async fn storage_reconstruct_object(
+        &self,
+        present: Vec<Option<String>>,
+        manifest: crate::storage::ContentManifest,
+    ) -> Result<serde_json::Value, ErrorObjectOwned>;
+
     /// Measure a QR feed before publishing it: every ceiling the pipe enforces,
     /// the drop and frame schedule, what a viewer can rebuild from those frames,
     /// and the commitments a publish would pin. Bounded by
