@@ -131,9 +131,7 @@ impl PoWEngine {
             .config
             .target_block_time
             .saturating_mul(self.config.adjustment_interval);
-        let ratio_scaled = (u128::from(expected_time) * 100) / u128::from(actual_time_sn).max(1);
-        let ratio_capped = ratio_scaled.clamp(25, 400);
-        ((current as u128 * ratio_capped) / 100).clamp(1, 32) as usize
+        Self::retarget(current, expected_time, actual_time_sn)
     }
     /// An engine calibrated to the producer's tick interval.
     ///
@@ -312,9 +310,24 @@ impl PoWEngine {
             .config
             .target_block_time
             .saturating_mul(self.config.adjustment_interval);
-        let ratio_scaled = (u128::from(expected_time) * 100) / actual_time.max(1);
-        let ratio_capped = ratio_scaled.clamp(25, 400);
-        ((current as u128 * ratio_capped) / 100).clamp(1, 32) as usize
+        Self::retarget(current, expected_time, actual_time)
+    }
+
+    /// Work per block is `16^difficulty`, so the difficulty is a logarithm of
+    /// the work. A ratio `r` of expected to actual time needs `log16(r)` more
+    /// digits, not a digit count that is `r` times larger. Round `log16(r)` to
+    /// the nearest digit: the cut points are the geometric midpoints 4x and
+    /// 1/4x. One step per interval at most, and the result stays in `[1, 32]`.
+    fn retarget(current: usize, expected_time: u64, actual_time: u64) -> usize {
+        let ratio_scaled = (u128::from(expected_time) * 100) / u128::from(actual_time).max(1);
+        let next = if ratio_scaled >= 400 {
+            current.saturating_add(1)
+        } else if ratio_scaled <= 25 {
+            current.saturating_sub(1)
+        } else {
+            current
+        };
+        next.clamp(1, 32)
     }
 
     pub fn difficulty_for_next_block(&self, chain: &[Block]) -> usize {
@@ -748,13 +761,13 @@ mod tests {
         );
 
         // Without calibration (the default 10 second target) the same chain
-        // quadruples the difficulty - this is the behaviour measured on the
-        // live node.
+        // counts as 10x too fast. The difficulty is a logarithm of the work,
+        // so it rises by one digit (16x work), not to 8 (BLG-0013).
         let uncalibrated = PoWEngine::new(2);
         let d2 = uncalibrated.adjusted_difficulty_for_test(2, 100);
         assert_eq!(
-            d2, 8,
-            "an uncalibrated engine counts 100 blocks over 100 s as 10x too fast and raises the difficulty to 8"
+            d2, 3,
+            "an uncalibrated engine counts 100 blocks over 100 s as 10x too fast and raises the difficulty by one digit"
         );
     }
 
@@ -789,5 +802,25 @@ mod tests {
             e.config.target_block_time, 1,
             "the target has to be at least 1 s"
         );
+    }
+
+    /// BLG-0013: the retarget adds `log16(ratio)` digits. It must not scale
+    /// the digit count by the ratio.
+    #[test]
+    fn retarget_moves_difficulty_by_log16_of_the_ratio() {
+        let engine = PoWEngine::with_config(PoWConfig {
+            difficulty: 2,
+            target_block_time: 1,
+            adjustment_interval: 100,
+        });
+        // Expected 100 s. 4x too fast: one digit up (was 8 with linear scaling).
+        assert_eq!(engine.adjusted_difficulty_for_test(2, 25), 3);
+        // 1.5x too fast: no change (was 3).
+        assert_eq!(engine.adjusted_difficulty_for_test(2, 67), 2);
+        // 4x too slow: one digit down.
+        assert_eq!(engine.adjusted_difficulty_for_test(4, 400), 3);
+        // Floor and ceiling hold.
+        assert_eq!(engine.adjusted_difficulty_for_test(1, 400), 1);
+        assert_eq!(engine.adjusted_difficulty_for_test(32, 25), 32);
     }
 }
