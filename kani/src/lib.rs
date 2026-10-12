@@ -451,7 +451,10 @@ pub fn stake_sum(stakes: &[u64; MAX_MIRROR_VALIDATORS], n: usize) -> u128 {
 // wall as everything else here. The pair is not the problem; a symbolic
 // product wider than about 24 bits is.
 //
-// These three are not CI-budget harnesses. The property they were
+// These three are not CI-budget harnesses, and none of them has a recorded
+// completed run: the slash penalty's monotonicity in the ratio is therefore
+// UNPROVED. (The `ratio == 0` half was split out as `zero_ratio_takes_nothing`
+// and is proved on every pull request.) The property they were
 // guarding, `penalty <= stake`, is now proved in a second by a harness that
 // does not need them. They are left in place, timing out honestly, rather
 // than deleted to make the job green: deleting them would remove the only
@@ -513,12 +516,32 @@ mod proofs {
         );
     }
 
-    /// The two endpoints are exact.
+    /// A zero ratio takes nothing.
+    ///
+    /// Split out of `ratio_endpoints_are_exact`: with `ratio == 0` the product
+    /// collapses to zero, so this half is proved in well under a second on a
+    /// full `u64` stake and runs on every pull request. Left inside the slow
+    /// harness it was never checked, because that harness never finishes.
+    #[kani::proof]
+    fn zero_ratio_takes_nothing() {
+        let stake: u64 = kani::any();
+
+        assert!(
+            penalty_for(stake, 0) == 0,
+            "a 0% ratio must not touch the bond"
+        );
+    }
+
+    /// The full-ratio endpoint is exact.
     ///
     /// `malicious_slash_ratio_fixed` defaults to `FIXED_POINT_SCALE` - "proven
-    /// malice burns the whole bond" - and a zero ratio must take nothing.
-    /// Rounding at either end would leave dust in a bond that should be gone,
-    /// or take stake when none was owed.
+    /// malice burns the whole bond" - and rounding at this end would leave
+    /// dust in a bond that should be gone. The zero end is
+    /// `zero_ratio_takes_nothing`.
+    ///
+    /// STATUS: UNPROVED. This harness has no recorded completed run. It stays
+    /// symbolic over a full `u64` stake and times out (see kani-slow.yml,
+    /// which tolerates that by design). Do not read the name as a proof.
     // SLOW: see the measurement above. Runs on a schedule, not on the PR.
     #[kani::proof]
     fn ratio_endpoints_are_exact() {
@@ -528,13 +551,12 @@ mod proofs {
             penalty_for(stake, FIXED_POINT_SCALE) == stake,
             "a 100% ratio must burn the whole bond, leaving no rounding dust"
         );
-        assert!(
-            penalty_for(stake, 0) == 0,
-            "a 0% ratio must not touch the bond"
-        );
     }
 
     /// Slashing harder never costs the offender less.
+    ///
+    /// STATUS: UNPROVED. No recorded run of this harness has completed, so the
+    /// monotonicity of the penalty in the ratio is an open claim, not a proof.
     ///
     /// Governance relies on this when it raises a ratio. The fixed-point
     /// divide truncates, and a non-monotonic truncation would mean a higher
@@ -579,6 +601,8 @@ mod proofs {
     // SLOW: see the measurement above. Runs on a schedule, not on the PR.
     #[kani::proof]
     /// A one-unit ratio increase must never reduce the penalty, at any stake.
+    ///
+    /// STATUS: UNPROVED. No recorded run of this harness has completed.
     ///
     /// **This is the harness that was timing out**, and it took a per-harness
     /// measurement to find out. Everything before it had been blamed on
