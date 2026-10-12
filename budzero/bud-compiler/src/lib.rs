@@ -890,6 +890,52 @@ mod tests {
         assert_eq!(vm.events, vec![1, 42, 7]);
     }
 
+    /// P35-F05: a wide integer pattern must compare as the full value. Before,
+    /// the Load immediate was cut with `as i32`, so 4294967296 matched 0.
+    #[test]
+    fn test_match_wide_integer_pattern_is_not_truncated() {
+        let source = r#"
+            contract WidePattern {
+                fn probe(x: u64) {
+                    match (x) {
+                        4294967296 => { emit Result(1); },
+                        3000000000 => { emit Result(2); },
+                        _ => { emit Result(0); },
+                    };
+                }
+                pub fn main() {
+                    probe(0);
+                    probe(4294967296);
+                    probe(3000000000);
+                    probe(7);
+                }
+            }
+        "#;
+        let bytecode = compile(source, IsaProfile::Production).expect("wide pattern compiles");
+        let mut vm = bud_vm::Vm::new(8192);
+        vm.run(&bytecode).expect("VM should run");
+        assert_eq!(vm.events, vec![0, 1, 2, 0]);
+    }
+
+    /// P35-F05: a pattern at or above the field modulus is refused, like an
+    /// expression literal.
+    #[test]
+    fn test_match_pattern_above_field_modulus_is_refused() {
+        let source = r#"
+            contract BigPattern {
+                pub fn main() {
+                    let x = 0;
+                    match (x) {
+                        18446744073709551615 => { emit Result(1); },
+                        _ => { emit Result(0); },
+                    };
+                }
+            }
+        "#;
+        let res = compile(source, IsaProfile::Production);
+        assert!(matches!(res, Err(CompileError::CodegenError(_))), "{res:?}");
+    }
+
     /// The wildcard arm (`_`) is required for exhaustive matching
     /// (semantic-checked); the parser only requires syntactic
     /// Validity. Verifies the parser rejects patterns that are not

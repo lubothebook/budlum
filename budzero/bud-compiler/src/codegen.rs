@@ -403,8 +403,10 @@ impl Codegen {
                     }
                     match &arm.pattern {
                         MatchPattern::IntLit(val) => {
-                            let pat_reg = self.alloc_reg();
-                            self.emit(Opcode::Load, pat_reg, 0, 0, *val as i32);
+                            // Build the pattern like any integer literal: it is
+                            // range checked against the field modulus and wide
+                            // values are split, not cut to an i32 immediate.
+                            let pat_reg = self.generate_expr(&Expr::Int(*val), scope, storage);
                             let diff_reg = self.alloc_reg();
                             self.emit(Opcode::Sub, diff_reg, scrutinee_reg, pat_reg, 0);
                             let placeholder = self.instructions.len();
