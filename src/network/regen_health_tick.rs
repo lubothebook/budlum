@@ -333,10 +333,12 @@ mod tests {
 
     #[test]
     fn a_ledger_past_its_reversion_budget_alarms_with_the_budget_reason() {
-        let mut policy = HealthPolicy::default();
-        policy.reversion = ReversionPolicy {
-            max_events_per_lifetime: 1,
-            ..ReversionPolicy::default()
+        let policy = HealthPolicy {
+            reversion: ReversionPolicy {
+                max_events_per_lifetime: 1,
+                ..ReversionPolicy::default()
+            },
+            ..HealthPolicy::default()
         };
         let mut tick = RegenHealthTick::new(policy);
         assert!(matches!(
