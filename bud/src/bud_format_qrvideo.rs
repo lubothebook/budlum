@@ -28,6 +28,10 @@ pub struct DamlaHdr {
 
 pub const DAMLA_HDR_LEN: usize = 20;
 pub const BLOCK: usize = 200; // spec section 6
+/// Extra repair rows kept beyond k. Rank needs k rows; the rest is slack.
+const PENDING_SLACK: usize = 256;
+/// The most memory `eliminate` may use for its dense rows.
+const ELIM_BUDGET_BYTES: usize = 64 * 1024 * 1024;
 
 /// The systematic carousel (spec section 3-new): first k blocks in order (a drop = a single block),
 /// then k repair drops of uniform degree 4-24; the loop is endless.
@@ -286,7 +290,12 @@ impl KaruselDecoder {
         match rem.len() {
             0 => {}
             1 => self.resolve(rem[0], pay),
-            _ => self.pending.push((rem, pay)),
+            _ => {
+                // A bounded pool: a flood of repair frames cannot grow it.
+                if self.pending.len() < self.k + PENDING_SLACK {
+                    self.pending.push((rem, pay));
+                }
+            }
         }
     }
 
@@ -323,6 +332,14 @@ impl KaruselDecoder {
             return true;
         }
         let words = self.k.div_ceil(64);
+        let unknown_count = self.k - self.solved_count;
+        if self.pending.len() < unknown_count {
+            return false; // the rank cannot reach the unknown count
+        }
+        let row_bytes = words * 8 + BLOCK;
+        if self.pending.len().saturating_mul(row_bytes) > ELIM_BUDGET_BYTES {
+            return false; // the dense rows would not fit the budget
+        }
         let mut rows: Vec<(Vec<u64>, Vec<u8>)> = Vec::with_capacity(self.pending.len());
         for (idx, pay) in &self.pending {
             let mut mask = vec![0u64; words];
@@ -333,17 +350,19 @@ impl KaruselDecoder {
         }
         let unknowns: Vec<usize> = (0..self.k).filter(|&i| self.solved[i].is_none()).collect();
         let mut piv_rows: Vec<usize> = Vec::new();
+        let mut is_pivot = vec![false; rows.len()];
         for &col in &unknowns {
             let (w, bit) = (col / 64, 1u64 << (col % 64));
             let piv = match rows
                 .iter()
                 .enumerate()
-                .find(|(ri, (m, _))| m[w] & bit != 0 && !piv_rows.contains(ri))
+                .find(|(ri, (m, _))| m[w] & bit != 0 && !is_pivot[*ri])
             {
                 Some((ri, _)) => ri,
                 None => return false, // insufficient rank - UNSOLVABLE (no wrong data)
             };
             piv_rows.push(piv);
+            is_pivot[piv] = true;
             let (pm, pp) = (rows[piv].0.clone(), rows[piv].1.clone());
             for (ri, (m, p)) in rows.iter_mut().enumerate() {
                 if ri != piv && m[w] & bit != 0 {
@@ -596,6 +615,23 @@ mod tests {
         }
         assert!(dec.is_complete());
         assert!(dec.assemble().is_none(), "a poisoned body must be refused");
+    }
+
+    #[test]
+    fn repair_flood_is_bounded() {
+        let k_blocks = 4000usize;
+        let data: Vec<u8> = (0..k_blocks * BLOCK).map(|i| (i % 251) as u8).collect();
+        let k = Karusel::new(&data).unwrap();
+        let mut dec = KaruselDecoder::new(k.k, data.len(), body_digest(&data)).unwrap();
+        for abs_seq in 0..20_000u64 {
+            let (seq, b) = k.repair_drop(abs_seq);
+            dec.add_frame(&k.pack(seq, 0, 0x01, &b).unwrap());
+        }
+        assert!(
+            dec.pending.len() <= k.k + PENDING_SLACK,
+            "the pending pool must be capped: {}",
+            dec.pending.len()
+        );
     }
 
     #[test]
