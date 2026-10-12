@@ -58,6 +58,16 @@ fn claim_new_key_file_or_exit(path: &str) {
     }
 }
 
+/// The daemon block-production loop runs for every engine that produces from this process.
+/// PoA is included: the engine signs only when this node is the elected leader, and
+/// `produce_block` returns `None` for the other slots.
+fn daemon_producer_loop_runs(consensus_type: ConsensusType) -> bool {
+    matches!(
+        consensus_type,
+        ConsensusType::PoS | ConsensusType::PoW | ConsensusType::PoA
+    )
+}
+
 fn release_key_file(path: &str) {
     let _ = std::fs::remove_file(path);
 }
@@ -1613,7 +1623,7 @@ async fn main() {
         });
     }
 
-    // 2026-07-18: the daemon block-production loop, for PoS and PoW.
+    // 2026-07-18: the daemon block-production loop, for PoS, PoW and PoA.
     //
     // Root cause, proven in CI by multinode smoke job 87990206239: the binary
     // produced blocks only through the interactive stdin "mine" command, so
@@ -1627,7 +1637,7 @@ async fn main() {
     // backlog), and `mine` under PoW (difficulty from the CLI flag; smoke runs
     // difficulty=0). Broadcast goes over the gossipsub "blocks" channel, and
     // peers run the same deterministic commit path.
-    if consensus_type == ConsensusType::PoS || consensus_type == ConsensusType::PoW {
+    if daemon_producer_loop_runs(consensus_type) {
         if let Some(producer) = cli_producer_address {
             let chain_p = chain.clone();
             let client_p = client.clone();
@@ -1743,7 +1753,8 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::claim_new_key_file;
+    use super::{claim_new_key_file, daemon_producer_loop_runs};
+    use budlum_core::cli::ConsensusType;
 
     #[test]
     fn key_claim_refuses_to_overwrite_an_existing_file() {
@@ -1762,5 +1773,12 @@ mod tests {
         let err = claim_new_key_file(&path_str).expect_err("second claim must fail");
         assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
         std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    #[test]
+    fn daemon_producer_loop_covers_poa() {
+        assert!(daemon_producer_loop_runs(ConsensusType::PoA));
+        assert!(daemon_producer_loop_runs(ConsensusType::PoS));
+        assert!(daemon_producer_loop_runs(ConsensusType::PoW));
     }
 }
