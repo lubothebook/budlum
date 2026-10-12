@@ -1855,6 +1855,23 @@ impl ProverAdapter for Plonky3Adapter {
     }
 }
 
+/// True when every 64 bit scalar public input is below the Goldilocks
+/// modulus, so it is the canonical representative of its field element.
+fn has_canonical_scalars(pi: &ExecutionPublicInputs) -> bool {
+    [
+        pi.chain_id,
+        pi.sender,
+        pi.nonce,
+        pi.block_height,
+        pi.gas_limit,
+        pi.gas_used,
+        pi.exit_code,
+        pi.trace_len,
+    ]
+    .iter()
+    .all(|&v| v < bud_vm::GOLDILOCKS_P)
+}
+
 impl Plonky3Adapter {
     /// Verify a proof exactly as [`ProverAdapter::verify`] does, but under an
     /// explicit activation state.
@@ -1881,6 +1898,12 @@ impl Plonky3Adapter {
         // cannot be a canonical program and is refused before it is hashed.
         envelope.validate_shape()?;
         expected_inputs.validate_shape()?;
+        // Each 64 bit public field enters the AIR as `lo + hi * 2^32`, a
+        // Goldilocks element. A value at or above the modulus has the same
+        // element as `value - p`, so one proof would verify for two inputs.
+        if !has_canonical_scalars(expected_inputs) {
+            return Err(VerifyError::PublicInputsMismatch);
+        }
         if program.len() > crate::adapter::MAX_TRACE_LEN {
             return Err(VerifyError::InvalidEnvelope(format!(
                 "program length {} exceeds the {} cap",
@@ -9285,6 +9308,26 @@ mod tests {
              and their result skipped. proving_rejected={rejected_at_proving}, \
              verification_rejected={rejected_at_verification}"
         );
+    }
+
+    /// A public scalar at or above the modulus is the same field element as
+    /// `value - p` (BLG-0218). One proof must not verify for both.
+    #[test]
+    fn rejects_a_non_canonical_public_scalar() {
+        let program = vec![
+            inst(Opcode::Load, 1, 0, 0, 5),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let (envelope, pi) = prove_and_verify_full(program.clone(), |_| {});
+        assert!(pi.gas_used < 1 << 20);
+        let mut alias = pi.clone();
+        alias.gas_used += bud_vm::GOLDILOCKS_P;
+        let mut aliased = envelope.clone();
+        aliased.public_inputs_hash = alias.hash();
+        assert!(matches!(
+            Plonky3Adapter::verify(&aliased, &alias, &program),
+            Err(VerifyError::PublicInputsMismatch)
+        ));
     }
 
     /// An honest `VerifyMerkle` that does NOT match its claimed root must
