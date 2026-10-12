@@ -529,6 +529,11 @@ impl ExternalDomainRegistry {
                 .domain
                 .as_bytes())));
         };
+        if !reg.record.state.serves() {
+            return Err(RegistryError::NotServing {
+                state: reg.record.state.as_str().to_string(),
+            });
+        }
         let slot = (attestation.height, attestation.evidence_version);
         if reg.attestations.contains_key(&slot) {
             return Err(RegistryError::DuplicateAttestation {
@@ -669,6 +674,15 @@ impl ExternalDomainRegistry {
         //    format. Without this check a replay would overwrite the first
         //    attestation while incrementing the accepted counter again.
         let domain = DomainKey::from_parts(&descriptor.id, &evidence.network);
+        // A domain that does not serve (Faulted after a dispute) takes no
+        // new attestation. Without this the fault would be a label only.
+        if let Some(reg) = self.domains.get(&domain) {
+            if !reg.record.state.serves() {
+                return Err(RegistryError::NotServing {
+                    state: reg.record.state.as_str().to_string(),
+                });
+            }
+        }
         if self.domains.get(&domain).is_some_and(|reg| {
             reg.attestations
                 .contains_key(&(evidence.declared_height, evidence.evidence_version))

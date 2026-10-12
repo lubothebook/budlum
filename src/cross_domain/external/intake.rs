@@ -1175,6 +1175,30 @@ mod tests {
     }
 
     #[test]
+    fn a_faulted_domain_takes_no_attestation() {
+        let mut state = IntakeState::new();
+        let key = register(&mut state);
+        state
+            .bond_prover(&key, addr(2), economics_bond())
+            .expect("bond");
+        state
+            .registry
+            .mark_faulted(&key, "test dispute")
+            .expect("domain exists");
+        let spec = eth_spec();
+        let evidence = quorum_evidence(&spec, addr(2));
+        let err = state
+            .submit_evidence(&evidence, Some(Box::new(StrictTestBls)))
+            .unwrap_err();
+        assert!(
+            matches!(err, IntakeError::Registry(RegistryError::NotServing { .. })),
+            "a faulted domain must refuse new evidence, got: {err:?}"
+        );
+        let reg = state.registry.domain(&key).expect("domain");
+        assert_eq!(reg.record.attestations_accepted, 0);
+    }
+
+    #[test]
     fn a_domain_without_a_policy_keeps_the_single_submission_path() {
         let mut state = IntakeState::new();
         let key = register(&mut state);
