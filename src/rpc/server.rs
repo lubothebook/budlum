@@ -244,16 +244,8 @@ where
             }
         }
 
-        if !is_authorized(&self.config, &req) {
-            return Box::pin(async move {
-                let mut response = text_response(StatusCode::UNAUTHORIZED, "Unauthorized");
-                if let CorsOutcome::Allow(ref origin) = cors {
-                    apply_cors_headers(&mut response, origin);
-                }
-                Ok(response)
-            });
-        }
-
+        // The limiter runs before the key check so that failed key guesses
+        // count against the client's budget.
         let client_ip = extract_client_ip(&self.config, &req);
         if !is_per_ip_rate_limited(&self.config, &self.per_ip_rates, client_ip) {
             if let Some(ref m) = self.metrics {
@@ -268,6 +260,17 @@ where
                 Ok(response)
             });
         }
+
+        if !is_authorized(&self.config, &req) {
+            return Box::pin(async move {
+                let mut response = text_response(StatusCode::UNAUTHORIZED, "Unauthorized");
+                if let CorsOutcome::Allow(ref origin) = cors {
+                    apply_cors_headers(&mut response, origin);
+                }
+                Ok(response)
+            });
+        }
+
         if let Some(ref m) = self.metrics {
             m.rpc_requests_total.inc();
         }
@@ -6979,6 +6982,39 @@ mod tests {
         req.extensions_mut()
             .insert(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 40000));
         svc.call(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn failed_api_key_attempts_are_rate_limited() {
+        let layer = RpcSecurityLayer::new(
+            RpcSecurityConfig {
+                auth_required: true,
+                api_key: Some("right-key".into()),
+                allowed_ips: Vec::new(),
+                rate_limit_per_minute: Some(2),
+                ..Default::default()
+            },
+            None,
+            RpcMode::Public,
+        );
+        let inner = tower::service_fn(|_req: HttpRequest<()>| async {
+            Ok::<_, std::convert::Infallible>(text_response(StatusCode::OK, "ok"))
+        });
+        let mut svc = layer.layer(inner);
+        let mut statuses = Vec::new();
+        for _ in 0..3 {
+            let mut req = HttpRequest::builder()
+                .uri("/")
+                .header("x-api-key", "wrong-key")
+                .body(())
+                .unwrap();
+            req.extensions_mut()
+                .insert(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 40000));
+            statuses.push(svc.call(req).await.unwrap().status());
+        }
+        assert_eq!(statuses[0], StatusCode::UNAUTHORIZED);
+        assert_eq!(statuses[1], StatusCode::UNAUTHORIZED);
+        assert_eq!(statuses[2], StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]
