@@ -3054,23 +3054,30 @@ impl Node {
                                                    // still costs a rate token and a banned peer is
                                                    // still refused; only the handshaked check is
                                                    // what this message establishes.
+                                                   //
+                                                   // Ban and rate limit run before the decode: a
+                                                   // banned or flooding peer must not cost a full
+                                                   // protobuf decode per request.
+                                                   let pre_allowed = {
+                                                       let mut pm = self.peer_manager_lock();
+                                                       // Security review (HIGH): a banned peer cannot
+                                                       // issue a /sync request.
+                                                       !pm.is_banned(&peer) && pm.check_rate_limit(&peer)
+                                                   };
+                                                   if !pre_allowed {
+                                                       warn!("Rejected sync request from banned/rate-limited peer {peer}");
+                                                       continue;
+                                                   }
                                                    let parsed = NetworkMessage::from_bytes_validated(&request);
                                                    let is_handshake = matches!(
                                                        parsed,
                                                        Ok(NetworkMessage::Handshake { .. })
                                                            | Ok(NetworkMessage::HandshakeAck { .. })
                                                    );
-                                                   let request_allowed = {
-                                                       let mut pm = self.peer_manager_lock();
-                                                       // Security review (HIGH): a banned peer cannot
-                                                       // issue a /sync request; the ban is checked
-                                                       // together with the handshake and the rate limit.
-                                                       !pm.is_banned(&peer)
-                                                           && (is_handshake || pm.is_handshaked(&peer))
-                                                           && pm.check_rate_limit(&peer)
-                                                   };
-                                                   if !request_allowed {
-                                                       warn!("Rejected sync request from unhandshaked/rate-limited/banned peer {peer}");
+                                                   let handshaked = is_handshake
+                                                       || self.peer_manager_lock().is_handshaked(&peer);
+                                                   if !handshaked {
+                                                       warn!("Rejected sync request from unhandshaked peer {peer}");
                                                        continue;
                                                    }
                                                    if is_handshake {
@@ -3100,7 +3107,7 @@ impl Node {
                                                    if let Some(ref m) = self.metrics {
                                                        m.p2p_sync_requests.inc();
                                                    }
-                                                   if let Ok(msg) = NetworkMessage::from_bytes_validated(&request) {
+                                                   if let Ok(msg) = parsed {
                                                        match msg {
                                                            NetworkMessage::GetHeaders { locator, limit } => {
                                                                if NetworkMessage::validate_header_request(&locator, limit).is_err() {
@@ -3635,5 +3642,31 @@ mod mobile_profile_wiring_tests {
             "a device at 5% declines storage attestation, so the sweep must \
              not run and spend the radio looking for work it refuses"
         );
+    }
+}
+
+#[cfg(test)]
+mod sync_handler_order_tests {
+    /// Production half of this file; the test modules would match their own text.
+    fn production() -> &'static str {
+        include_str!("node.rs")
+            .split_once("#[cfg(test)]")
+            .map(|(before, _)| before)
+            .unwrap_or("")
+    }
+
+    /// BLG-0550: ban and rate limit run before the protobuf decode.
+    #[test]
+    fn sync_request_checks_ban_and_rate_before_decode() {
+        let src = production();
+        let arm = src
+            .split_once("request_response::Message::Request { request, channel")
+            .map(|(_, after)| after)
+            .unwrap_or("");
+        let decode = format!("{}from_bytes_validated(&request)", "NetworkMessage::");
+        let rate = arm.find("pm.check_rate_limit(&peer)");
+        let parse = arm.find(&decode);
+        assert!(rate.is_some() && parse.is_some(), "handler shape changed");
+        assert!(rate < parse, "the decode must come after the rate limit");
     }
 }
