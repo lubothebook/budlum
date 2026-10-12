@@ -1,46 +1,46 @@
 ---
 name: steward
-description: Budlum PR'larını yeşile götürme rehberi. PR olayında (CI, inceleme, çatışma) okunur. CLAUDE.md ve MODEL_ROUTING.md ile birlikte geçerlidir.
+description: Guide for taking Budlum pull requests to green. Read on a PR event (CI failure, review, conflict). Applies together with CLAUDE.md and MODEL_ROUTING.md.
 ---
 
-# Steward: Budlum PR rehberi
+# Steward: Budlum PR guide
 
-Bu dosya kısadır. Çelişkide CLAUDE.md ve MODEL_ROUTING.md geçerlidir.
+This file is short. Where it conflicts, CLAUDE.md and MODEL_ROUTING.md win.
 
-## Duruş
+## Stance
 
-- Komut beklenmez. Kırmızı CI, çatışma ve açık inceleme yorumu iştir.
-- Birleştirme ve onay Ayaz'ındır. PR birleştirilmez, onaylanmaz.
-- Boş commit, PR'ı kapatıp açmak, testi atlamak veya `#[ignore]` koymak yok (Z3).
+- Do not wait for an order. Red CI, a conflict and an open review comment are work.
+- Merge and approval belong to Ayaz. Do not merge a PR, do not approve one.
+- No empty commit, no closing and reopening a PR, no skipped test, no new `#[ignore]` (Z3).
 
-## Sıra
+## Order
 
-1. Birleştirme çatışması: base dalı PR dalına merge et. Rebase ve force push yok.
-2. Kırmızı CI: önce nedeni oku, sonra düzelt.
-3. İnceleme yorumu: kısa ve yerel istekleri uygula, büyük istekleri Ayaz'a sor.
+1. Merge conflict: merge the base branch into the PR branch. No rebase, no force push.
+2. Red CI: read the cause first, then fix it.
+3. Review comment: apply small local requests; ask Ayaz about large ones.
 
-## Kırmızı CI nasıl okunur
+## How to read red CI
 
-- `get_job_logs` ile en az 150 satır al. Son 30 satır çoğu zaman temizlik çıktısıdır, hata değildir.
-- Gates işi tek gate adı verir (`FAIL [ad]`). Gate'i yerelde çalıştır:
-  `cargo run --release --manifest-path xtask/gates/Cargo.toml -- <gate-adı>`
-- Biçim: `cargo fmt --all -- --check`. `budzero/` ayrı çalışma alanıdır, orada `cd budzero` ile çalıştır.
-- `protoc` yoksa `cargo test` ve clippy yerelde çalışmaz. Bunu PR açıklamasına yaz, CI'a bırak. Paket kurma, sor.
-- Dependency Review "Dependency graph" hatası verirse bu repo ayarıdır, kod değildir. Ayaz'a bildir.
-- Docker Trivy bulgusu: `ops/Dockerfile` içinde paketi açıkça listele (libpcre2-8-0 ve perl-base örneği). Genel `apt-get upgrade` yok (hadolint DL3005).
+- Take at least 150 lines with `get_job_logs`. The last 30 lines are usually cleanup output, not the error.
+- The Gates job names one gate (`FAIL [name]`). Run the gate locally:
+  `cargo run --release --manifest-path xtask/gates/Cargo.toml -- <gate-name>`
+- Format: `cargo fmt --all -- --check`. `budzero/` is a separate workspace; run it there with `cd budzero`.
+- Without `protoc`, `cargo test` and clippy do not run locally. Say so in the PR description and leave it to CI. Do not install packages; ask.
+- If Dependency Review reports a "Dependency graph" error, that is a repository setting, not code. Tell Ayaz.
+- Docker Trivy finding: name the package explicitly in `ops/Dockerfile` (libpcre2-8-0 and perl-base are the examples). No blanket `apt-get upgrade` (hadolint DL3005).
 
-## Baseline dosyaları
+## Baseline files
 
-- `.github/*-baseline.txt` dosyalarını gevşetme. Gevşetme için §8 onayı gerekir.
-- Gate "bağlanmış veya silinmiş satır kaldı" derse yalnızca o satırı sil (sıkılaştırma). Araç izni engellerse atlatma, Ayaz'a bildir.
+- Never loosen a `.github/*-baseline.txt` file. Loosening needs approval under section 8.
+- If a gate says a wired or deleted line is still listed, remove only that line (tightening). If a tool permission blocks the edit, do not work around it; tell Ayaz.
 
-## R3 değişikliği
+## R3 change
 
-- R3 alanında (consensus, crypto, privacy, tokenomics, settlement, cross_domain, registry, chain, network/node.rs, budzero/bud-proof) push öncesi yeni bir `architect` çağrısı diff'i doğrular.
-- Etiket baytları, imza girdileri ve kök hesapları değişmez. Değişiyorsa dur ve §8 ile sor.
+- For an R3 area (consensus, crypto, privacy, tokenomics, settlement, cross_domain, registry, chain, network/node.rs, budzero/bud-proof) a fresh `architect` call verifies the diff before push.
+- Tag bytes, signature inputs and root computations do not change. If they do, stop and ask under section 8.
 
-## Yazım ve gizlilik
+## Writing and secrecy
 
-- Commit ve PR metni kısa sade cümleler. Uzun tire ve kalın işaret yok (Z13).
-- Düzeltilmemiş güvenlik bulgusu PR, yorum, commit veya dosyaya yazılmaz. `docs/SECURITY.md` özel kanalı kullanılır.
-- PR açıklaması `.github/PULL_REQUEST_TEMPLATE.md` başlıklarını izler. Test sayıları dosya başına yazılır.
+- Commit and PR text use short plain sentences. No long dash, no bold marker (Z13).
+- An unfixed security finding is never written to a PR, comment, commit or file. Use the private channel in `docs/SECURITY.md`.
+- The PR description follows the headings in `.github/PULL_REQUEST_TEMPLATE.md`. Test counts are written per file.

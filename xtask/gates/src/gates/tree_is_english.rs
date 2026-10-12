@@ -103,6 +103,10 @@ const ALLOWED_FILES: &[&str] = &[
     "CLAUDE.md",
     "MODEL_ROUTING.md",
     "MODEL_ROUTING_KURULUM.md",
+    // The full-text reference copy of MODEL_ROUTING.md. Same owner, same
+    // reason: it is the owner's binding words and a translation would change
+    // the rules it carries.
+    "MODEL_ROUTING_REF.md",
     "BUD-AI-KAPSAMLI-DIREKTIF.md",
 ];
 

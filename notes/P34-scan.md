@@ -259,7 +259,7 @@ Evidence:
  67         .split(|c: char| !c.is_ascii_alphanumeric())
 memory.rs 214 scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.created_at.cmp(&b.1.created_at)));
 ```
-Description: The tokeniser does not fold to ASCII; it splits at every non-ASCII letter. "değil" becomes "de" and "il", "çok" becomes "ok", "için" becomes "in" (dropped) and so on, so the Turkish stopwords (`icin`, `degil`, `cok`) never match accented input and diacritic words are cut into fragments. The comment states the opposite. Separately, equal-score memory runs are ordered by oldest created_at first, while the doc (memory.rs:4-5) speaks of recency.
+Description: The tokeniser does not fold to ASCII; it splits at every non-ASCII letter. The accented negative word becomes two fragments ("de" and "il"), the accented word for "very" becomes "ok", the accented word for "for" becomes "in" (dropped) and so on, so the ASCII stopword list never matches accented input and diacritic words are cut into fragments. The comment states the opposite. Separately, equal-score memory runs are ordered by oldest created_at first, while the doc (memory.rs:4-5) speaks of recency.
 Impact: Weaker Turkish retrieval and noise tokens; oldest-first tie-break. No safety impact.
 Known: none
 
