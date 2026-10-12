@@ -1172,6 +1172,11 @@ impl AccountState {
                 expected_nonce, tx.nonce
             ));
         }
+        // The executor advances the nonce with a saturating add. At u64::MAX
+        // it would stay put and the same signed transaction could replay.
+        if tx.nonce == u64::MAX {
+            return Err("Invalid nonce: account nonce space is exhausted".into());
+        }
         // Economic policy (2026-07-25): flat transaction fee is the
         // Only validator income. EIP-1559 cap/tip fields remain signed wire
         // Fields for compatibility, but divergent values are fail-closed until
@@ -2757,6 +2762,19 @@ mod tests {
         let result = state.validate_transaction(&tx);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("nonce"));
+    }
+    #[test]
+    fn exhausted_nonce_is_rejected() {
+        let alice_kp = KeyPair::generate().unwrap();
+        let alice = Address::from(alice_kp.public_key_bytes());
+        let mut state = AccountState::new();
+        state.add_balance(&alice, 1000);
+        state.get_or_create(&alice).nonce = u64::MAX;
+        let recipient = test_addr_from_byte(1u8);
+        let mut tx = Transaction::new_with_fee(alice, recipient, 100, 1, u64::MAX, vec![]);
+        tx.sign(&alice_kp);
+        let err = state.validate_transaction(&tx).unwrap_err();
+        assert!(err.contains("nonce"));
     }
     #[test]
     fn test_replay_protection() {
