@@ -673,6 +673,40 @@ impl Node {
         self.active_sync_request = None;
     }
 
+    /// Try to switch to the fork that `suffix` belongs to.
+    ///
+    /// `try_reorg` needs the whole candidate chain from genesis. The peer
+    /// sends only the blocks from the fork height, so the shared prefix is
+    /// taken from the local chain. The result is logged, never dropped.
+    async fn reorg_to_peer_suffix(&self, suffix: Vec<crate::core::block::Block>, peer: &PeerId) {
+        let Some(first) = suffix.first() else {
+            return;
+        };
+        let start = first.index;
+        let mut prefix = Vec::new();
+        for height in 0..start {
+            match self.chain.get_block(height).await {
+                Some(block) => prefix.push(block),
+                None => {
+                    warn!("Reorg from {peer} skipped: local block {height} is missing");
+                    return;
+                }
+            }
+        }
+        let candidate = match join_reorg_candidate(prefix, suffix) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                warn!("Reorg candidate from {peer} rejected: {error}");
+                return;
+            }
+        };
+        match self.chain.try_reorg(candidate).await {
+            Ok(true) => info!("Reorg to the chain of {peer} done"),
+            Ok(false) => info!("Reorg to the chain of {peer} not needed: not a better chain"),
+            Err(error) => warn!("Reorg to the chain of {peer} failed: {error}"),
+        }
+    }
+
     /// The fields a peer advertises in its `Handshake` or `HandshakeAck`.
     fn handshake_fields(msg: NetworkMessage) -> Option<(&'static str, HandshakeFields)> {
         match msg {
@@ -2485,7 +2519,7 @@ impl Node {
                                                    let our_block_at_start = self.chain.get_block(start_idx).await;
                                                    if let Some(our_b) = our_block_at_start {
                                                        if our_b.hash != blocks[0].hash {
-                                                           let _ = self.chain.try_reorg(blocks.clone()).await;
+                                                           self.reorg_to_peer_suffix(blocks.clone(), &peer_id).await;
                                                        } else {
                                                            for block in blocks {
                                                                let h = self.chain.get_height().await;
@@ -3193,7 +3227,7 @@ impl Node {
                                                                    let our_block = self.chain.get_block(start_idx).await;
                                                                    if let Some(our_b) = our_block {
                                                                        if our_b.hash != blocks[0].hash {
-                                                                           let _ = self.chain.try_reorg(blocks).await;
+                                                                           self.reorg_to_peer_suffix(blocks, &peer).await;
                                                                        } else {
                                                                            for block in blocks {
                                                                                let h = self.chain.get_height().await;
@@ -3337,6 +3371,54 @@ const _: fn(&mut Node) = |node| {
     fn assert_send<T: Send>(_: T) {}
     assert_send(node.run());
 };
+
+/// Join the local prefix (genesis up to the fork height) and the peer suffix
+/// into one chain for `try_reorg`. The suffix must continue the prefix.
+fn join_reorg_candidate(
+    mut prefix: Vec<crate::core::block::Block>,
+    suffix: Vec<crate::core::block::Block>,
+) -> Result<Vec<crate::core::block::Block>, String> {
+    let first = suffix.first().ok_or("empty suffix")?;
+    let parent = prefix.last().ok_or("fork starts at genesis")?;
+    if first.index != prefix.len() as u64 || first.previous_hash != parent.hash {
+        return Err("suffix does not continue the local prefix".into());
+    }
+    prefix.extend(suffix);
+    Ok(prefix)
+}
+
+#[cfg(test)]
+mod reorg_candidate_tests {
+    use super::join_reorg_candidate;
+    use crate::core::block::Block;
+
+    fn child(parent: &Block) -> Block {
+        Block::new(parent.index + 1, parent.hash.clone(), Vec::new())
+    }
+
+    #[test]
+    fn suffix_is_joined_to_the_prefix_from_genesis() {
+        let genesis = Block::genesis();
+        let one = child(&genesis);
+        let two = child(&one);
+        let joined = join_reorg_candidate(vec![genesis.clone(), one.clone()], vec![two.clone()])
+            .expect("suffix continues prefix");
+        assert_eq!(joined.len(), 3);
+        assert_eq!(joined[0], genesis);
+        assert_eq!(joined[2], two);
+    }
+
+    #[test]
+    fn a_suffix_that_does_not_continue_the_prefix_is_refused() {
+        let genesis = Block::genesis();
+        let one = child(&genesis);
+        let two = child(&one);
+        let three = child(&two);
+        assert!(join_reorg_candidate(vec![genesis.clone()], vec![three]).is_err());
+        assert!(join_reorg_candidate(Vec::new(), vec![one]).is_err());
+        assert!(join_reorg_candidate(vec![genesis], Vec::new()).is_err());
+    }
+}
 
 #[cfg(test)]
 mod vote_history_wiring_tests {
