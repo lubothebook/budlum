@@ -1102,7 +1102,10 @@ pub fn trace_matrix(
             // Inverse-witness for final root equality check.
             // Rd_val_new is constrained to equal (final == root) as a field boolean.
             let root = step.src1_val;
-            let diff = final_merkle.wrapping_sub(root);
+            // Field subtraction, as for NullifierCheck above: the AIR forms
+            // `final - root` in Goldilocks, so `wrapping_sub` gives a wrong
+            // inverse witness whenever `final < root`.
+            let diff = bud_vm::field_sub_goldilocks(final_merkle, root);
             let inv = if diff != 0 {
                 bud_vm::field_inverse_goldilocks(diff)
             } else {
@@ -9282,6 +9285,82 @@ mod tests {
              and their result skipped. proving_rejected={rejected_at_proving}, \
              verification_rejected={rejected_at_verification}"
         );
+    }
+
+    /// An honest `VerifyMerkle` that does NOT match its claimed root must
+    /// still be provable (BLG-0219). The inverse witness of `final - root`
+    /// has to be taken in the field; with `wrapping_sub` it was wrong
+    /// whenever the path result was below the claimed root.
+    #[test]
+    fn proves_an_honest_verify_merkle_mismatch_when_final_is_below_root() {
+        let program = vec![
+            inst(Opcode::VerifyMerkle, 1, 2, 3, 256),
+            inst(Opcode::Halt, 0, 0, 0, 0),
+        ];
+        let mut vm = Vm::new(1024);
+        let key: u64 = 7;
+        let siblings: [u64; 64] = std::array::from_fn(|i| ((i as u64) * 31) + 1);
+        let leaf: u64 = 0xBEEF;
+        let mut current = leaf;
+        for (i, &sibling) in siblings.iter().enumerate() {
+            let bit = (key >> i) & 1;
+            current = if bit == 0 {
+                bud_vm::merkle_poseidon_round(current, sibling)
+            } else {
+                bud_vm::merkle_poseidon_round(sibling, current)
+            };
+        }
+        // The claimed root is above the path result, so `final < root`.
+        assert!(current < bud_vm::GOLDILOCKS_P - 1);
+        let claimed_root = current + 1;
+        vm.memory[256..264].copy_from_slice(&key.to_le_bytes());
+        for (i, &sibling) in siblings.iter().enumerate() {
+            let off = 264 + i * 8;
+            vm.memory[off..off + 8].copy_from_slice(&sibling.to_le_bytes());
+        }
+        vm.registers[2] = claimed_root;
+        vm.registers[3] = leaf;
+        let receipt = vm.run_receipt(&program);
+        assert!(receipt.success);
+        assert_eq!(vm.trace.len(), 66);
+        assert_eq!(vm.trace[0].dst_val, 0, "the honest result is a mismatch");
+
+        let program_bytes: Vec<u8> = program
+            .iter()
+            .flat_map(|&i| i.to_le_bytes().to_vec())
+            .collect();
+        let mut hasher = Keccak::v256();
+        hasher.update(&program_bytes);
+        let mut program_hash = [0u8; 32];
+        hasher.finalize(&mut program_hash);
+        let pi = ExecutionPublicInputs {
+            chain_id: 1,
+            program_hash,
+            initial_state_root: crate::adapter::initial_state_root_of(
+                crate::adapter::memory_image_commitment_of_reads(&initial_memory_reads(&vm.trace)),
+                crate::adapter::register_image_commitment_of_reads(&initial_register_reads(
+                    &vm.trace,
+                )),
+            ),
+            final_state_root: [0u8; 32],
+            sender: 0,
+            nonce: 0,
+            block_height: 0,
+            gas_limit: vm.gas_limit,
+            gas_used: vm.gas_used,
+            exit_code: 0,
+            trace_len: vm.trace.len() as u64,
+            event_digest: [0u8; 32],
+            state_writes_digest: [0u8; 32],
+        };
+        let envelope = Plonky3Adapter::prove(&vm.trace, &pi, &program).expect("honest proof");
+        Plonky3Adapter::verify_with_activation(
+            &envelope,
+            &pi,
+            &program,
+            bud_isa::MainnetActivation::full(),
+        )
+        .expect("an honest mismatch must verify");
     }
 
     /// (security audit) negative test for the Merkle
