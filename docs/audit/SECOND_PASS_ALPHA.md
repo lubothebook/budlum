@@ -320,7 +320,7 @@ Severity: Low
 Axis: invariant (Z12, Z13)
 Confidence: Certain
 Evidence: mod.rs:88 reads "mainnet L1's fact" in a rustdoc comment (Z12). Bold markers are in poa.rs:118, poa.rs:126 and mod.rs:24 (Z13), besides the merkle_tree.rs:8-9 hits already in P01-F25.
-What must be refused and what happens today: Public text must use "Budlum Evrensel Mutabakat Katmani" and plain text. The comments carry the banned term and bold markers.
+What must be refused and what happens today: Public text must use the approved name from rule Z12 and plain text. The comments carry the banned term and bold markers.
 Impact: style rule only.
 Known: partly P01-F25 (mod.rs:88, merkle_tree.rs:8-9).
 
