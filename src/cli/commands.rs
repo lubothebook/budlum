@@ -1178,6 +1178,10 @@ impl NodeConfig {
         }
 
         if self.network == Network::Mainnet {
+            if let Some(reason) = self.mainnet_rpc_violation() {
+                eprintln!("CRITICAL SECURITY FAILURE: {reason}");
+                std::process::exit(1);
+            }
             // A signing key on disk is refused on mainnet for every role and
             // consensus type. `main` loads `validator_key_file` twice before
             // the PoS engine's own refusal (for the producer address and for
@@ -1271,6 +1275,26 @@ impl NodeConfig {
                 std::process::exit(1);
             }
         }
+    }
+
+    /// Mainnet refuses an RPC listener that has auth off or allows every
+    /// address. Roles that open no listener are not checked.
+    fn mainnet_rpc_violation(&self) -> Option<&'static str> {
+        let exposed = match self.role.as_str() {
+            "validator" | "sentry" | "seed" | "relayer" => false,
+            "rpc" | "archive" => true,
+            _ => self.rpc_enabled,
+        };
+        if !exposed {
+            return None;
+        }
+        if !self.rpc_auth_required {
+            return Some("mainnet refuses an RPC listener with auth_required = false");
+        }
+        if self.rpc_allowed_ips.is_empty() {
+            return Some("mainnet refuses an RPC listener with an empty allowed_ips list");
+        }
+        None
     }
 
     // Node role based rules to avoid opening unnecessary listeners.
@@ -1570,6 +1594,23 @@ mod tests {
         assert!(cfg.rpc_auth_required);
         assert_eq!(cfg.rpc_allowed_ips, NodeConfig::default().rpc_allowed_ips);
         assert!(!cfg.rpc_allowed_ips.is_empty());
+    }
+
+    #[test]
+    fn mainnet_rejects_open_rpc_listener() {
+        let mut cfg = NodeConfig {
+            network: Network::Mainnet,
+            role: "rpc".into(),
+            ..Default::default()
+        };
+        assert!(cfg.mainnet_rpc_violation().is_none());
+        cfg.rpc_auth_required = false;
+        assert!(cfg.mainnet_rpc_violation().is_some());
+        cfg.rpc_auth_required = true;
+        cfg.rpc_allowed_ips.clear();
+        assert!(cfg.mainnet_rpc_violation().is_some());
+        cfg.role = "validator".into();
+        assert!(cfg.mainnet_rpc_violation().is_none());
     }
 
     #[test]
