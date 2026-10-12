@@ -9,7 +9,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P0 | BLG-0001 | .gitleaks.toml | CI #122 Secret Scan: `[[allowlists]] must contain at least one check`; düzeltme b35dd86 (parmak izi .gitleaksignore dosyasına taşındı); yeşil kanıt bekleniyor | CI BEKLİYOR | b35dd86 |  |
 | P0 | BLG-0002 | src/network/regen_health_tick.rs:337 | CI #124 Clippy: `field_reassign_with_default` (-D warnings), iş 115030778899 ve 115030778747 | AÇIK |  |  |
 | P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı | AÇIK |  |  |
-| P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok | AÇIK |  |  |
+| P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile | KODLANIYOR |  |  |
 | P0 | BLG-0005 | PR9 mergeable_state | PR9 `dirty` idi, son iki commit için `pull_request` CI hiç çalışmadı; 030cc60 merge commit ile giderildi | CI BEKLİYOR | 030cc60 |  |
 | P01 | BLG-0006 | - | P01-F01: FINDINGS.md:11; ham önem Critical | AÇIK |  |  |
 | P01 | BLG-0007 | - | P01-F02: FINDINGS.md:18; ham önem High | AÇIK |  |  |
@@ -1100,3 +1100,8 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P62 | BLG-1092 | crates/bpqs/src/tests.rs:103 | P62-F04: FINDINGS.md:188; ham önem Low | AÇIK |  |  |
 | P62 | BLG-1093 | src/bin/bud.rs:38 | P62-F05: FINDINGS.md:189; ham önem Medium | AÇIK |  |  |
 | P62 | BLG-1094 | docs/CONTRIBUTING.md:5 | P62-F06: FINDINGS.md:190; ham önem Medium | AÇIK |  |  |
+| P0 | BLG-1095 | src/storage/qr_video.rs:293 | CI #124 Repo Lint gate hash-inputs-length-prefixed: `ty` and `data` hashed with no length between them (iş 115030778593); BLG-0004 alt kalemi | AÇIK |  |  |
+| P0 | BLG-1096 | src/storage/three_pipe.rs (decode_qr_video) | CI #124 Repo Lint gate no-idle-code: yeni boşta kalan genel öğe `pub fn decode_qr_video`; BLG-0004 alt kalemi | AÇIK |  |  |
+| P0 | BLG-1097 | docs/audit/SECOND_PASS_ALPHA.md:323; notes/second-pass-alpha-P01.md:105 | CI #124 Repo Lint gate tree-is-english: Türkçe sözcük `Katmani`; BLG-0004 alt kalemi | AÇIK |  |  |
+| P0 | BLG-1098 | src/domain/deal_open.rs:430-720; src/tests/storage_tx_door.rs:654-764; budzero/bud-proof/src/relayer.rs:718; budzero/bud-vm/src/lib.rs:1694 | CI #124 Repo Lint gate rejection-tests-assert-rejection: 18 teste ret adı verilmiş ama ret doğrulanmıyor; BLG-0004 alt kalemi | AÇIK |  |  |
+| P0 | BLG-1099 | docs/bulgular/*; xtask/gates/src/gates/tree_is_english.rs | docs/bulgular dosyaları Türkçe: tree-is-english kapısı kırmızı olur; şablon İngilizceye çevrilir, defter için tam dosya adı muafiyeti (sahibin direktifi defteri Türkçe ister) | AÇIK |  |  |
