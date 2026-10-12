@@ -523,6 +523,9 @@ impl GovernanceState {
         // Limit active proposals to prevent state bloat
         const MAX_ACTIVE_PROPOSALS: usize = 100;
         const MAX_ACTIVE_PROPOSALS_PER_PROPOSER: usize = 8;
+        // Epochs a Failed or Executed proposal stays in state after its
+        // activation epoch.
+        const CLOSED_PROPOSAL_RETENTION_EPOCHS: u64 = 1_000;
         let active_count = self
             .proposals
             .iter()
@@ -548,6 +551,16 @@ impl GovernanceState {
         // Not become an unbounded consensus map.
         self.proposer_epoch_count
             .retain(|(_, epoch), _| *epoch >= current_epoch);
+
+        // Closed proposals are history, not live state. Drop them after a
+        // retention window so the state and its root stay bounded (P20-F02).
+        // Active and Passed proposals are kept: they can still change state.
+        self.proposals.retain(|p| {
+            !matches!(p.status, ProposalStatus::Failed | ProposalStatus::Executed)
+                || p.activation_epoch()
+                    .checked_add(CLOSED_PROPOSAL_RETENTION_EPOCHS)
+                    .is_none_or(|keep_until| keep_until >= current_epoch)
+        });
 
         let end_epoch = current_epoch
             .checked_add(duration)
@@ -1240,6 +1253,30 @@ mod l4_tests {
         assert!(gov
             .create_proposal(other, ProposalType::ChangeBaseFee(100), 100, 10)
             .is_ok());
+    }
+
+    /// P20-F02: closed proposals leave state after the retention window.
+    #[test]
+    fn p20_f02_closed_proposals_are_pruned() {
+        let mut gov = GovernanceState::default();
+        let proposer = Address::from([0xB1; 32]);
+        let closed = gov
+            .create_proposal(proposer, ProposalType::ChangeBaseFee(100), 0, 10)
+            .unwrap();
+        let passed = gov
+            .create_proposal(proposer, ProposalType::ChangeBaseFee(200), 0, 10)
+            .unwrap();
+        gov.find_proposal_mut(closed).unwrap().status = ProposalStatus::Failed;
+        gov.find_proposal_mut(passed).unwrap().status = ProposalStatus::Passed;
+        // Inside the window both stay.
+        gov.create_proposal(proposer, ProposalType::ChangeBaseFee(300), 500, 10)
+            .unwrap();
+        assert_eq!(gov.proposals.len(), 3);
+        // Past the window the closed one goes, the Passed one stays.
+        gov.create_proposal(proposer, ProposalType::ChangeBaseFee(400), 5_000, 10)
+            .unwrap();
+        assert!(gov.proposals.iter().all(|p| p.id != closed));
+        assert!(gov.proposals.iter().any(|p| p.id == passed));
     }
 
     #[test]
