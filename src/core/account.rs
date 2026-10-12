@@ -442,7 +442,11 @@ impl AccountState {
             proof_market: crate::settlement::ProofMarketState::new(),
         }
     }
-    pub fn with_storage(storage: Storage) -> Self {
+    /// # Errors
+    ///
+    /// Returns the load error when stored accounts cannot be read. The caller
+    /// must not continue with an empty state in that case.
+    pub fn with_storage(storage: Storage) -> Result<Self, String> {
         let mut state = AccountState {
             accounts: BTreeMap::new(),
             validators: BTreeMap::new(),
@@ -491,10 +495,8 @@ impl AccountState {
             pending_domain_unfreezes: Vec::new(),
             proof_market: crate::settlement::ProofMarketState::new(),
         };
-        if let Err(e) = state.load_from_storage() {
-            tracing::error!("Could not load account state: {e}");
-        }
-        state
+        state.load_from_storage()?;
+        Ok(state)
     }
     pub fn from_snapshot(snapshot: &crate::chain::snapshot::StateSnapshot) -> Self {
         let mut accounts = BTreeMap::new();
@@ -2253,7 +2255,7 @@ impl AccountState {
                     self.keys_dirty = true;
                     tracing::info!("Loaded {} accounts from legacy blob", self.accounts.len());
                 } else {
-                    tracing::error!("Could not load accounts: {e}");
+                    return Err(format!("Could not load accounts: {e}"));
                 }
             }
         }
@@ -2608,6 +2610,18 @@ impl Default for AccountState {
 mod tests {
     use super::*;
     use crate::crypto::primitives::KeyPair;
+    /// A storage that cannot be read must not turn into an empty state.
+    #[test]
+    fn with_storage_refuses_unreadable_accounts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let storage = Storage::new(dir.path().to_str().expect("utf-8 path")).expect("storage");
+        storage
+            .db()
+            .insert(b"ACCT:not-an-address".as_slice(), b"junk".as_slice())
+            .expect("plant corrupt entry");
+        assert!(AccountState::with_storage(storage).is_err());
+    }
+
     #[test]
     fn test_zero_address_non_genesis_rejected() {
         // CWE-306: a zero-address sender used to skip all
