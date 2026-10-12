@@ -1310,6 +1310,27 @@ impl StorageRegistry {
                 hasher.update(audit_id.to_le_bytes());
             }
         }
+        // Proven reads drive the replica demand and so the repair tickets, and
+        // the dictionary reference counts decide when a dictionary may be
+        // deleted. Two nodes that disagreed about either showed equal roots
+        // until the tickets diverged. Empty contributes no bytes, so a chain
+        // with no read evidence and no dictionary keeps the root it had.
+        if !self.access_events.is_empty() {
+            hasher.update(b"BDLM_STORAGE_ACCESS_EVENTS_V1");
+            hasher.update((self.access_events.len() as u64).to_le_bytes());
+        }
+        for (manifest_id, events) in &self.access_events {
+            hasher.update(manifest_id.0);
+            // The length keeps the encoding injective across manifests.
+            hasher.update((events.len() as u64).to_le_bytes());
+            for event in events {
+                hasher.update(event.epoch.to_le_bytes());
+                hasher.update(event.count.to_le_bytes());
+            }
+        }
+        if !self.dictionaries.has_no_dictionaries() {
+            hasher.update(self.dictionaries.dictionary_root());
+        }
         hasher.finalize().into()
     }
 
@@ -5067,6 +5088,31 @@ mod tests {
         let before = reg.root();
         reg.begin_operator_cooldown(operator(), 1_000);
         assert_ne!(before, reg.root(), "the cooldown must reach the root");
+    }
+
+    /// Proven reads feed the replica demand and the repair tickets, so they
+    /// belong in the root.
+    #[test]
+    fn a_proven_read_changes_the_registry_root() {
+        let mut reg = StorageRegistry::new();
+        let manifest = ContentId([3u8; 32]);
+        let before = reg.root();
+        reg.record_proven_read(manifest, 10);
+        let one = reg.root();
+        assert_ne!(before, one, "the access log must reach the root");
+        reg.record_proven_read(manifest, 10);
+        assert_ne!(one, reg.root(), "the read count must reach the root");
+    }
+
+    /// Dictionary reference counts decide deletion, so they belong in the root.
+    #[test]
+    fn a_dictionary_changes_the_registry_root() {
+        let mut reg = StorageRegistry::new();
+        let before = reg.root();
+        reg.dictionaries
+            .register_dictionary(ContentId([9u8; 32]), 4_096)
+            .expect("the dictionary must register");
+        assert_ne!(before, reg.root(), "the dictionary must reach the root");
     }
 
     /// The confidential record must reach the state root, both halves of it.
