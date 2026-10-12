@@ -1713,6 +1713,9 @@ impl BudlumApiServer for RpcServer {
         &self,
         evidence: serde_json::Value,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        // Operator-only: `submitter` is an unsigned field, so a public caller
+        // could vote under any bonded prover's name.
+        self.require_operator("bud_submitExternalEvidence")?;
         let evidence: crate::cross_domain::external::RawConsensusEvidence =
             serde_json::from_value(evidence).map_err(|e| {
                 ErrorObjectOwned::owned(-32602, format!("Invalid evidence: {e}"), None::<()>)

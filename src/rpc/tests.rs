@@ -1274,4 +1274,29 @@ mod rpc_tests {
             refused.message()
         );
     }
+
+    /// The external evidence intake carries an unsigned submitter, so the
+    /// public listener must refuse it before the payload is even parsed.
+    #[tokio::test]
+    async fn rpc_tests_submit_external_evidence_refused_on_public_listener() {
+        let consensus = Arc::new(PoWEngine::new(0));
+        let blockchain = Blockchain::new(consensus, None, 45265, None);
+        let (chain_actor, chain) = ChainActor::new(blockchain);
+        tokio::spawn(async move {
+            chain_actor.run().await;
+        });
+        let node_struct = Node::new(chain.clone()).unwrap();
+        let node_client = node_struct.get_client();
+        let public_server = RpcServer::with_security_and_mode(
+            chain.clone(),
+            node_client,
+            RpcSecurityConfig::operator_default(),
+            RpcMode::Public,
+        );
+        let refused = public_server
+            .submit_external_evidence(serde_json::json!({}))
+            .await
+            .expect_err("public listener must refuse external evidence");
+        assert_eq!(refused.code(), -32004);
+    }
 }
