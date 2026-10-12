@@ -31,6 +31,37 @@ fn load_signing_key(path: &str) -> Option<KeyPair> {
         .ok()
 }
 
+/// Claims `path` for a new secret key file. It fails when the path already exists, so key
+/// generation never overwrites an operator key. The file is created with mode 0600.
+fn claim_new_key_file(path: &str) -> std::io::Result<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path).map(|_| ())
+}
+
+/// Claims `path`, or prints the refusal and exits. On a later write failure the caller
+/// removes the empty claim again with `release_key_file`.
+fn claim_new_key_file_or_exit(path: &str) {
+    if let Err(e) = claim_new_key_file(path) {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            eprintln!("Error: key file {path} already exists; refusing to overwrite it.");
+            eprintln!("Move or delete the existing key file first if you mean to replace it.");
+        } else {
+            eprintln!("Error: cannot create key file {path}: {e}");
+        }
+        std::process::exit(1);
+    }
+}
+
+fn release_key_file(path: &str) {
+    let _ = std::fs::remove_file(path);
+}
+
 fn write_database_backup(
     storage: &Storage,
     backup_dir: &Path,
@@ -359,7 +390,9 @@ async fn main() {
                 std::process::exit(1);
             }
         };
+        claim_new_key_file_or_exit(&output);
         keypair.save(&output).unwrap_or_else(|e| {
+            release_key_file(&output);
             eprintln!("Error: cannot write secret key to {output}: {e:?}");
             std::process::exit(1);
         });
@@ -456,7 +489,9 @@ async fn main() {
     if let Some(ref path) = config.gen_key {
         match budlum_core::crypto::primitives::ValidatorKeys::generate() {
             Ok(keys) => {
+                claim_new_key_file_or_exit(path);
                 if let Err(e) = keys.save(path) {
+                    release_key_file(path);
                     eprintln!("Error: could not save validator key to {path}: {e}");
                     std::process::exit(1);
                 }
@@ -1703,5 +1738,29 @@ async fn main() {
                 }
             }
         } => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::claim_new_key_file;
+
+    #[test]
+    fn key_claim_refuses_to_overwrite_an_existing_file() {
+        let dir = std::env::temp_dir().join(format!("budlum-keygen-claim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create test dir");
+        let path = dir.join("validator.key");
+        let path_str = path.to_str().expect("utf8 path").to_string();
+        std::fs::write(&path, b"existing secret").expect("seed key file");
+
+        let err = claim_new_key_file(&path_str).expect_err("existing key must be refused");
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&path).expect("read back"), b"existing secret");
+
+        std::fs::remove_file(&path).expect("remove key file");
+        claim_new_key_file(&path_str).expect("a free path is claimed");
+        let err = claim_new_key_file(&path_str).expect_err("second claim must fail");
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        std::fs::remove_dir_all(&dir).expect("clean up");
     }
 }
