@@ -11,14 +11,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı | AÇIK |  |  |
 | P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile | KODLANIYOR |  |  |
 | P0 | BLG-0005 | PR9 mergeable_state | PR9 `dirty` idi, son iki commit için `pull_request` CI hiç çalışmadı; 030cc60 merge commit ile giderildi | CI BEKLİYOR | 030cc60 |  |
-| P01 | BLG-0006 | - | P01-F01: FINDINGS.md:11; ham önem Critical | AÇIK |  |  |
-| P01 | BLG-0007 | - | P01-F02: FINDINGS.md:18; ham önem High | AÇIK |  |  |
-| P01 | BLG-0008 | - | P01-F03: FINDINGS.md:24; ham önem High | AÇIK |  |  |
-| P01 | BLG-0009 | - | P01-F04: FINDINGS.md:29; ham önem Critical | AÇIK |  |  |
-| P01 | BLG-0010 | - | P01-F05: FINDINGS.md:35; ham önem High | AÇIK |  |  |
-| P01 | BLG-0011 | - | P01-F06: FINDINGS.md:41; ham önem High | AÇIK |  |  |
-| P01 | BLG-0012 | - | P01-F07: FINDINGS.md:46; ham önem High | AÇIK |  |  |
-| P01 | BLG-0013 | - | P01-F08: FINDINGS.md:52; ham önem Medium | AÇIK |  |  |
+| P01 | BLG-0006 | - | P01-F01: FINDINGS.md:11; ham önem Critical / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P01 | BLG-0007 | - | P01-F02: FINDINGS.md:18; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P01 | BLG-0008 | - | P01-F03: FINDINGS.md:24; ham önem High / BAĞIMLI: src/main.rs:1595 PoA üretim döngüsü | AÇIK |  |  |
+| P01 | BLG-0009 | - | P01-F04: FINDINGS.md:29; ham önem Critical / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P01 | BLG-0010 | - | P01-F05: FINDINGS.md:35; ham önem High / gp/P01-A:9493856 kısmi: F05b suffix ile try_reorg src/network/node.rs:2375-2390,3040-3097 BAĞIMLI | KODLANIYOR |  |  |
+| P01 | BLG-0011 | - | P01-F06: FINDINGS.md:41; ham önem High / gp/P01-A:503a8c5 | KODLANIYOR |  |  |
+| P01 | BLG-0012 | - | P01-F07: FINDINGS.md:46; ham önem High / BAĞIMLI: main.rs:545-560,1008,1033 ve executor.rs; genesis admin kararı gerekir | AÇIK |  |  |
+| P01 | BLG-0013 | - | P01-F08: FINDINGS.md:52; ham önem Medium / gp/P01-A:45e80cf | KODLANIYOR |  |  |
 | P01 | BLG-0014 | src/consensus/poa.rs:353-417 | P01-F09: FINDINGS.md:70; ham önem Medium; PARTLY | AÇIK |  |  |
 | P01 | BLG-0015 | - | P01-F09b: FINDINGS.md:78; ham önem Low | AÇIK |  |  |
 | P01 | BLG-0016 | - | P01-F09c: FINDINGS.md:78; ham önem Low | AÇIK |  |  |
@@ -219,13 +219,13 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P11 | BLG-0211 | - | P11-F10: FINDINGS.md:799; ham önem Low | AÇIK |  |  |
 | P11 | BLG-0212 | gateway/service.rs:272 | P11-F11: FINDINGS.md:800; ham önem Low | AÇIK |  |  |
 | P11 | BLG-0213 | - | P11-F12: FINDINGS.md:801; ham önem Low | AÇIK |  |  |
-| P12 | BLG-0214 | - | P12-F01: FINDINGS.md:807; ham önem High | AÇIK |  |  |
-| P12 | BLG-0215 | - | P12-F02: FINDINGS.md:808; ham önem Medium | AÇIK |  |  |
-| P12 | BLG-0216 | - | P12-F03: FINDINGS.md:809; ham önem Medium | AÇIK |  |  |
-| P12 | BLG-0217 | - | P12-F04: FINDINGS.md:810; ham önem Low | AÇIK |  |  |
-| P12 | BLG-0218 | - | P12-F05: FINDINGS.md:811; ham önem Low | AÇIK |  |  |
-| P12 | BLG-0219 | - | P12-F06: FINDINGS.md:812; ham önem Low | AÇIK |  |  |
-| P12 | BLG-0220 | - | P12-F07: FINDINGS.md:813; ham önem Low | AÇIK |  |  |
+| P12 | BLG-0214 | - | P12-F01: FINDINGS.md:807; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P12 | BLG-0215 | - | P12-F02: FINDINGS.md:808; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P12 | BLG-0216 | - | P12-F03: FINDINGS.md:809; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P12 | BLG-0217 | - | P12-F04: FINDINGS.md:810; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P12 | BLG-0218 | - | P12-F05: FINDINGS.md:811; ham önem Low / gp/P12-A:2ba5cd8 | KODLANIYOR |  |  |
+| P12 | BLG-0219 | - | P12-F06: FINDINGS.md:812; ham önem Low / gp/P12-A:f5453d3 | KODLANIYOR |  |  |
+| P12 | BLG-0220 | - | P12-F07: FINDINGS.md:813; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P13 | BLG-0221 | - | P13-F01: FINDINGS.md:875; ham önem High | AÇIK |  |  |
 | P13 | BLG-0222 | - | P13-F02: FINDINGS.md:876; ham önem Medium | AÇIK |  |  |
 | P13 | BLG-0223 | - | P13-F03: FINDINGS.md:877; ham önem Medium | AÇIK |  |  |
@@ -1052,14 +1052,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P57 | BLG-1044 | xtask/tools/src/rpc.rs:62-77, 86-94 | P57-F17: notes/P57-scan.md:285; ham önem Low | AÇIK |  |  |
 | P57 | BLG-1045 | xtask/tools/src/docker_smoke.rs:36, 177-193 | P57-F18: notes/P57-scan.md:302; ham önem Info | AÇIK |  |  |
 | P57 | BLG-1046 | xtask/tools/src/bin/budlum-tools.rs:25-27, 109-130 | P57-F19: notes/P57-scan.md:312; ham önem Info | AÇIK |  |  |
-| P58 | BLG-1047 | - | P58-F01: FINDINGS.md:981; ham önem Medium | AÇIK |  |  |
-| P58 | BLG-1048 | - | P58-F02: FINDINGS.md:982; ham önem Medium | AÇIK |  |  |
-| P58 | BLG-1049 | workflows/benchmark.yml:30-71 | P58-F03: FINDINGS.md:983; ham önem Medium | AÇIK |  |  |
-| P58 | BLG-1050 | workflows/miri.yml:159, 219 | P58-F04: FINDINGS.md:984; ham önem Medium | AÇIK |  |  |
-| P58 | BLG-1051 | codeql/codeql-config.yml:36-68 | P58-F05: FINDINGS.md:985; ham önem Medium | AÇIK |  |  |
-| P58 | BLG-1052 | - | P58-F06: FINDINGS.md:986; ham önem Low | AÇIK |  |  |
-| P58 | BLG-1053 | - | P58-F07: FINDINGS.md:987; ham önem Low | AÇIK |  |  |
-| P58 | BLG-1054 | - | P58-F08: FINDINGS.md:988; ham önem Low | AÇIK |  |  |
+| P58 | BLG-1047 | - | P58-F01: FINDINGS.md:981; ham önem Medium / gp/P58-A:9584395 | KODLANIYOR |  |  |
+| P58 | BLG-1048 | - | P58-F02: FINDINGS.md:982; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P58 | BLG-1049 | workflows/benchmark.yml:30-71 | P58-F03: FINDINGS.md:983; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
+| P58 | BLG-1050 | workflows/miri.yml:159, 219 | P58-F04: FINDINGS.md:984; ham önem Medium / BAĞIMLI: src/storage Miri uyumlu test yolu | AÇIK |  |  |
+| P58 | BLG-1051 | codeql/codeql-config.yml:36-68 | P58-F05: FINDINGS.md:985; ham önem Medium / gp/P58-A:981cfed | KODLANIYOR |  |  |
+| P58 | BLG-1052 | - | P58-F06: FINDINGS.md:986; ham önem Low / gp/P58-A:2bc16f1 kısmi: kalan CodeQL kararı PR9 yorumunda | KODLANIYOR |  |  |
+| P58 | BLG-1053 | - | P58-F07: FINDINGS.md:987; ham önem Low / gp/P58-A:5291dfa | KODLANIYOR |  |  |
+| P58 | BLG-1054 | - | P58-F08: FINDINGS.md:988; ham önem Low / gp/P58-A:69de1e7 | KODLANIYOR |  |  |
 | P58 | BLG-1055 | - | P58-F09: FINDINGS.md:989; ham önem Low | AÇIK |  |  |
 | P58 | BLG-1056 | - | P58-F10: FINDINGS.md:990; ham önem Low | AÇIK |  |  |
 | P58 | BLG-1057 | - | P58-F11: FINDINGS.md:991; ham önem Low | AÇIK |  |  |
