@@ -3065,6 +3065,12 @@ impl BudlumApiServer for RpcServer {
         &self,
         submission: crate::prover::ZkProofSubmission,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        // Operator-only: `submission.message.sender` is an unsigned field and
+        // the proof fee is burned from that address when verification fails,
+        // so a public caller could burn the fee balance of any address
+        // (P18-F02). Until submissions carry a sender signature, the endpoint
+        // is restricted like its sibling domain-registration methods.
+        self.require_operator("bud_submitZkProof")?;
         match self.chain.submit_zk_proof(submission).await {
             Ok(crate::prover::ProofAcceptance::Accepted { rewarded, reward }) => {
                 Ok(serde_json::json!({
