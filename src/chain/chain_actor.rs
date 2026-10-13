@@ -3354,40 +3354,15 @@ impl ChainActor {
     /// AI registry maintenance: expired requests, results, refunded fee
     /// records and dispute window records are evicted here.
     ///
-    /// The written mechanism (`AiRegistry::prune_expired` /
-    /// `expire_dispute_window`) had until now only been called from the tests:
-    /// nothing called it in production and the AI registry carried permanent
-    /// state growth (the "written but never called" class - a memory
-    /// lesson).
+    /// The eviction itself lives in
+    /// `Blockchain::apply_ai_registry_maintenance`, which the startup replay,
+    /// the reorg rebuilds and `rebuild_state` also run, so a restarted node
+    /// reconstructs exactly the state its live peers carry (P10-F02).
     fn run_ai_maintenance(&mut self, block_height: u64) {
-        // The dispute window (10_080 blocks) is also the retention window:
-        // unsettled requests and evidence are never deleted before the
-        // finality plus objection period has elapsed.
-        let retention = crate::ai::registry::DISPUTE_WINDOW_BLOCKS;
-        let (pruned, refunds) = self
-            .blockchain
-            .state
-            .ai_registry
-            .prune_expired(block_height, retention);
-        // Escrowed fees of pruned, never-reclaimed, never-cancelled requests
-        // go back to their requesters here: the pruned row was the only
-        // on-chain record of the escrow, so this is the last chance to pay it.
-        for (requester, max_fee) in refunds {
-            let account = self.blockchain.state.get_or_create(&requester);
-            match account.balance.checked_add(max_fee) {
-                Some(updated) => account.balance = updated,
-                None => tracing::error!(
-                    %requester,
-                    max_fee,
-                    "AI prune refund would overflow the balance; fee left uncredited"
-                ),
-            }
-        }
-        let expired = self
-            .blockchain
-            .state
-            .ai_registry
-            .expire_dispute_window(block_height);
+        let (pruned, expired) = crate::chain::blockchain::Blockchain::apply_ai_registry_maintenance(
+            &mut self.blockchain.state,
+            block_height,
+        );
         if pruned > 0 || expired > 0 {
             tracing::info!(%pruned, %expired, "AI registry maintenance at height {block_height}");
         }
@@ -3484,11 +3459,30 @@ impl ChainActor {
                     // Manual prune trigger from CLI/RPC
                     let now_epoch = self.blockchain.state.epoch_index;
                     let cid_obj = crate::storage::content_id::ContentId(cid);
-                    let pruned_deals = self
+                    let (pruned_deals, bond_returns) = self
                         .blockchain
                         .state
                         .storage_registry
                         .prune_content(&cid_obj, now_epoch);
+                    // P23-F01: the same settlement the block-application
+                    // path runs. A deal expired by the prune still holds its
+                    // operator bond, and the maturity sweep only pays out
+                    // `Active` deals, so crediting here is the bond's last
+                    // chance. A repeated prune finds no active deals and
+                    // cannot pay twice.
+                    for (operator, bond) in bond_returns {
+                        if bond == 0 {
+                            continue;
+                        }
+                        if let Err(error) = self.blockchain.state.try_add_balance(&operator, bond) {
+                            tracing::error!(
+                                %operator,
+                                bond,
+                                %error,
+                                "Storage bond return overflow on manual prune; bond left uncredited"
+                            );
+                        }
+                    }
                     tracing::info!(
                         cid = %hex::encode(cid),
                         pruned_deals,
@@ -4061,9 +4055,15 @@ impl ChainActor {
                     let mut pruned_count = 0;
                     if let Some(ref pm) = self.blockchain.pruning_manager {
                         let keep = min_blocks.unwrap_or(pm.min_blocks_to_keep);
+                        // The snapshot bound has to be the newest snapshot
+                        // that actually exists. Passing the tip height here
+                        // (the old code) made the bound a no-op, so an
+                        // operator prune deleted blocks the next restart
+                        // needed to reach its snapshot: lasting data loss,
+                        // node unable to boot (P10-F03).
                         let prunable = pm.get_prunable_blocks_with_retention(
                             height,
-                            height.saturating_sub(1),
+                            pm.latest_snapshot_height(),
                             finalized,
                             keep,
                         );

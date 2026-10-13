@@ -214,6 +214,22 @@ impl Executor {
                 })?;
             }
             TransactionType::Stake => {
+                // A slashed validator's bond was cut by the report that
+                // slashed it, and the permissionless registry refuses to
+                // grow a `Slashed` entry back (`upsert_stake` only lets it
+                // shrink). Letting the ledger half top the stake up would
+                // split the two views again and hand the offender its
+                // penalty back, so the top-up is refused outright - before
+                // any balance movement (P04-F02).
+                if state
+                    .get_validator(&tx.from)
+                    .is_some_and(|validator| validator.slashed)
+                {
+                    return Err(BudlumError::validation(
+                        "validator_slashed",
+                        "Slashed validators cannot add stake",
+                    ));
+                }
                 // Vesting gate (audit 2026-09-09, E-1): staking moves value
                 // out of the account exactly like a transfer; the locked
                 // team-vesting portion is not spendable. Read before the

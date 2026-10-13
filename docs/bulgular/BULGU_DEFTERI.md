@@ -89,7 +89,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P03 | BLG-0081 | src/settlement/proof_verifier.rs:67-117 | P03-F24: FINDINGS.md:145; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0082 | - | P03-F25: FINDINGS.md:146; ham önem Info | AÇIK |  |  |
 | P04 | BLG-0083 | src/registry/invalid_vote.rs:66-107 | P04-F01: FINDINGS.md:152; ham önem Critical; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P04 | BLG-0084 | src/registry/permissionless.rs:480-515, 690-737 | P04-F02: FINDINGS.md:154; ham önem High; CONFIRMED / gp/P04-A:1bbd9f7 kısmi: registry yarısı; kalan yarı account.rs/blockchain.rs/executor.rs / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | e7c4ad7 |  |
+| P04 | BLG-0084 | src/core/account.rs:1519 | P04-F02: FINDINGS.md:154; ham önem High / slash_from_report artık validators haritasını da kesiyor + slashed flag; executor.rs Stake reddediyor; registry upsert_stake zaten büyüyemez; quorum/Unstake/RPC görünümleri artık registry+ledger tutarlı | CI BEKLİYOR |  |  |
 | P04 | BLG-0085 | - | P04-F03: FINDINGS.md:155; ham önem High; CONFIRMED / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | CI BEKLİYOR | 19bc02b |  |
 | P04 | BLG-0086 | rpc/tests.rs:1146 | P04-F04: FINDINGS.md:157; ham önem Medium; PARTLY / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | CI BEKLİYOR | 51210e7 |  |
 | P04 | BLG-0087 | - | P04-F05: FINDINGS.md:160; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -197,7 +197,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P09 | BLG-0189 | - | P09-F10: FINDINGS.md:734; ham önem Low | AÇIK |  |  |
 | P09 | BLG-0190 | - | P09-F11: FINDINGS.md:735; ham önem Low | AÇIK |  |  |
 | P10 | BLG-0191 | src/network/node.rs:1757 | P10-F01: FINDINGS.md:762; ham önem High / prevote epoch artık checkpoint_height/epoch_len (aggregator ile aynı); regresyon testi üç ağda gerçek aggregator üzerinden sürüyor, eski bölen reddediliyor | CI BEKLİYOR | b23df8e |  |
-| P10 | BLG-0192 | ai/registry.rs:1921-1923, 1952-1953 | P10-F02: FINDINGS.md:763; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P10 | BLG-0192 | src/chain/blockchain.rs:4769 | P10-F02: FINDINGS.md:763; ham önem High / apply_ai_registry_maintenance eklendi; 4 yeniden-hesaplama yolu (startup replay, try_reorg, rebuild_state, prod) hepsi artık aynı blok-sonrası bakımı çalıştırıyor; regressiyon testi bunu kilitliyor | CI BEKLİYOR |  |  |
 | P10 | BLG-0193 | - | P10-F03: FINDINGS.md:764; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
 | P10 | BLG-0194 | - | P10-F04: FINDINGS.md:765; ham önem Medium | CI BEKLİYOR | 31144df |  |
 | P10 | BLG-0195 | - | P10-F05: FINDINGS.md:766; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
@@ -348,7 +348,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P22 | BLG-0340 | - | P22-F09: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
 | P22 | BLG-0341 | - | P22-F10: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
 | P22 | BLG-0342 | - | P22-F11: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
-| P23 | BLG-0343 | - | P23-F01: FINDINGS.md:1058; ham önem High / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
+| P23 | BLG-0343 | src/domain/storage_deal.rs:4153 | P23-F01: FINDINGS.md:1058; ham önem High / prune_content artık (expired_deals, bond_returns) dönüyor; blockchain.rs apply_block_effects ve chain_actor.rs StoragePrune aynı borçları operatöre iade ediyor; domain testler idempotent/fail-closed doğruluyor | CI BEKLİYOR |  |  |
 | P23 | BLG-0344 | - | P23-F02: FINDINGS.md:1059; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | f72517b |  |
 | P23 | BLG-0345 | - | P23-F03: FINDINGS.md:1060; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
 | P23 | BLG-0346 | - | P23-F04: FINDINGS.md:1061; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -1074,7 +1074,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P59 | BLG-1066 | crates/wallet-core/Cargo.toml:47 | P59-F08: FINDINGS.md:1000; ham önem Low / BAĞIMLI: ci.yml / xtask gate sahibi | AÇIK |  |  |
 | P59 | BLG-1067 | - | P59-F09: FINDINGS.md:1001; ham önem Info / BAĞIMLI: ci.yml / xtask gate sahibi | AÇIK |  |  |
 | P60 | BLG-1068 | - | P60-F01: FINDINGS.md:670; ham önem Critical / kanıt: zaten düzeltilmiş (03ec495); BudlumFinalityVerifier.sol:331-339 ve 487-501 anahtarlar constructor'da sabit, H(root) kontratta türetilir | YANLIŞ POZİTİF |  |  |
-| P60 | BLG-1069 | - | P60-F02: FINDINGS.md:671; ham önem High / gp/P60-A:a90594b / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi | AÇIK | 3f78f96 |  |
+| P60 | BLG-1069 | contracts/external-domain/BudlumFinalityVerifier.sol | P60-F02: FINDINGS.md:671; ham önem High / .github/workflows/solidity.yml eklendi; pinned solc 0.8.26 checksum ile; CI artık sozlesme derleniyor | CI BEKLİYOR |  |  |
 | P60 | BLG-1070 | - | P60-F03: FINDINGS.md:672; ham önem Medium / gp/P60-A:d3af635 / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi | AÇIK | ff0096d |  |
 | P60 | BLG-1071 | - | P60-F04: FINDINGS.md:673; ham önem Medium / kanıt: zaten düzeltilmiş (2988db9); BudlumFinalityVerifier.sol:287-298 imza noktalarını hash'lemez | YANLIŞ POZİTİF |  |  |
 | P60 | BLG-1072 | - | P60-F05: FINDINGS.md:674; ham önem Medium / BAĞIMLI: evm_hybrid.rs (P06 sahibi); kodlama özeti /tmp/ledger/notes/BLG-1072.txt | AÇIK |  |  |

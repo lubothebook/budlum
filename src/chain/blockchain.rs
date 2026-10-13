@@ -688,6 +688,11 @@ impl Blockchain {
                 state.epoch_index,
                 Self::build_validator_snapshot_from_state(state.epoch_index, &state, chain_id),
             );
+            // The live path prunes the AI registry right after committing
+            // each block; the replay must do the same, or the restarted node
+            // carries rows its peers already pruned and its state root
+            // diverges from the network's at the next block (P10-F02).
+            Self::apply_ai_registry_maintenance(&mut state, block.index);
         }
 
         let mempool_config = Network::from_chain_id(chain_id)
@@ -4749,6 +4754,50 @@ impl Blockchain {
         cids
     }
 
+    /// Deterministic AI-registry maintenance for one committed block height.
+    ///
+    /// Expired requests, results, refunded fee records and dispute-window
+    /// rows are evicted here, and escrowed fees of pruned requests go back to
+    /// their requesters. The eviction depends only on the block height and
+    /// the state as of that block - never on the wall clock or local
+    /// randomness - so replay, reorg rebuilds and the live commit path must
+    /// all produce the same result.
+    ///
+    /// The live path applies this right after each committed block
+    /// (`ChainActor::run_ai_maintenance`). The startup replay, the reorg
+    /// candidate rebuild and `rebuild_state` used to skip it, so a restarted
+    /// node carried AI-registry rows its live peers had already pruned: two
+    /// different state roots for the same height, and the restarted node
+    /// rejects the next block or forks (P10-F02). Every state-rebuild loop
+    /// must call this in the same position the live path does - after the
+    /// block's committed roots are checked, before the next block applies.
+    pub(crate) fn apply_ai_registry_maintenance(
+        state: &mut AccountState,
+        block_height: u64,
+    ) -> (usize, usize) {
+        // The dispute window (10_080 blocks) is also the retention window:
+        // unsettled requests and evidence are never deleted before the
+        // finality plus objection period has elapsed.
+        let retention = crate::ai::registry::DISPUTE_WINDOW_BLOCKS;
+        let (pruned, refunds) = state.ai_registry.prune_expired(block_height, retention);
+        // Escrowed fees of pruned, never-reclaimed, never-cancelled requests
+        // go back to their requesters here: the pruned row was the only
+        // on-chain record of the escrow, so this is the last chance to pay it.
+        for (requester, max_fee) in refunds {
+            let account = state.get_or_create(&requester);
+            match account.balance.checked_add(max_fee) {
+                Some(updated) => account.balance = updated,
+                None => tracing::error!(
+                    %requester,
+                    max_fee,
+                    "AI prune refund would overflow the balance; fee left uncredited"
+                ),
+            }
+        }
+        let expired = state.ai_registry.expire_dispute_window(block_height);
+        (pruned, expired)
+    }
+
     /// Apply a block to a state deterministically.
     ///
     /// `preceding_chain` is the canonical chain *before* `block` (i.e. blocks
@@ -4777,9 +4826,25 @@ impl Blockchain {
         Self::apply_epoch_close_liveness(&mut next_state, block, preceding_chain);
         for (content_id, _) in burn_cids {
             let epoch = next_state.epoch_index;
-            next_state
+            let (_pruned, bond_returns) = next_state
                 .storage_registry
                 .prune_content(&content_id, epoch);
+            // P23-F01: deals the prune expired still held their operator
+            // bonds. The maturity sweep only settles `Active` deals, so
+            // without this credit the bond vanished the moment the owner
+            // burned the NFT. Done here, inside the deterministic
+            // block-application path, so every node credits the same
+            // balances at the same height.
+            for (operator, bond) in bond_returns {
+                if bond == 0 {
+                    continue;
+                }
+                next_state
+                    .try_add_balance(&operator, bond)
+                    .map_err(|error| {
+                        format!("storage bond return overflow for {operator}: {error}")
+                    })?;
+            }
         }
         let previous_epoch = base_state.epoch_index;
         Self::apply_coding_audit_epoch_step(&mut next_state, previous_epoch, block.chain_id);
@@ -5435,6 +5500,10 @@ impl Blockchain {
                     block.index
                 ));
             }
+            // Mirror the live post-commit AI-registry maintenance so the
+            // rebuilt candidate state matches what the network carries at
+            // this height (P10-F02).
+            Self::apply_ai_registry_maintenance(&mut next_state, block.index);
             state = next_state;
         }
         Ok(state)
@@ -5743,6 +5812,10 @@ impl Blockchain {
                 ),
             );
             on_block(block, &current_state)?;
+            // Same post-commit AI-registry maintenance the live path runs,
+            // after the persisted roots/snapshots so those keep matching the
+            // committed block, and before the next block applies (P10-F02).
+            Self::apply_ai_registry_maintenance(&mut current_state, block.index);
         }
         Ok(snapshots)
     }
@@ -5776,6 +5849,8 @@ impl Blockchain {
                     block.index
                 ));
             }
+            // Mirror the live post-commit AI-registry maintenance (P10-F02).
+            Self::apply_ai_registry_maintenance(&mut next_state, block.index);
             state = next_state;
         }
         Ok(state)
@@ -7633,6 +7708,59 @@ mod tests {
     }
 
     /// Block entropy is block context: set from the previous hash and the VRF
+    /// P10-F02: the live path prunes the AI registry after every committed
+    /// block; the state-rebuild loops (startup replay, reorg rebuild,
+    /// `rebuild_state`) must run the same per-height maintenance, or the
+    /// rebuilt node carries rows its peers already pruned and its state root
+    /// diverges from the network at the next block.
+    #[test]
+    fn rebuilt_state_replays_live_ai_maintenance() {
+        use crate::ai::registry::DISPUTE_WINDOW_BLOCKS;
+        use crate::ai::types::AiRequestId;
+
+        let key = (AiRequestId([9u8; 32]), [7u8; 32]);
+        let tip = 10 + DISPUTE_WINDOW_BLOCKS + 1;
+
+        let mut start = AccountState::new();
+        start
+            .ai_registry
+            .equivocation_events
+            .insert(key.clone(), 10);
+
+        // A live node runs maintenance at every height; the dispute-window
+        // row retires once the window has elapsed.
+        let mut live = start.clone();
+        for height in 11..=tip {
+            Blockchain::apply_ai_registry_maintenance(&mut live, height);
+        }
+        assert!(live.ai_registry.equivocation_events.is_empty());
+
+        // A rebuilt node running the same per-height maintenance (what the
+        // fixed replay/reorg/rebuild loops now do) lands on the same root.
+        let mut rebuilt = start.clone();
+        for height in 11..=tip {
+            Blockchain::apply_ai_registry_maintenance(&mut rebuilt, height);
+        }
+        assert_eq!(
+            rebuilt.calculate_state_root(),
+            live.calculate_state_root(),
+            "rebuilt state must match the live state root at the tip"
+        );
+
+        // Maintenance is idempotent: a second pass at the same height is a
+        // no-op, so re-replaying after a crash cannot double-refund.
+        assert_eq!(
+            Blockchain::apply_ai_registry_maintenance(&mut rebuilt, tip),
+            (0, 0)
+        );
+
+        // The old behaviour - a rebuild that skipped maintenance - kept the
+        // pruned row and produced a different root: exactly the restart fork
+        // the fix closes.
+        let mut stale = start;
+        assert_ne!(stale.calculate_state_root(), live.calculate_state_root());
+    }
+
     /// output when a block is applied, different for different VRFs, and never
     /// part of the state root.
     #[test]

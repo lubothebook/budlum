@@ -205,6 +205,24 @@ impl PruningManager {
         }
         (1..safe_prune_up_to).collect()
     }
+    /// The height of the newest snapshot file in the snapshot directory, or
+    /// 0 when there is none. Pruning must never delete blocks above this
+    /// height: a restart without them resumes from a snapshot it cannot
+    /// reach, because `load_chain` stops at the first deleted parent and the
+    /// node exits without genesis (P10-F03).
+    pub fn latest_snapshot_height(&self) -> u64 {
+        let dir = std::path::Path::new(&self.snapshot_dir);
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return 0;
+        };
+        entries
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|e| e == "json"))
+            .filter_map(|entry| get_snapshot_height(&entry.path()))
+            .max()
+            .unwrap_or(0)
+    }
+
     pub fn quarantine_snapshots_above_height(&self, max_height: u64) -> Result<usize, String> {
         use std::fs;
         use std::path::Path;
@@ -1437,6 +1455,41 @@ mod tests {
         let quarantined_path = dir.path().join("snapshot_50.json.corrupted");
         assert!(quarantined_path.exists());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn latest_snapshot_height_bounds_rpc_pruning() {
+        use std::fs;
+        use tempfile::tempdir;
+        // P10-F03: the RPC-driven prune passed the tip height as the "latest
+        // snapshot", so the snapshot bound never applied and bud_requestPrune
+        // deleted blocks (with their finality certs) that the next restart
+        // needs: load_chain stops at the first deleted parent and the node
+        // cannot boot. Quarantined files (.json.corrupted) must not count.
+        let dir = tempdir().unwrap();
+        let mut pm = PruningManager::new(10, 100, dir.path().to_string_lossy().to_string());
+        pm.archive_mode = false;
+
+        // No snapshot on disk: nothing may be pruned, whatever the tip and
+        // finality heights say.
+        assert_eq!(pm.latest_snapshot_height(), 0);
+        assert!(pm
+            .get_prunable_blocks_with_retention(1000, pm.latest_snapshot_height(), 900, 10)
+            .is_empty());
+
+        // Snapshots at height 9 and 100: numerical order, not lexicographic.
+        fs::write(dir.path().join("snapshot_9.json"), "{}").unwrap();
+        fs::write(dir.path().join("snapshot_100.json"), "{}").unwrap();
+        fs::write(dir.path().join("snapshot_500.json.corrupted"), "{}").unwrap();
+        assert_eq!(pm.latest_snapshot_height(), 100);
+
+        // keep=10 at tip=1000 would prune up to 990, but the snapshot bound
+        // caps it below the newest snapshot.
+        let prunable =
+            pm.get_prunable_blocks_with_retention(1000, pm.latest_snapshot_height(), 900, 10);
+        assert_eq!(prunable.first().copied(), Some(1));
+        assert_eq!(prunable.last().copied(), Some(99));
+        assert!(!prunable.contains(&100));
     }
 
     #[test]

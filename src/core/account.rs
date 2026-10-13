@@ -1550,6 +1550,31 @@ impl AccountState {
                     "Slashed unbonding stake after a registry report"
                 );
             }
+            // The registry and unbonding cuts alone left the validator's
+            // bond untouched: quorum weight, the `Unstake` refund and the
+            // RPC views all read `validators`, so the offender kept voting
+            // with the stake the report had just cut - and an `Unstake`
+            // paid the penalty straight back (P04-F02). Mirror what
+            // `slash_validator` (the QC-fault path) does: cut the bond by
+            // the same penalty, mark it slashed, leave the quorum. The
+            // slashed flag is also what refuses the later `Unstake` and
+            // `Stake`, so the cut cannot be unwound from either side.
+            if outcome.is_some() {
+                if let Some(validator) = self.validators.get_mut(&report.offender) {
+                    let penalty = outcome.as_ref().map(|o| o.penalty).unwrap_or(0);
+                    validator.stake = validator.stake.saturating_sub(penalty);
+                    validator.slashed = true;
+                    validator.active = false;
+                    validator.jailed = true;
+                    validator.jail_until = self.epoch_index.saturating_add(7);
+                    tracing::info!(
+                        offender = %report.offender,
+                        penalty,
+                        remaining_stake = validator.stake,
+                        "Validator bond cut and jailed after a slashing report"
+                    );
+                }
+            }
         }
         Ok(outcome)
     }
@@ -2710,6 +2735,55 @@ mod tests {
         let cut = crate::core::chain_config::slash_penalty(1_000, ratio);
         assert!(cut > 0);
         assert_eq!(state.unbonding_queue[0].amount, 1_000 - cut);
+    }
+
+    /// P04-F02: a slashing report must cut the ledger-side validator bond,
+    /// not only the permissionless-registry entry. Quorum weight, the
+    /// `Unstake` refund and the RPC views all read `validators`; with only
+    /// the registry cut, the offender kept voting with the slashed stake and
+    /// an `Unstake` paid the penalty straight back.
+    #[test]
+    fn report_slash_cuts_the_validator_bond_too() {
+        let mut state = AccountState::new();
+        let who = Address::from([9u8; 32]);
+        state.add_validator(who, 1_000);
+        let report = crate::registry::evidence::SlashingReport::consensus_double_sign(
+            who,
+            7,
+            "aa".into(),
+            "bb".into(),
+            vec![1],
+            vec![2],
+            None,
+        );
+        let outcome = state
+            .slash_from_report(&report)
+            .unwrap()
+            .expect("the bonded validator has a registry entry to cut");
+        assert!(outcome.penalty > 0);
+
+        let validator = state.get_validator(&who).unwrap();
+        assert_eq!(validator.stake, 1_000 - outcome.penalty);
+        assert!(validator.slashed, "the flag is what refuses Unstake/Stake");
+        assert!(!validator.active, "a slashed validator leaves the quorum");
+        assert!(validator.jailed);
+
+        // A second report cannot cut the same bond twice: the ledger flag
+        // marks it already slashed, so the mirror is skipped.
+        let again = crate::registry::evidence::SlashingReport::consensus_double_sign(
+            who,
+            8,
+            "cc".into(),
+            "dd".into(),
+            vec![3],
+            vec![4],
+            None,
+        );
+        let _ = state.slash_from_report(&again);
+        assert_eq!(
+            state.get_validator(&who).unwrap().stake,
+            1_000 - outcome.penalty
+        );
     }
     #[test]
     fn test_new_account() {

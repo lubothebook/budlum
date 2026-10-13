@@ -4138,18 +4138,36 @@ impl StorageRegistry {
     /// Left as-is (audit trail).
     ///
     /// Returns the number of active deals that were expired by this prune.
-    pub fn prune_content(&mut self, manifest_id: &ContentId, now_epoch: u64) -> u64 {
-        let deal_ids: Vec<u64> = self
+    /// Prune everything belonging to a destroyed object.
+    ///
+    /// Returns the number of active deals expired plus the bond each of them
+    /// still held, as `(operator, bond)` pairs. The bond was debited at
+    /// `open_deal` and the maturity sweep (`finalize_expired_storage_deals`)
+    /// only settles `Active` deals, so a prune that flipped them straight to
+    /// `Expired` made the bond - and the operator's whole stake for serving
+    /// the object until its owner burned it - vanish from circulation
+    /// (P23-F01). The caller credits the returns; the content is gone by
+    /// definition here, so the strand guard `expire_deal` applies does not.
+    /// Fees for the partial epoch in progress are not settled: accrual is
+    /// per completed epoch, the same rule a slashed deal follows.
+    pub fn prune_content(
+        &mut self,
+        manifest_id: &ContentId,
+        now_epoch: u64,
+    ) -> (u64, Vec<(Address, u64)>) {
+        let deals: Vec<(u64, Address, u64)> = self
             .deals_for_manifest(manifest_id)
             .iter()
             .filter(|d| d.is_active())
-            .map(|d| d.deal_id)
+            .map(|d| (d.deal_id, d.operator, d.economics.operator_bond))
             .collect();
 
-        let pruned = deal_ids.len() as u64;
-        for deal_id in deal_ids {
+        let pruned = deals.len() as u64;
+        let mut bond_returns: Vec<(Address, u64)> = Vec::new();
+        for (deal_id, operator, bond) in deals {
             if let Some(deal) = self.deals.get_mut(&deal_id) {
                 deal.status = DealStatus::Expired;
+                bond_returns.push((operator, bond));
             }
         }
 
@@ -4171,7 +4189,7 @@ impl StorageRegistry {
         self.self_host_policies
             .retain(|(policy_manifest, _), _| policy_manifest != manifest_id);
 
-        pruned
+        (pruned, bond_returns)
     }
 }
 
@@ -6593,8 +6611,16 @@ mod tests {
         assert!(reg.get_manifest(&manifest_id).is_some());
 
         // Prune the content.
-        let pruned = reg.prune_content(&manifest_id, 150);
+        let (pruned, bond_returns) = reg.prune_content(&manifest_id, 150);
         assert_eq!(pruned, 2);
+        // P23-F01: every expired deal hands its operator bond back to the
+        // caller for settlement; the old u64-only return dropped them.
+        assert_eq!(bond_returns.len(), 2);
+        assert!(bond_returns.iter().all(|(_, bond)| *bond > 0));
+        // A repeated prune finds nothing active: no second payout.
+        let (pruned_again, returns_again) = reg.prune_content(&manifest_id, 151);
+        assert_eq!(pruned_again, 0);
+        assert!(returns_again.is_empty());
 
         // Both deals should now be Expired.
         assert_eq!(reg.all_deals().len(), 2);
@@ -6647,8 +6673,9 @@ mod tests {
         // Pruning a manifest that doesn't exist should be a no-op.
         let mut reg = StorageRegistry::new();
         let bogus = ContentId([0xEEu8; 32]);
-        let pruned = reg.prune_content(&bogus, 100);
+        let (pruned, bond_returns) = reg.prune_content(&bogus, 100);
         assert_eq!(pruned, 0);
+        assert!(bond_returns.is_empty());
     }
     /// REGRESSION: max concurrent open challenges per deal.
     #[test]
