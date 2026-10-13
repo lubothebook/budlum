@@ -1057,7 +1057,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P58 | BLG-1049 | workflows/benchmark.yml:30-71 | P58-F03: FINDINGS.md:983; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P58 | BLG-1050 | workflows/miri.yml:159, 219 | P58-F04: FINDINGS.md:984; ham önem Medium / BAĞIMLI: src/storage Miri uyumlu test yolu | AÇIK |  |  |
 | P58 | BLG-1051 | codeql/codeql-config.yml:36-68 | P58-F05: FINDINGS.md:985; ham önem Medium / gp/P58-A:981cfed | CI BEKLİYOR | b328cbf |  |
-| P58 | BLG-1052 | - | P58-F06: FINDINGS.md:986; ham önem Low / gp/P58-A:2bc16f1 kısmi: kalan CodeQL kararı PR9 yorumunda | KODLANIYOR | 6ea2584 |  |
+| P58 | BLG-1052 | - | P58-F06: FINDINGS.md:986; ham önem Low / gp/P58-A:2bc16f1 kısmi: kalan CodeQL kararı PR9 yorumunda / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 6ea2584 |  |
 | P58 | BLG-1053 | - | P58-F07: FINDINGS.md:987; ham önem Low / gp/P58-A:5291dfa | CI BEKLİYOR | 7e6bf80 |  |
 | P58 | BLG-1054 | - | P58-F08: FINDINGS.md:988; ham önem Low / gp/P58-A:69de1e7 | CI BEKLİYOR | 2955a1c |  |
 | P58 | BLG-1055 | - | P58-F09: FINDINGS.md:989; ham önem Low | AÇIK |  |  |
@@ -1065,7 +1065,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P58 | BLG-1057 | - | P58-F11: FINDINGS.md:991; ham önem Low | AÇIK |  |  |
 | P58 | BLG-1058 | - | P58-F12: FINDINGS.md:992; ham önem Info | AÇIK |  |  |
 | P59 | BLG-1059 | workflows/provenance.yml:69-83 | P59-F01: FINDINGS.md:993; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P59 | BLG-1060 | budzero/deny.toml | P59-F02: FINDINGS.md:994; ham önem Medium / kısmi: budzero/osv-scanner.toml:43,59 hâlâ 0118 ve 0119 içeriyor (BAĞIMLI) | KODLANIYOR | 9b3123e |  |
+| P59 | BLG-1060 | budzero/deny.toml | P59-F02: FINDINGS.md:994; ham önem Medium / kısmi: budzero/osv-scanner.toml:43,59 hâlâ 0118 ve 0119 içeriyor (BAĞIMLI) / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 9b3123e |  |
 | P59 | BLG-1061 | supply-chain/audits.toml: | P59-F03: FINDINGS.md:995; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P59 | BLG-1062 | fuzz/Cargo.toml:21 | P59-F04: FINDINGS.md:996; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P59 | BLG-1063 | - | P59-F05: FINDINGS.md:997; ham önem Low / BAĞIMLI: ci.yml / xtask gate sahibi | AÇIK |  |  |
@@ -1074,13 +1074,13 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P59 | BLG-1066 | crates/wallet-core/Cargo.toml:47 | P59-F08: FINDINGS.md:1000; ham önem Low / BAĞIMLI: ci.yml / xtask gate sahibi | AÇIK |  |  |
 | P59 | BLG-1067 | - | P59-F09: FINDINGS.md:1001; ham önem Info / BAĞIMLI: ci.yml / xtask gate sahibi | AÇIK |  |  |
 | P60 | BLG-1068 | - | P60-F01: FINDINGS.md:670; ham önem Critical / kanıt: zaten düzeltilmiş (03ec495); BudlumFinalityVerifier.sol:331-339 ve 487-501 anahtarlar constructor'da sabit, H(root) kontratta türetilir | YANLIŞ POZİTİF |  |  |
-| P60 | BLG-1069 | - | P60-F02: FINDINGS.md:671; ham önem High / gp/P60-A:a90594b | CI BEKLİYOR | 3f78f96 |  |
-| P60 | BLG-1070 | - | P60-F03: FINDINGS.md:672; ham önem Medium / gp/P60-A:d3af635 | CI BEKLİYOR | ff0096d |  |
+| P60 | BLG-1069 | - | P60-F02: FINDINGS.md:671; ham önem High / gp/P60-A:a90594b / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi | AÇIK | 3f78f96 |  |
+| P60 | BLG-1070 | - | P60-F03: FINDINGS.md:672; ham önem Medium / gp/P60-A:d3af635 / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi | AÇIK | ff0096d |  |
 | P60 | BLG-1071 | - | P60-F04: FINDINGS.md:673; ham önem Medium / kanıt: zaten düzeltilmiş (2988db9); BudlumFinalityVerifier.sol:287-298 imza noktalarını hash'lemez | YANLIŞ POZİTİF |  |  |
 | P60 | BLG-1072 | - | P60-F05: FINDINGS.md:674; ham önem Medium / BAĞIMLI: evm_hybrid.rs (P06 sahibi); kodlama özeti /tmp/ledger/notes/BLG-1072.txt | AÇIK |  |  |
-| P60 | BLG-1073 | - | P60-F06: FINDINGS.md:675; ham önem Medium / gp/P60-A:0821fb7 | CI BEKLİYOR | 65cce06 |  |
+| P60 | BLG-1073 | - | P60-F06: FINDINGS.md:675; ham önem Medium / gp/P60-A:0821fb7 / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi | AÇIK | 65cce06 |  |
 | P60 | BLG-1074 | xtask/tools/src/audit_guard.rs:43 | P60-F07: FINDINGS.md:676; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P60 | BLG-1075 | - | P60-F08: FINDINGS.md:677; ham önem Low / gp/P60-A:e0be240 | CI BEKLİYOR | 6bda4df |  |
+| P60 | BLG-1075 | - | P60-F08: FINDINGS.md:677; ham önem Low / gp/P60-A:e0be240 / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi | AÇIK | 6bda4df |  |
 | P60 | BLG-1076 | - | P60-F09: FINDINGS.md:678; ham önem Info / kanıt: bilinçli ve belgeli; buf.yaml:9-19, protocol.proto:198-211 | YANLIŞ POZİTİF |  |  |
 | P61 | BLG-1077 | config/archive.toml:5-7 | P61-F01: FINDINGS.md:1027; ham önem High | AÇIK |  |  |
 | P61 | BLG-1078 | src/rpc/server.rs:128-135 | P61-F02: FINDINGS.md:1028; ham önem High | AÇIK |  |  |
