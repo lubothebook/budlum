@@ -151,8 +151,8 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P06 | BLG-0143 | src/cross_domain/external/zkvm_proof.rs:86-108 | P06-F14: FINDINGS.md:393; ham önem Low | AÇIK |  |  |
 | P06 | BLG-0144 | src/cross_domain/evm/adapter.rs:1 | P06-F15: FINDINGS.md:403; ham önem Low | AÇIK |  |  |
 | P06 | BLG-0145 | src/cross_domain/evm/adapter.rs:343-357 | P06-F16: FINDINGS.md:413; ham önem Info | AÇIK |  |  |
-| P07 | BLG-0146 | src/rpc/server.rs:1712-1722 | P07-F01: FINDINGS.md:432; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor / kısmi: require_operator yapıldı; submitter imzası KARAR / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 9fe7219 |  |
-| P07 | BLG-0147 | src/cross_domain/external/intake.rs:64-131 | P07-F02: FINDINGS.md:443; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor | AÇIK |  |  |
+| P07 | BLG-0146 | src/rpc/server.rs:1712-1722 | P07-F01: FINDINGS.md:432; ham önem High / require_operator yerde (9fe7219); KARAR VERİLDİ: submitter imza bağlama = domain imza toplulaştırma katmanı yol haritası kalemi (owner mainnet-road 3), o zamana dek endpoint operatör-kapalı + mainnet kapalı = fail-closed | KARAR BEKLİYOR | 9fe7219 |  |
+| P07 | BLG-0147 | src/cross_domain/external/intake.rs:64-131 | P07-F02: FINDINGS.md:443; ham önem High / KARAR VERİLDİ: sync-committee bağlama (light-client doğrulaması) = domain imza toplulaştırma katmanı yol haritası kalemi; mitigation: intake operatör-kapalı, mainnet'te red; kök neden P06-F01/F02 ile birlikte kapanacak | KARAR BEKLİYOR |  |  |
 | P07 | BLG-0148 | src/cross_domain/external/registry.rs:452-471 | P07-F03: FINDINGS.md:454; ham önem High / gp/P07-A:11ce6db | CI BEKLİYOR | 3e553e0,441debd |  |
 | P07 | BLG-0149 | src/cross_domain/external/registry.rs:51-52, 638-754 | P07-F04: FINDINGS.md:466; ham önem Medium / gp/P07-A:862f6c6 | CI BEKLİYOR | b0493bc |  |
 | P07 | BLG-0150 | src/cross_domain/external/registry.rs:337-371 | P07-F05: FINDINGS.md:477; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -196,7 +196,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P09 | BLG-0188 | - | P09-F09: FINDINGS.md:733; ham önem Low | AÇIK |  |  |
 | P09 | BLG-0189 | - | P09-F10: FINDINGS.md:734; ham önem Low | AÇIK |  |  |
 | P09 | BLG-0190 | - | P09-F11: FINDINGS.md:735; ham önem Low | AÇIK |  |  |
-| P10 | BLG-0191 | - | P10-F01: FINDINGS.md:762; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
+| P10 | BLG-0191 | src/network/node.rs:1757 | P10-F01: FINDINGS.md:762; ham önem High / prevote epoch artık checkpoint_height/epoch_len (aggregator ile aynı); regresyon testi üç ağda gerçek aggregator üzerinden sürüyor, eski bölen reddediliyor | CI BEKLİYOR | b23df8e |  |
 | P10 | BLG-0192 | ai/registry.rs:1921-1923, 1952-1953 | P10-F02: FINDINGS.md:763; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
 | P10 | BLG-0193 | - | P10-F03: FINDINGS.md:764; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
 | P10 | BLG-0194 | - | P10-F04: FINDINGS.md:765; ham önem Medium | CI BEKLİYOR | 31144df |  |
@@ -292,7 +292,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P17 | BLG-0284 | note-packing/src/lib.rs:87-107 | P17-F18: FINDINGS.md:960; ham önem Low | AÇIK |  |  |
 | P17 | BLG-0285 | - | P17-F19: FINDINGS.md:960; ham önem Low | AÇIK |  |  |
 | P18 | BLG-0286 | - | P18-F01: FINDINGS.md:966; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P18 | BLG-0287 | prover/mod.rs:197-199 | P18-F02: FINDINGS.md:967; ham önem High / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri) | AÇIK |  |  |
+| P18 | BLG-0287 | prover/mod.rs:197-199 | P18-F02: FINDINGS.md:967; ham önem High / bud_submitZkProof artık require_operator (ücret yakma yüzeyi kapandı); 1b-1f kontrolleri üçüncü dalgada zaten eklendi; kalan: sender imzalı submission + blok-içi muhasebe = KARAR: alan-yolu (domain aggregation) kalemiyle birlikte, o zamana dek fail-closed | CI BEKLİYOR | dfbdb55 |  |
 | P18 | BLG-0288 | - | P18-F03: FINDINGS.md:968; ham önem High / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri) | AÇIK |  |  |
 | P18 | BLG-0289 | ai/registry.rs:878 | P18-F04: FINDINGS.md:969; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri) | AÇIK |  |  |
 | P18 | BLG-0290 | - | P18-F05: FINDINGS.md:970; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -445,7 +445,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P29 | BLG-0437 | src/storage/qr_codec.rs:26-53, 128-184 | P29-F11: notes/P29-scan.md:224; ham önem Low | AÇIK |  |  |
 | P29 | BLG-0438 | src/storage/qr_carousel.rs:10-16, 896-897, 655-661 | P29-F12: notes/P29-scan.md:240; ham önem Info | AÇIK |  |  |
 | P29 | BLG-0439 | src/storage/qr_*.rs (all 13 files) | P29-F13: notes/P29-scan.md:258; ham önem Info | AÇIK |  |  |
-| P30 | BLG-0440 | src/chain/chain_actor.rs:4289-4327 | P30-F01: notes/P30-scan.md:46; ham önem High / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
+| P30 | BLG-0440 | src/chain/chain_actor.rs:4289-4327 | P30-F01: notes/P30-scan.md:46; ham önem High / IssueViewGrant+RevokeViewGrant RPC mutasyonu artık her zincirde reddediliyor (state-root taşıyan grant defteri blok dışında değişemez); SosyalDelete aynı sınıf, kendi satırında izleniyor | CI BEKLİYOR | 8c10e35 |  |
 | P30 | BLG-0441 | src/storage/three_recipe.rs:219-241, 245-254 | P30-F02: notes/P30-scan.md:66; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P30 | BLG-0442 | src/rpc/server.rs:3600-3664 | P30-F03: notes/P30-scan.md:84; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
 | P30 | BLG-0443 | src/rpc/server.rs:3665-3691 | P30-F04: notes/P30-scan.md:101; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
@@ -473,7 +473,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P31 | BLG-0465 | src/ai/mod.rs:3007-3018, 3508-3526, 4249-4263, 4675-4696 | P31-F12: notes/P31-scan.md:196; ham önem Low | AÇIK |  |  |
 | P31 | BLG-0466 | src/ai/mod.rs:3589-3603 | P31-F13: notes/P31-scan.md:210; ham önem Info | AÇIK |  |  |
 | P32 | BLG-0467 | src/ai/registry.rs:722-753 | P32-F01: notes/P32-scan.md:45; ham önem High / prune_expired artık reclaim/cancel görmemiş satırların (requester, max_fee) iadesini döndürüyor, chain_actor bakım tick'inde kredilendiriyor; 2 yeni test (prune_refunds_escrow_of_never_reclaimed_request, prune_does_not_refund_cancelled_or_reclaimed_requests) | CI BEKLİYOR | f50e691 |  |
-| P32 | BLG-0468 | src/execution/executor.rs:2146-2193 | P32-F02: notes/P32-scan.md:66; ham önem High | AÇIK |  |  |
+| P32 | BLG-0468 | src/execution/executor.rs:2146-2193 | P32-F02: notes/P32-scan.md:66; ham önem High / gas_used bağlaması eklendi (ai_exec_gas_mismatch); kalan bağlanmamış iddialar (initial_state_root ağırlık ister, event_digest, VM-context) FULL_AI_STARK_VERIFICATION_LIVE flip koşulu olarak mod.rs + AI_VERIFICATION_STATUS.md'ye yazıldı; lock testi genişletildi; bayrak kapalıyken fail-closed | CI BEKLİYOR | b061f18 |  |
 | P32 | BLG-0469 | src/execution/executor.rs:2141-2144, 2210-2215, 2312-2365 | P32-F03: notes/P32-scan.md:87; ham önem High / fully_verified_proofs kümesi eklendi: require_proof escrow salımı yalnız tam STARK doğrulamalı attach ile, bayrak kapalıyken fail-closed; test require_proof_release_needs_fully_verified_proof | CI BEKLİYOR | f50e691 |  |
 | P32 | BLG-0470 | src/network/proto_conversions.rs:202-222, 1046-1088 | P32-F04: notes/P32-scan.md:106; ham önem Medium | AÇIK |  |  |
 | P32 | BLG-0471 | src/execution/executor.rs:2371 | P32-F05: notes/P32-scan.md:124; ham önem Medium | AÇIK |  |  |
