@@ -45,8 +45,8 @@ ProtectHome=yes
 ReadWritePaths=/var/lib/budlum
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
-# Allow coredumps for debugging
-LimitCORE=infinity
+# No core dumps: a dump of a validator process can hold key material.
+LimitCORE=0
 
 # Restart policy
 Restart=on-failure

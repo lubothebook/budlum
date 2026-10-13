@@ -349,6 +349,21 @@ fn systemd_unit_lines() -> Vec<String> {
         .collect()
 }
 
+/// BLG-1080: a core dump of a validator process can hold key material, so the
+/// unit must switch core dumps off.
+#[test]
+fn systemd_unit_disables_core_dumps() {
+    let lines = systemd_unit_lines();
+    assert!(
+        lines.iter().any(|l| l == "LimitCORE=0"),
+        "the unit must set LimitCORE=0"
+    );
+    assert!(
+        !lines.iter().any(|l| l == "LimitCORE=infinity"),
+        "the unit allows unlimited core dumps"
+    );
+}
+
 /// BLG-1078: the systemd unit set `BUDLUM_RPC_KEY=%d/budlum-rpc-key`. No code
 /// reads that name, and `%d` is a directory path, not key content. The node
 /// reads the variable that `BUDLUM_RPC_API_KEY_ENV` names, so the unit has to
