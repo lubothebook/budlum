@@ -3023,6 +3023,14 @@ impl ChainActor {
         "B.U.D. storage economics are disabled on mainnet until transaction-only accounting is wired".into()
     }
 
+    /// View grants are state-root bearing (`view_grants.root()` folds into
+    /// the storage registry root): mutating them between blocks diverges the
+    /// local root from every peer that did not see the RPC call. The refusal
+    /// is chain-independent until grant changes ride a block transaction.
+    fn view_grant_rpc_mutation_error() -> String {
+        "view grants are state-root bearing and cannot be mutated over RPC; grant changes must ride a block transaction".into()
+    }
+
     fn run_storage_maintenance(&mut self, block_height: u64) {
         if self.storage_economics_disabled_on_mainnet() {
             return;
@@ -4318,44 +4326,21 @@ impl ChainActor {
                         .map_err(|e| e.to_string());
                     let _ = response.send(persist.map(|_| manifest_id));
                 }
-                ChainCommand::IssueViewGrant {
-                    content_id,
-                    auth,
-                    grantee,
-                    key_id,
-                    policy,
-                    opened_epoch,
-                    response,
-                } => {
-                    if self.storage_economics_disabled_on_mainnet() {
-                        let _ = response.send(Err(Self::mainnet_storage_disabled_error()));
-                        continue;
-                    }
-                    let res = self
-                        .blockchain
-                        .state
-                        .storage_registry
-                        .issue_view_grant(content_id, &auth, grantee, key_id, policy, opened_epoch)
-                        .map_err(|e| e.to_string());
-                    let _ = response.send(res);
+                ChainCommand::IssueViewGrant { response, .. } => {
+                    // View grants are folded into the storage state root, so
+                    // issuing one between blocks rewrites the local node's
+                    // root alone: a peer that never saw this RPC call computes
+                    // a different root and rejects honest blocks (P30-F01).
+                    // Until grants ride a block transaction, the RPC mutation
+                    // path is refused on every chain, not only on mainnet.
+                    let _ = response.send(Err(Self::view_grant_rpc_mutation_error()));
+                    continue;
                 }
-                ChainCommand::RevokeViewGrant {
-                    grant_id,
-                    auth,
-                    at_epoch,
-                    response,
-                } => {
-                    if self.storage_economics_disabled_on_mainnet() {
-                        let _ = response.send(Err(Self::mainnet_storage_disabled_error()));
-                        continue;
-                    }
-                    let res = self
-                        .blockchain
-                        .state
-                        .storage_registry
-                        .revoke_view_grant(grant_id, &auth, at_epoch)
-                        .map_err(|e| e.to_string());
-                    let _ = response.send(res);
+                ChainCommand::RevokeViewGrant { response, .. } => {
+                    // Same invariant as IssueViewGrant: the grant book is
+                    // state-root bearing and may only change inside a block.
+                    let _ = response.send(Err(Self::view_grant_rpc_mutation_error()));
+                    continue;
                 }
                 ChainCommand::SocialDelete {
                     content_id,
