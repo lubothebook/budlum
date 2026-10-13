@@ -7722,10 +7722,7 @@ mod tests {
         let tip = 10 + DISPUTE_WINDOW_BLOCKS + 1;
 
         let mut start = AccountState::new();
-        start
-            .ai_registry
-            .equivocation_events
-            .insert(key, 10);
+        start.ai_registry.equivocation_events.insert(key, 10);
 
         // A live node runs maintenance at every height; the dispute-window
         // row retires once the window has elapsed.
