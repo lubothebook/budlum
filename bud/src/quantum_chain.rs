@@ -54,7 +54,7 @@ pub struct HybridTx {
 }
 impl HybridTx {
     /// The commitment a transaction carries to its ML-DSA public key.
-    pub fn pq_pub_hash_of(pq_pk: &[u8]) -> [u8; 32] {
+    fn pq_pub_hash_of(pq_pk: &[u8]) -> [u8; 32] {
         Sha3Hasher::hash_fields(&[b"BUD_PQ_PUB_HASH_V1", pq_pk])
     }
     pub fn verify(&self, msg: &[u8], ed_pk: &[u8], pq_pk: &[u8]) -> bool {
@@ -141,7 +141,7 @@ impl DualWallet {
         }
     }
     /// The address commits to the PUBLIC keys, so a verifier holding the keys can recompute it.
-    pub fn address_from_pubkeys(ed_pk: &[u8], pq_pk: &[u8]) -> [u8; 32] {
+    fn address_from_pubkeys(ed_pk: &[u8], pq_pk: &[u8]) -> [u8; 32] {
         Sha3Hasher::hash_fields(&[b"BUD_DUAL_ADDR_V1", ed_pk, pq_pk])
     }
     pub fn address(&self) -> [u8; 32] {

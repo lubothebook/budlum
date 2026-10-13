@@ -34,7 +34,7 @@ pub struct Parser<'a> {
 /// Sema and codegen use one stack frame per level. The bound is far above
 /// real programs (the longest chain in this tree has 50 terms) and far below
 /// what a two megabyte thread stack can hold.
-pub const MAX_EXPR_TREE_HEIGHT: u32 = 128;
+const MAX_EXPR_TREE_HEIGHT: u32 = 128;
 
 /// How deeply source constructs may nest.
 ///

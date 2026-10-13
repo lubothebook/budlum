@@ -281,7 +281,7 @@ pub enum IntakeError {
 /// The most seats one quorum round may hold. Rounds are consensus state and
 /// are digested on every call, so the seat count must have a bound the
 /// operator cannot lift.
-pub const MAX_QUORUM_PARTICIPANTS: usize = 256;
+const MAX_QUORUM_PARTICIPANTS: usize = 256;
 
 impl IntakeState {
     #[must_use]

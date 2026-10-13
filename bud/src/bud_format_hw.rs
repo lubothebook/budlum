@@ -28,7 +28,7 @@ pub struct MediaTier {
 
 /// LTO-9 is about 5 USD per TB over 30 years: 5 / (30 * 12) USD per TB and
 /// month. The old value 0.00025 came from a wrong unit conversion.
-pub const LTO_USD_PER_TB_MONTH: f64 = 5.0 / 360.0;
+const LTO_USD_PER_TB_MONTH: f64 = 5.0 / 360.0;
 
 pub const MEDIA_TIERS: &[MediaTier] = &[
     MediaTier {

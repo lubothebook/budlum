@@ -17,7 +17,7 @@ use crate::storage::content_id::ContentId;
 use crate::storage::qr_payload::PayloadKind;
 use crate::storage::qr_verify_indep::{confirm, IndepError, PrimaryClaim};
 use crate::storage::qr_video::{demux_optical_frames, QrVideo};
-use crate::storage::three_pipe::{decode_frames, recipe_commitment, EncodedPipe, PipeError};
+use crate::storage::three_pipe::{decode_qr_video, recipe_commitment, EncodedPipe, PipeError};
 use std::time::{Duration, Instant};
 
 /// Name of the decode path the record reports.
@@ -189,11 +189,10 @@ fn check(
     started: Instant,
     deadline: Duration,
 ) -> Result<VerifiedVideo, VerifyError> {
-    // Same steps as `decode_qr_video`, with the optical frames kept for the
-    // independent verifier below.
-    let video = QrVideo::from_bytes(video_blob).map_err(PipeError::from)?;
+    // The decoder is `decode_qr_video`. The optical frames are read a second
+    // time here because the independent verifier below needs them.
+    let (kind, body, video) = decode_qr_video(video_blob)?;
     let optical = demux_optical_frames(&video).map_err(PipeError::from)?;
-    let (kind, body) = decode_frames(&video.stream_commitment, &optical)?;
     let got = ContentId::of(&body);
     if got != expected.content_id {
         return Err(VerifyError::ContentIdMismatch {
