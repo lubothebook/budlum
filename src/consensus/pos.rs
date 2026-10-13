@@ -727,6 +727,16 @@ impl ConsensusEngine for PoSEngine {
 
         let active_validators = state.get_active_validators();
         if !active_validators.is_empty() {
+            let producer = block
+                .producer
+                .as_ref()
+                .ok_or_else(|| ConsensusError("Block has no producer".into()))?;
+            // The cheap Ed25519 check runs first. The validator set hash
+            // Does BLS and PQ key checks for every active validator, and an
+            // Unsigned block from a peer must not cost that work.
+            if !block.verify_signature() {
+                return Err(ConsensusError("Invalid block signature".into()));
+            }
             let expected_set_hash = state
                 .consensus_validator_set_hash(block.chain_id)
                 .map_err(ConsensusError)?;
@@ -736,10 +746,6 @@ impl ConsensusEngine for PoSEngine {
                     expected_set_hash, block.validator_set_hash
                 )));
             }
-            let producer = block
-                .producer
-                .as_ref()
-                .ok_or_else(|| ConsensusError("Block has no producer".into()))?;
 
             let validator = state
                 .get_validator(producer)
@@ -792,10 +798,6 @@ impl ConsensusEngine for PoSEngine {
                 return Err(ConsensusError(
                     "VRF output does not meet leadership threshold".into(),
                 ));
-            }
-
-            if !block.verify_signature() {
-                return Err(ConsensusError("Invalid block signature".into()));
             }
 
             if let Some(evidences) = &block.slashing_evidence {
@@ -1268,6 +1270,33 @@ mod tests {
         forged.signature = Some(vec![0u8; 64]);
         assert!(engine.observe_received_block(&forged).is_err());
         assert_eq!(engine.slashing_evidence.read().unwrap().len(), 1);
+    }
+
+    /// BLG-0020: an unsigned block must fail on the cheap signature check,
+    /// before the validator set hash does BLS and PQ work for every validator.
+    #[test]
+    fn unsigned_block_fails_before_the_validator_set_hash() {
+        let engine = PoSEngine::new(PoSConfig::default(), None);
+        let alice = KeyPair::generate().unwrap();
+        let alice_addr = Address::from(alice.public_key_bytes());
+        let mut state = AccountState::new();
+        state.add_validator(alice_addr, 1_000_000);
+
+        let genesis = Block::genesis();
+        let mut block = Block::new(1, genesis.hash.clone(), vec![]);
+        block.epoch = 0;
+        block.slot = 1;
+        block.producer = Some(alice_addr);
+        block.hash = block.calculate_hash();
+
+        let error = engine
+            .validate_block(&block, &[genesis], &state)
+            .unwrap_err();
+        assert!(
+            error.0.contains("Invalid block signature"),
+            "unexpected error: {}",
+            error.0
+        );
     }
 
     /// BLG-0021: the memory map of seen blocks was pruned to two epochs, but
