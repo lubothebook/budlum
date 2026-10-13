@@ -45,8 +45,8 @@ const MOVE_FN: &str = "try_add_balance";
 const TRANSFER_JUSTIFICATIONS: &[(&str, usize, &str)] = &[
     (
         "src/chain/blockchain.rs",
-        8,
-        "eight calls, each one puts back or splits money this ledger already \
+        9,
+        "nine calls, each one puts back or splits money this ledger already \
          took from another place. \
          Two in the relay unlock of a burned bridge transfer: the owner share \
          and the relayer cut, which together equal the amount that the lock \
@@ -64,6 +64,9 @@ const TRANSFER_JUSTIFICATIONS: &[(&str, usize, &str)] = &[
          `debit_opener_bond` took from the opener. \
          One in the storage deal expiry sweep: the operator bond that \
          `open_deal` debited. \
+         One in the block-application storage prune: the operator bond that \
+         `open_deal` debited, returned when the owner burns the content and \
+         the prune ends the deal early. \
          None of these create new supply. The bridge mint paths use \
          `try_mint_balance` and are not on this list.",
     ),

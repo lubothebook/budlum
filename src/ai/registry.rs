@@ -1523,7 +1523,7 @@ impl AiRegistry {
     /// verification. `require_proof` escrow release gates on this, not on
     /// the structural-only `has_execution_proof`: a payer that asked for a
     /// verified proof must not be settled against envelope-shaped bytes.
-    pub fn has_verified_execution_proof(
+    fn has_verified_execution_proof(
         &self,
         request_id: &AiRequestId,
         verifier: &Address,

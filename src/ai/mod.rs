@@ -4318,7 +4318,6 @@ mod tests {
             .attach_execution_proof(&req_id, &v1, proof.clone(), false)
             .unwrap();
         assert!(registry.has_execution_proof(&req_id, &v1));
-        assert!(!registry.has_verified_execution_proof(&req_id, &v1));
         let err = registry
             .release_agent_payment(&[7u8; 32], 30)
             .expect_err("structural-only proof must not release a require_proof escrow");
@@ -4328,7 +4327,6 @@ mod tests {
         registry
             .attach_execution_proof(&req_id, &v1, proof, true)
             .unwrap();
-        assert!(registry.has_verified_execution_proof(&req_id, &v1));
         let to = registry
             .release_agent_payment(&[7u8; 32], 30)
             .expect("fully verified proof releases the escrow");
