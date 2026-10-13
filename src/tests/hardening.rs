@@ -131,8 +131,12 @@ mod hardening_tests {
         let db_path = dir.path().join("test_repair.db");
         let storage = Storage::new(db_path.to_str().unwrap()).unwrap();
 
-        // Create a block and commit it
-        let mut block = Block::new(1, "prev_hash".to_string(), vec![]);
+        // Create a genesis block and a child block, and commit both. The repair walk
+        // checks every parent link, so the child must point at a stored parent.
+        let mut genesis = Block::new(0, "0".repeat(64), vec![]);
+        genesis.hash = genesis.calculate_hash();
+        storage.commit_block(&genesis, "state_root_0").unwrap();
+        let mut block = Block::new(1, genesis.hash.clone(), vec![]);
         block.hash = block.calculate_hash();
         storage.commit_block(&block, "state_root_1").unwrap();
 
