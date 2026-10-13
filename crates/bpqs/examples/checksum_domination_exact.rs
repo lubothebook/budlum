@@ -71,8 +71,8 @@ impl Big {
         };
         let mut out = Vec::with_capacity(a.len() + 1);
         let mut carry = 0u64;
-        for i in 0..a.len() {
-            let s = a[i] as u64 + b.get(i).copied().unwrap_or(0) as u64 + carry;
+        for (i, &limb) in a.iter().enumerate() {
+            let s = limb as u64 + b.get(i).copied().unwrap_or(0) as u64 + carry;
             out.push(s as u32);
             carry = s >> 32;
         }
