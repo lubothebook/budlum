@@ -3768,18 +3768,18 @@ mod sync_handler_order_tests {
     fn no_byte_slice_of_checkpoint_hash_in_logs() {
         let needle = format!("{}[..16", "checkpoint_hash");
         let needle2 = format!("&{}.hash[..8", "block");
-        let src = production();
-        assert!(!src.contains(&needle) && !src.contains(&needle2));
+        let code = production();
+        assert!(!code.contains(&needle) && !code.contains(&needle2));
     }
 
     /// BLG-0203: gossipsub holds messages until the app reports a verdict.
     #[test]
     fn gossipsub_forwarding_waits_for_the_application_verdict() {
-        let src = production();
-        assert!(src.contains(".validate_messages()"));
+        let code = production();
+        assert!(code.contains(".validate_messages()"));
         for verdict in ["Accept", "Reject", "Ignore"] {
             let needle = format!("gossipsub::MessageAcceptance::{verdict}");
-            assert!(src.contains(&needle), "missing verdict {verdict}");
+            assert!(code.contains(&needle), "missing verdict {verdict}");
         }
     }
 
@@ -3787,12 +3787,12 @@ mod sync_handler_order_tests {
     /// when the chain moved.
     #[test]
     fn gossip_block_batches_are_prechecked_and_not_credited_blindly() {
-        let src = production();
+        let code = production();
         for marker in ["batch_chain_id", "snap_chain_id"] {
-            assert!(src.contains(&format!("block_passes_cheap_checks(b, {marker})")));
+            assert!(code.contains(&format!("block_passes_cheap_checks(b, {marker})")));
         }
-        assert!(src.contains("> height_before"));
-        assert!(src.contains("> snap_height_before"));
+        assert!(code.contains("> height_before"));
+        assert!(code.contains("> snap_height_before"));
     }
 
     /// BLG-0205: the guard compares the height that is signed.
@@ -3801,10 +3801,10 @@ mod sync_handler_order_tests {
         assert!(!super::precommit_height_is_new(100, 100));
         assert!(!super::precommit_height_is_new(50, 100));
         assert!(super::precommit_height_is_new(101, 100));
-        let src = production();
+        let code = production();
         let old = format!("checkpoint_height > self.{}", "last_precommit_height");
         assert!(
-            !src.contains(&old),
+            !code.contains(&old),
             "the guard must use the aggregator height"
         );
     }
@@ -3813,22 +3813,22 @@ mod sync_handler_order_tests {
     /// request we sent.
     #[test]
     fn bitswap_response_is_checked_against_the_requested_cid() {
-        let src = production();
+        let code = production();
         let own = format!("handle_response({}, response)", "response_cid");
         assert!(
-            !src.contains(&own),
+            !code.contains(&own),
             "the response must not vouch for itself"
         );
-        assert!(src.contains("handle_response(requested_cid, response)"));
-        assert!(src.contains("self.bitswap_requests.insert(request_id, want_cid)"));
-        assert!(src.contains("self.bitswap_requests.remove(request_id)"));
+        assert!(code.contains("handle_response(requested_cid, response)"));
+        assert!(code.contains("self.bitswap_requests.insert(request_id, want_cid)"));
+        assert!(code.contains("self.bitswap_requests.remove(request_id)"));
     }
 
     /// BLG-0550: ban and rate limit run before the protobuf decode.
     #[test]
     fn sync_request_checks_ban_and_rate_before_decode() {
-        let src = production();
-        let arm = src
+        let code = production();
+        let arm = code
             .split_once("request_response::Message::Request { request, channel")
             .map(|(_, after)| after)
             .unwrap_or("");
@@ -3842,9 +3842,9 @@ mod sync_handler_order_tests {
     /// BLG-0551: the stream cap is set on the request/response config.
     #[test]
     fn request_response_config_caps_concurrent_streams() {
-        let src = production();
+        let code = production();
         assert!(
-            src.contains(".with_max_concurrent_streams(MAX_SYNC_CONCURRENT_STREAMS)"),
+            code.contains(".with_max_concurrent_streams(MAX_SYNC_CONCURRENT_STREAMS)"),
             "the request/response config must cap streams per connection"
         );
     }
