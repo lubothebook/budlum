@@ -293,3 +293,46 @@ fn shipped_profiles_keep_rpc_on_loopback_and_carry_a_key() {
         );
     }
 }
+
+/// BLG-1077: `config/archive.toml` said chain id 42 under the testnet
+/// profile. The start-up check exits when the id differs from the profile id,
+/// so the archive profile could not start. Every shipped profile must carry
+/// the same chain id as the genesis file it names.
+#[test]
+fn shipped_profiles_match_the_chain_id_of_their_genesis_file() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut checked = 0usize;
+    for dir in ["config", "config/personas"] {
+        for entry in std::fs::read_dir(root.join(dir)).expect("profile directory is readable") {
+            let path = entry.expect("profile entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                continue;
+            }
+            let raw = std::fs::read_to_string(&path).expect("profile is readable");
+            let parsed: toml::Value = toml::from_str(&raw).expect("profile is valid TOML");
+            let network = parsed.get("network");
+            let (Some(chain_id), Some(genesis_file)) = (
+                network
+                    .and_then(|n| n.get("chain_id"))
+                    .and_then(toml::Value::as_integer),
+                network
+                    .and_then(|n| n.get("genesis_file"))
+                    .and_then(toml::Value::as_str),
+            ) else {
+                continue;
+            };
+            let genesis_raw = std::fs::read_to_string(root.join(genesis_file))
+                .expect("genesis file named by the profile is readable");
+            let genesis: serde_json::Value =
+                serde_json::from_str(&genesis_raw).expect("genesis file is valid JSON");
+            assert_eq!(
+                genesis.get("chain_id").and_then(serde_json::Value::as_i64),
+                Some(chain_id),
+                "{} carries a chain id that differs from {genesis_file}",
+                path.display()
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 7, "only {checked} profiles were checked");
+}
