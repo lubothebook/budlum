@@ -436,7 +436,7 @@ mod tests {
             "request_response::Message::Response {",
         );
         assert!(
-            arm.contains("(is_handshake || pm.is_handshaked(&peer))"),
+            arm.contains("let handshaked = is_handshake") && arm.contains("is_handshaked(&peer)"),
             "the /sync request arm must admit the handshake before the handshaked gate"
         );
         assert!(
