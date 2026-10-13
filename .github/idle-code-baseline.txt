@@ -713,7 +713,6 @@ bud/src/gates.rs	fn	kq
 bud/src/gates.rs	fn	kx
 bud/src/gates.rs	struct	GateResult
 bud/src/gates.rs	struct	GateSuite
-bud/src/price.rs	enum	PriceError
 bud/src/price.rs	struct	Expansion
 bud/src/provider.rs	enum	ProviderClass
 bud/src/provider.rs	enum	ProviderError
