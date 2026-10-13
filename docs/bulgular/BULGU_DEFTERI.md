@@ -293,7 +293,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P17 | BLG-0285 | - | P17-F19: FINDINGS.md:960; ham önem Low | AÇIK |  |  |
 | P18 | BLG-0286 | - | P18-F01: FINDINGS.md:966; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P18 | BLG-0287 | prover/mod.rs:197-199 | P18-F02: FINDINGS.md:967; ham önem High / bud_submitZkProof artık require_operator (ücret yakma yüzeyi kapandı); 1b-1f kontrolleri üçüncü dalgada zaten eklendi; kalan: sender imzalı submission + blok-içi muhasebe = KARAR: alan-yolu (domain aggregation) kalemiyle birlikte, o zamana dek fail-closed | CI BEKLİYOR | dfbdb55 |  |
-| P18 | BLG-0288 | - | P18-F03: FINDINGS.md:968; ham önem High / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri) | AÇIK |  |  |
+| P18 | BLG-0288 | src/core/transaction.rs | P18-F03: FINDINGS.md:968; ham önem High. Relayer sonuç yaprağı kind, correlation_id, source_domain, target_domain alanlarını bağlamıyordu; yaprak artık bu alanları BDLM_RELAYER_RESULT_MSG_V1 etiketiyle hashler | CI BEKLİYOR | dbc72d6 | testler: relayer 146, bridge 67, yeni relayer_result_leaf_tests geçti |
 | P18 | BLG-0289 | ai/registry.rs:878 | P18-F04: FINDINGS.md:969; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri) | AÇIK |  |  |
 | P18 | BLG-0290 | - | P18-F05: FINDINGS.md:970; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P18 | BLG-0291 | mempool/pool.rs:173-185 | P18-F06: FINDINGS.md:971; ham önem Medium | CI BEKLİYOR | 397ffa5 |  |
@@ -858,7 +858,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P48 | BLG-0850 | src/tests/poa_onboarding_matrix.rs:163-190, 240-245 | P48-F18: notes/P48-scan.md:270; ham önem Info | AÇIK |  |  |
 | P48 | BLG-0851 | src/tests/poisoned_lock_locks.rs:66-88, 96-109, 227-244 | P48-F19: notes/P48-scan.md:281; ham önem Low | AÇIK |  |  |
 | P48 | BLG-0852 | src/tests/relayer_gates.rs:1-9 | P48-F20: notes/P48-scan.md:293; ham önem Info | AÇIK |  |  |
-| P49 | BLG-0853 | src/tests/settlement_prod.rs:1-3 | P49-F01: notes/P49-scan.md:40; ham önem High | AÇIK |  |  |
+| P49 | BLG-0853 | src/tests/settlement_prod.rs | P49-F01: notes/P49-scan.md:40; ham önem High. Test modülü etkinleştirildi (cfg(false) kaldırıldı); 52 derleme hatası düzeltildi; 59/59 test geçiyor. Fixture: köprü domain'leri validator seti ile kayıtlı, uygulanmış tip apply_chain_through ile ilerletiliyor, zk allowlist ve SWrite içeren program | CI BEKLİYOR | 8c9043c | |
 | P49 | BLG-0854 | src/tests/tokenomics_proptest.rs:33-67 | P49-F02: notes/P49-scan.md:59; ham önem Medium | CI BEKLİYOR | d6d69e2 |  |
 | P49 | BLG-0855 | src/tests/tokenomics_proptest.rs:74-92, 100-122 | P49-F03: notes/P49-scan.md:73; ham önem Low | AÇIK |  |  |
 | P49 | BLG-0856 | src/tests/security_auditor.rs:58-199 | P49-F04: notes/P49-scan.md:89; ham önem Medium | AÇIK |  |  |
