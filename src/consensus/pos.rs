@@ -568,15 +568,6 @@ impl PoSEngine {
         let active_validators = state.get_active_validators();
         let total_stake = state.get_total_stake();
 
-        if block.slashing_evidence.is_none() {
-            if let Ok(mut evidences) = self.slashing_evidence.write() {
-                if !evidences.is_empty() {
-                    block.slashing_evidence = Some(evidences.clone());
-                    evidences.clear();
-                }
-            }
-        }
-
         // Fail-closed when validator set is empty.
         // Previously this returned Ok which allowed hash-only blocks without
         // Producer membership or signature - a security gap in the bootstrap window.
@@ -616,6 +607,16 @@ impl PoSEngine {
                         block.vrf_proof = proof_bytes.to_vec();
                     }
 
+                    // Take the pool only now. A node that is not the leader
+                    // drops this block, and the evidence must stay queued.
+                    if block.slashing_evidence.is_none() {
+                        if let Ok(mut evidences) = self.slashing_evidence.write() {
+                            if !evidences.is_empty() {
+                                block.slashing_evidence = Some(evidences.clone());
+                                evidences.clear();
+                            }
+                        }
+                    }
                     block.producer = Some(pubkey);
                     return Ok(());
                 }
@@ -726,6 +727,16 @@ impl ConsensusEngine for PoSEngine {
 
         let active_validators = state.get_active_validators();
         if !active_validators.is_empty() {
+            let producer = block
+                .producer
+                .as_ref()
+                .ok_or_else(|| ConsensusError("Block has no producer".into()))?;
+            // The cheap Ed25519 check runs first. The validator set hash
+            // Does BLS and PQ key checks for every active validator, and an
+            // Unsigned block from a peer must not cost that work.
+            if !block.verify_signature() {
+                return Err(ConsensusError("Invalid block signature".into()));
+            }
             let expected_set_hash = state
                 .consensus_validator_set_hash(block.chain_id)
                 .map_err(ConsensusError)?;
@@ -735,10 +746,6 @@ impl ConsensusEngine for PoSEngine {
                     expected_set_hash, block.validator_set_hash
                 )));
             }
-            let producer = block
-                .producer
-                .as_ref()
-                .ok_or_else(|| ConsensusError("Block has no producer".into()))?;
 
             let validator = state
                 .get_validator(producer)
@@ -791,10 +798,6 @@ impl ConsensusEngine for PoSEngine {
                 return Err(ConsensusError(
                     "VRF output does not meet leadership threshold".into(),
                 ));
-            }
-
-            if !block.verify_signature() {
-                return Err(ConsensusError("Invalid block signature".into()));
             }
 
             if let Some(evidences) = &block.slashing_evidence {
@@ -1009,6 +1012,11 @@ impl ConsensusEngine for PoSEngine {
             seen_blocks.retain(|(_, slot), _| *slot >= min_slot);
             let pruned = before - seen_blocks.len();
             if pruned > 0 {
+                if let Some(store) = storage {
+                    if let Err(error) = store.prune_seen_blocks_below(min_slot) {
+                        tracing::warn!("Failed to prune persisted seen blocks: {error}");
+                    }
+                }
                 tracing::info!(
                     pruned,
                     remaining = seen_blocks.len(),
@@ -1262,6 +1270,87 @@ mod tests {
         forged.signature = Some(vec![0u8; 64]);
         assert!(engine.observe_received_block(&forged).is_err());
         assert_eq!(engine.slashing_evidence.read().unwrap().len(), 1);
+    }
+
+    /// BLG-0020: an unsigned block must fail on the cheap signature check,
+    /// before the validator set hash does BLS and PQ work for every validator.
+    #[test]
+    fn unsigned_block_fails_before_the_validator_set_hash() {
+        let engine = PoSEngine::new(PoSConfig::default(), None);
+        let alice = KeyPair::generate().unwrap();
+        let alice_addr = Address::from(alice.public_key_bytes());
+        let mut state = AccountState::new();
+        state.add_validator(alice_addr, 1_000_000);
+
+        let genesis = Block::genesis();
+        let mut block = Block::new(1, genesis.hash.clone(), vec![]);
+        block.epoch = 0;
+        block.slot = 1;
+        block.producer = Some(alice_addr);
+        block.hash = block.calculate_hash();
+
+        let error = engine
+            .validate_block(&block, &[genesis], &state)
+            .unwrap_err();
+        assert!(
+            error.0.contains("Invalid block signature"),
+            "unexpected error: {}",
+            error.0
+        );
+    }
+
+    /// BLG-0021: the memory map of seen blocks was pruned to two epochs, but
+    /// the SEEN records on disk stayed forever and were all loaded at start.
+    #[test]
+    fn pruning_seen_blocks_also_removes_the_persisted_records() {
+        let config = PoSConfig {
+            epoch_length: 4,
+            ..PoSConfig::default()
+        };
+        let engine = PoSEngine::new(config, None);
+        let dir = tempfile::tempdir().unwrap();
+        let storage = crate::storage::db::Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let alice = KeyPair::generate().unwrap();
+
+        let mut old = Block::new(1, "prev".into(), vec![]);
+        old.sign(&alice);
+        engine.record_block(&old, Some(&storage)).unwrap();
+        assert_eq!(storage.load_all_seen_blocks().unwrap().len(), 1);
+
+        let mut recent = Block::new(21, "prev".into(), vec![]);
+        recent.sign(&alice);
+        engine.record_block(&recent, Some(&storage)).unwrap();
+
+        let on_disk = storage.load_all_seen_blocks().unwrap();
+        assert_eq!(on_disk.len(), 1, "the record for height 1 must be gone");
+        assert!(on_disk.keys().all(|(_, slot)| *slot == 21));
+    }
+
+    /// BLG-0019: a node that is not the leader for the slot drops the block it
+    /// tried to build. The evidence in the pool must stay in the pool then.
+    #[test]
+    fn failed_block_preview_keeps_the_evidence_pool() {
+        let engine = PoSEngine::new(PoSConfig::default(), None);
+        let alice = KeyPair::generate().unwrap();
+        let mut first = Block::new(10, "prev".into(), vec![]);
+        first.sign(&alice);
+        engine.record_block(&first, None).unwrap();
+        let mut rival = Block::new(10, "prev".into(), vec![]);
+        rival.timestamp += 1000;
+        rival.sign(&alice);
+        engine.observe_received_block(&rival).unwrap();
+        assert_eq!(engine.slashing_evidence.read().unwrap().len(), 1);
+
+        let genesis = Block::genesis();
+        let mut candidate = Block::new(1, genesis.hash.clone(), vec![]);
+        let result =
+            engine.preview_block_with_chain(&mut candidate, &AccountState::new(), &[genesis]);
+        assert!(result.is_err(), "no validator is active, so no leader");
+        assert_eq!(
+            engine.slashing_evidence.read().unwrap().len(),
+            1,
+            "a dropped block must not consume the evidence pool"
+        );
     }
 
     /// BLG-0010: a block below the local checkpoint is part of every candidate

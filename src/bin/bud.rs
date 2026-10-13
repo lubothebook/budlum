@@ -1,12 +1,12 @@
-//! Budlum L1 CLI - send transactions, query state, validator guidance.
+//! Budlum CLI - send transactions, query state, validator guidance.
 //!
-//! This binary talks to the L1 core (`budlum_core`):
+//! This binary talks to the Universal Settlement Layer core (`budlum_core`):
 //! build and send a signed transaction (`tx send`), read-only queries
 //! (`query balance`/`query block`/`query status`), and guidance for running
 //! a validator (`validator run`).
 //!
 //! The BudZKVM toolchain (`budzero/bud-cli`) is a separate workspace; this binary
-//! is for L1 chain interaction and uses the core types directly.
+//! is for chain interaction and uses the core types directly.
 //!
 //! # Design
 //! - JSON-RPC transport: a hand-written minimal HTTP/1.1 POST over a std
@@ -35,7 +35,7 @@ const MAX_RPC_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
     name = "bud",
     author,
     version,
-    about = "Budlum L1 CLI - send txs, query state, validator guidance"
+    about = "Budlum CLI - send txs, query state, validator guidance"
 )]
 struct Cli {
     /// The node's JSON-RPC endpoint.
@@ -558,6 +558,24 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// BLG-1093: the CLI help names the product by its approved name, not
+    /// by the banned layer-one term.
+    #[test]
+    fn cli_help_does_not_use_the_layer_one_term() {
+        use clap::CommandFactory;
+        let help = Cli::command().render_long_help().to_string();
+        let banned = ["L", "1"].concat();
+        assert!(
+            !help
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|w| w == banned),
+            "help text uses the banned term: {help}"
+        );
+        let source = include_str!("bud.rs");
+        let head: String = source.lines().take(12).collect::<Vec<_>>().join("\n");
+        assert!(!head.contains(&format!(" {banned} ")));
+    }
 
     #[test]
     fn parse_rpc_u64_accepts_hex_and_decimal() {

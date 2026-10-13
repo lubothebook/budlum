@@ -27,6 +27,9 @@ pub struct Parser<'a> {
     /// the boxes recurse once per level of that tree. This counter is the
     /// height of the tree itself, so those chains are bounded too.
     expr_depth: u32,
+    /// True while the end bound of a `for` range is parsed. A name followed
+    /// by `{` is then the start of the loop body, not a struct literal.
+    no_struct_literal: bool,
 }
 
 /// How tall one expression tree may be.
@@ -86,6 +89,7 @@ impl<'a> Parser<'a> {
             _source: source,
             depth: 0,
             expr_depth: 0,
+            no_struct_literal: false,
         })
     }
 
@@ -253,6 +257,14 @@ impl<'a> Parser<'a> {
             }
         }
         self.expect(Token::BraceClose)?;
+        // Nothing may follow the contract. A second contract or stray text
+        // would be dropped, and the program hash would not cover it.
+        if self.pos < self.tokens.len() {
+            return Err(CompileError::ParserError(format!(
+                "Unexpected {:?} after the contract",
+                self.peek()
+            )));
+        }
 
         Ok(Contract {
             name,
@@ -463,7 +475,10 @@ impl<'a> Parser<'a> {
                 self.expect(Token::In)?;
                 let start = self.parse_expr()?;
                 self.expect(Token::DotDot)?;
-                let end = self.parse_expr()?;
+                self.no_struct_literal = true;
+                let end = self.parse_expr();
+                self.no_struct_literal = false;
+                let end = end?;
                 self.expect(Token::BraceOpen)?;
                 let mut body = Vec::new();
                 while self.peek() != &Token::BraceClose {
@@ -742,7 +757,7 @@ impl<'a> Parser<'a> {
                     let key = self.parse_child(child_max)?;
                     self.expect(Token::BracketClose)?;
                     Ok(Expr::MappingRead(name, Box::new(key)))
-                } else if self.peek() == &Token::BraceOpen {
+                } else if self.peek() == &Token::BraceOpen && !self.no_struct_literal {
                     self.consume();
                     let mut fields = Vec::new();
                     while self.peek() != &Token::BraceClose {

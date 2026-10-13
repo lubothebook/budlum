@@ -667,6 +667,17 @@ impl AccountState {
         self.keys_dirty = true;
     }
 
+    /// Adds a validator only when none is known for `address`. Start-up
+    /// code uses this so a restart keeps the stored stake, slash and jail
+    /// state. Returns true when a validator was added.
+    pub fn ensure_validator(&mut self, address: Address, stake: u64) -> bool {
+        if self.validators.contains_key(&address) {
+            return false;
+        }
+        self.add_validator(address, stake);
+        true
+    }
+
     /// Keep the on-chain validator's bonded stake in lock-step with
     /// Its `PermissionlessRegistry` membership. Called from `add_validator`
     /// And from the `Stake` / `Unstake` transaction paths.
@@ -2902,6 +2913,23 @@ mod tests {
         let proposer_before = state.get_balance(&proposer);
         let _ = state.distribute_block_fees(&proposer, None, &[&tx]);
         assert_eq!(state.get_balance(&proposer), proposer_before);
+    }
+
+    /// BLG-0015: a start-up add must not reset a slashed validator to an
+    /// active one with stake 1.
+    #[test]
+    fn ensure_validator_keeps_a_stored_validator() {
+        let validator = test_addr_from_byte(9u8);
+        let mut state = AccountState::new();
+        assert!(state.ensure_validator(validator, 1));
+        state.add_validator(validator, 500);
+        state.slash_validator(&validator, 100_000, "test");
+        assert!(state.get_validator(&validator).unwrap().slashed);
+
+        assert!(!state.ensure_validator(validator, 1));
+        let kept = state.get_validator(&validator).unwrap();
+        assert!(kept.slashed);
+        assert!(!kept.active);
     }
 
     #[test]

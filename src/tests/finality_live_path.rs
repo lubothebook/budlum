@@ -121,6 +121,15 @@ fn live_path_epoch_change_isolates_votes() {
     assert_eq!(agg2.prevotes.len(), 1);
     // The epoch 1 aggregator is still in its own window, unaffected.
     assert_eq!(agg1.prevotes.len(), 3, "epoch 1 penceresi kirletilmemeli");
+
+    // A stale vote: a validly signed epoch 1 vote sent to the epoch 2
+    // aggregator is refused and does not enter its window.
+    let stale = sign_prevote(&sks1[3], 1, 10, "H", snap1.validators[3].address);
+    let error = agg2
+        .add_prevote(stale)
+        .expect_err("an old-epoch vote must not enter the new window");
+    assert!(error.contains("epoch mismatch"), "{error}");
+    assert_eq!(agg2.prevotes.len(), 1, "the new window is unchanged");
 }
 
 // 2.2 - A late prevote (a height mismatch)

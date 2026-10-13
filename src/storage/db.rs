@@ -1558,12 +1558,37 @@ impl Storage {
         self.db.insert(key.as_bytes(), val)?;
         Ok(())
     }
+    /// Removes the persisted seen-block records below `min_slot`. The memory
+    /// map is pruned the same way. Without this, the records grow without
+    /// bound and every start loads all of them.
+    ///
+    /// # Errors
+    ///
+    /// Propagates `std::io::Error` from the step that failed; its variants name the refused
+    /// conditions.
+    pub fn prune_seen_blocks_below(&self, min_slot: u64) -> std::io::Result<usize> {
+        let mut removed = 0usize;
+        for item in self.db.scan_prefix(b"SEEN:") {
+            let (key, _) = item?;
+            let slot = from_utf8(&key)
+                .ok()
+                .and_then(|k| k.rsplit(':').next())
+                .and_then(|s| s.parse::<u64>().ok());
+            if slot.is_some_and(|s| s < min_slot) {
+                self.db.remove(&key)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     /// # Errors
     ///
     /// Propagates `std::io::Error` from the step that failed; its variants name the refused
     /// conditions.
     pub fn load_all_seen_blocks(&self) -> std::io::Result<SeenBlockMap> {
         let mut seen = std::collections::HashMap::new();
+        let mut removed_corrupt = false;
         for item in self.db.scan_prefix(b"SEEN:") {
             let (key, val) = item?;
             let key_str = from_utf8(&key).unwrap_or("");
@@ -1572,13 +1597,36 @@ impl Storage {
                 .unwrap_or(key_str)
                 .split(':')
                 .collect();
-            if parts.len() == 2 {
-                let producer = Address::from_hex(parts[0])
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                let index = parts[1].parse().unwrap_or(0);
-                let data: (crate::core::block::BlockHeader, Vec<u8>) = decode(&val)?;
-                seen.insert((producer, index), data);
+            if parts.len() != 2 {
+                continue;
             }
+            // One unreadable record must not stop the load. A failed load
+            // leaves the node with no checkpoints and no seen blocks, which
+            // turns off checkpoint enforcement and double-sign detection.
+            let parsed: Result<_, String> = (|| {
+                let producer = Address::from_hex(parts[0]).map_err(|e| e.to_string())?;
+                let index: u64 = parts[1].parse().map_err(|e| format!("bad height: {e}"))?;
+                let data: (crate::core::block::BlockHeader, Vec<u8>) =
+                    decode(&val).map_err(|e| e.to_string())?;
+                Ok(((producer, index), data))
+            })();
+            match parsed {
+                Ok((entry_key, data)) => {
+                    seen.insert(entry_key, data);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        key = %key_str,
+                        error = %error,
+                        "Dropping corrupt persisted seen-block record"
+                    );
+                    self.db.remove(&key)?;
+                    removed_corrupt = true;
+                }
+            }
+        }
+        if removed_corrupt {
+            self.db.flush()?;
         }
         Ok(seen)
     }
@@ -2249,6 +2297,36 @@ mod tests {
         let restored = storage.load_mempool_txs().unwrap();
         assert!(restored.is_empty());
         assert!(storage.db.get(b"MEMPOOL:corrupt").unwrap().is_none());
+    }
+
+    /// BLG-0023: one bad SEEN record failed the whole load, so the node ran
+    /// with no checkpoints and no double-sign memory.
+    #[test]
+    fn load_all_seen_blocks_skips_corrupt_records() {
+        let dir = tempdir().unwrap();
+        let storage = Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let producer = Address::from([7u8; 32]);
+        let mut header = crate::core::block::BlockHeader::from_block(&Block::genesis());
+        header.index = 5;
+        header.producer = Some(producer);
+        storage.save_seen_block(&header, b"sig").unwrap();
+        let bad_value_key = format!("SEEN:{producer}:6");
+        storage
+            .db
+            .insert(bad_value_key.as_bytes(), b"not-a-header")
+            .unwrap();
+        storage.db.insert(b"SEEN:not-hex:7", b"junk").unwrap();
+        let bad_height_key = format!("SEEN:{producer}:abc");
+        storage
+            .db
+            .insert(bad_height_key.as_bytes(), b"junk")
+            .unwrap();
+
+        let seen = storage.load_all_seen_blocks().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(seen.contains_key(&(producer, 5)));
+        assert!(storage.db.get(bad_value_key.as_bytes()).unwrap().is_none());
+        assert!(storage.db.get(b"SEEN:not-hex:7").unwrap().is_none());
     }
 
     #[test]

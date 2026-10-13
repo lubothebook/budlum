@@ -4523,7 +4523,17 @@ impl Blockchain {
                 .registry
                 .params()
                 .slash_ratio(crate::registry::permissionless::SlashingCondition::DoubleSign);
-            state.apply_slashing(evidences, slash_ratio_fixed);
+            // Headers signed for another chain are not proof of anything here.
+            // A key shared by two chains would otherwise let anyone replay
+            // real signatures from the other chain and slash a validator.
+            let own_chain: Vec<SlashingEvidence> = evidences
+                .iter()
+                .filter(|e| {
+                    e.header1.chain_id == block.chain_id && e.header2.chain_id == block.chain_id
+                })
+                .cloned()
+                .collect();
+            state.apply_slashing(&own_chain, slash_ratio_fixed);
         }
 
         let epoch_length = crate::core::chain_config::epoch_len_for_chain_id(block.chain_id);
@@ -6115,6 +6125,24 @@ impl Blockchain {
         Ok(())
     }
 
+    /// Counts one invalid vote against `voter`. The epoch comes from gossip,
+    /// so a value far ahead of the chain is not counted: it would move the
+    /// tracker epoch forward and every real epoch after it would read as old.
+    fn note_invalid_vote(&mut self, epoch: u64, voter: Address) {
+        if epoch > self.state.epoch_index.saturating_add(1) {
+            tracing::warn!(epoch, "Invalid vote names an epoch far ahead; not counted");
+            return;
+        }
+        let params = *self.state.registry.params();
+        if let Some(report) = self
+            .state
+            .invalid_votes
+            .record_invalid_vote(epoch, voter, &params)
+        {
+            let _ = self.submit_registry_slashing_report(report);
+        }
+    }
+
     pub fn handle_prevote(&mut self, vote: Prevote) -> Result<(), String> {
         // Validate the BLS signature of the prevote against the
         // Voter's registered BLS public key BEFORE ingesting it. An invalid
@@ -6131,14 +6159,7 @@ impl Blockchain {
                 )
                 .is_err()
             {
-                let params = *self.state.registry.params();
-                if let Some(report) =
-                    self.state
-                        .invalid_votes
-                        .record_invalid_vote(vote.epoch, vote.voter_id, &params)
-                {
-                    let _ = self.submit_registry_slashing_report(report);
-                }
+                self.note_invalid_vote(vote.epoch, vote.voter_id);
                 return Err("Invalid prevote signature".into());
             }
         }
@@ -6178,14 +6199,7 @@ impl Blockchain {
                 if crate::chain::finality::verify_bls_sig(&v.bls_public_key, &msg, &vote.sig_bls)
                     .is_err()
                 {
-                    let params = *self.state.registry.params();
-                    if let Some(report) = self.state.invalid_votes.record_invalid_vote(
-                        vote.epoch,
-                        vote.voter_id,
-                        &params,
-                    ) {
-                        let _ = self.submit_registry_slashing_report(report);
-                    }
+                    self.note_invalid_vote(vote.epoch, vote.voter_id);
                     return Err("Invalid precommit signature".into());
                 }
             }
@@ -7284,6 +7298,32 @@ mod tests {
         )
     }
 
+    /// BLG-0018: double-sign evidence signed for another chain id must not
+    /// slash a validator of this chain.
+    #[test]
+    fn block_evidence_for_another_chain_does_not_slash() {
+        let keys = crate::crypto::primitives::ValidatorKeys::generate().unwrap();
+        let producer = Address::from(keys.sig_key.public_key_bytes());
+        let evidence = double_sign_evidence(&keys, 10);
+        let evidence_chain = evidence.header1.chain_id;
+
+        let mut foreign_block =
+            Block::new_with_chain_id(11, "prev".into(), vec![], evidence_chain + 1);
+        foreign_block.slashing_evidence = Some(vec![evidence.clone()]);
+        let mut state = AccountState::new();
+        state.add_validator(producer, 1_000_000);
+        Blockchain::apply_system_effects(&mut state, &foreign_block);
+        assert!(
+            !state.get_validator(&producer).unwrap().slashed,
+            "evidence from another chain slashed a validator"
+        );
+
+        let mut own_block = Block::new_with_chain_id(11, "prev".into(), vec![], evidence_chain);
+        own_block.slashing_evidence = Some(vec![evidence]);
+        Blockchain::apply_system_effects(&mut state, &own_block);
+        assert!(state.get_validator(&producer).unwrap().slashed);
+    }
+
     /// BLG-0171: evidence from a key that is not a validator is refused, and
     /// the pool has an upper bound.
     #[test]
@@ -7314,6 +7354,25 @@ mod tests {
         assert!(bc
             .submit_slashing_evidence(double_sign_evidence(&insider, 1000))
             .is_err());
+    }
+
+    /// BLG-0088: an invalid vote that names a far future epoch must not move
+    /// the tracker epoch, or the spam guard is closed for good.
+    #[test]
+    fn invalid_vote_with_a_far_future_epoch_is_not_counted() {
+        let mut bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            None,
+            45262,
+            None,
+        );
+        let victim = Address::from([3u8; 32]);
+        bc.note_invalid_vote(u64::MAX, victim);
+        assert_eq!(bc.state.invalid_votes.current_epoch(), 0);
+        assert_eq!(bc.state.invalid_votes.invalid_count(&victim), 0);
+
+        bc.note_invalid_vote(0, victim);
+        assert_eq!(bc.state.invalid_votes.invalid_count(&victim), 1);
     }
 
     /// BLG-0170: a parent hash mismatch freezes the domain, and the freeze must
