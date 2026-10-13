@@ -625,16 +625,6 @@ impl Drop for Wallet {
     }
 }
 
-impl Wallet {
-    /// Wipe every secret the wallet itself holds: mnemonic, seed and the
-    /// view key. Called from `Drop`; kept separate so a test can observe it.
-    fn zeroize_secrets(&mut self) {
-        self.mnemonic.zeroize();
-        self.seed.zeroize();
-        self.privacy.view_key.zeroize();
-    }
-}
-
 /// Budlum Address = the domain-separated SHA3-256 hash of the ML-DSA-87 public key (32 bytes).
 /// Compatible with the `core::address::Address` pattern.
 pub type BudlumAddress = [u8; 32];
@@ -966,6 +956,13 @@ impl MultisigPolicy {
 }
 
 impl Wallet {
+    /// Wipe every secret the wallet itself holds: mnemonic, seed and the
+    /// view key. Called from `Drop`; kept separate so a test can observe it.
+    fn zeroize_secrets(&mut self) {
+        self.mnemonic.zeroize();
+        self.seed.zeroize();
+        self.privacy.view_key.zeroize();
+    }
     /// Create a new wallet (random entropy -> mnemonic -> seed -> keypair).
     ///
     /// `word_count`: 12 (128-bit entropy) or 24 (256-bit entropy).
