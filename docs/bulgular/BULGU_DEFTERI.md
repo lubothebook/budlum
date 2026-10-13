@@ -203,12 +203,12 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P10 | BLG-0195 | - | P10-F05: FINDINGS.md:766; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
 | P10 | BLG-0196 | - | P10-F06: FINDINGS.md:767; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
 | P10 | BLG-0197 | - | P10-F07: FINDINGS.md:768; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P10 | BLG-0198 | - | P10-F08: FINDINGS.md:769; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 8cb6f78 |  |
+| P10 | BLG-0198 | - | P10-F08: FINDINGS.md:769; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 8cb6f78 |  |
 | P10 | BLG-0199 | - | P10-F09: FINDINGS.md:770; ham önem Low | AÇIK |  |  |
 | P10 | BLG-0200 | - | P10-F10: FINDINGS.md:771; ham önem Low | AÇIK |  |  |
 | P10 | BLG-0201 | - | P10-F11: FINDINGS.md:772; ham önem Info | AÇIK |  |  |
 | P11 | BLG-0202 | - | P11-F01: FINDINGS.md:790; ham önem Critical; CONFIRMED | CI BEKLİYOR | 8a190b9 |  |
-| P11 | BLG-0203 | - | P11-F02: FINDINGS.md:791; ham önem Medium | CI BEKLİYOR | 7c7a20f |  |
+| P11 | BLG-0203 | - | P11-F02: FINDINGS.md:791; ham önem Medium | CI BEKLİYOR | 7c7a20f,d88a48d |  |
 | P11 | BLG-0204 | - | P11-F03: FINDINGS.md:792; ham önem Medium | CI BEKLİYOR | a072285 |  |
 | P11 | BLG-0205 | - | P11-F04: FINDINGS.md:793; ham önem Medium | CI BEKLİYOR | bcac6cb |  |
 | P11 | BLG-0206 | - | P11-F05: FINDINGS.md:794; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -231,9 +231,9 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P13 | BLG-0223 | - | P13-F03: FINDINGS.md:877; ham önem Medium | CI BEKLİYOR | ed11d50 |  |
 | P13 | BLG-0224 | - | P13-F04: FINDINGS.md:878; ham önem Medium | CI BEKLİYOR | fc628bd |  |
 | P13 | BLG-0225 | tests/fiat_shamir_binding.rs:170-260 | P13-F05: FINDINGS.md:879; ham önem Medium | CI BEKLİYOR | b97881e |  |
-| P13 | BLG-0226 | - | P13-F06: FINDINGS.md:880; ham önem Medium | CI BEKLİYOR | 6151c87 |  |
+| P13 | BLG-0226 | - | P13-F06: FINDINGS.md:880; ham önem Medium | CI BEKLİYOR | 6151c87,c9b4919 |  |
 | P13 | BLG-0227 | tests/soundness_negatives.rs:138-165 | P13-F07: FINDINGS.md:881; ham önem Low | CI BEKLİYOR | 35ca5af |  |
-| P13 | BLG-0228 | tests/compiled_branching.rs:49-93 | P13-F08: FINDINGS.md:882; ham önem Low | CI BEKLİYOR | e214f42 |  |
+| P13 | BLG-0228 | tests/compiled_branching.rs:49-93 | P13-F08: FINDINGS.md:882; ham önem Low | CI BEKLİYOR | e214f42,03412ae |  |
 | P13 | BLG-0229 | - | P13-F09: FINDINGS.md:883; ham önem Low | AÇIK |  |  |
 | P13 | BLG-0230 | - | P13-F10: FINDINGS.md:884; ham önem Info | AÇIK |  |  |
 | P14 | BLG-0231 | - | P14-F01: FINDINGS.md:862; ham önem Medium | AÇIK |  |  |
@@ -244,15 +244,15 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P14 | BLG-0236 | - | P14-F06: FINDINGS.md:867; ham önem Low | AÇIK |  |  |
 | P14 | BLG-0237 | - | P14-F07: FINDINGS.md:868; ham önem Info | AÇIK |  |  |
 | P14 | BLG-0238 | benches/canonical_programs.rs:59-155 | P14-F08: FINDINGS.md:869; ham önem Low | AÇIK |  |  |
-| P15 | BLG-0239 | - | P15-F01: FINDINGS.md:837; ham önem Critical | CI BEKLİYOR | c0de924 |  |
+| P15 | BLG-0239 | - | P15-F01: FINDINGS.md:837; ham önem Critical | CI BEKLİYOR | c0de924,c9b4919 |  |
 | P15 | BLG-0240 | bud-proof/Cargo.toml:30 | P15-F02: FINDINGS.md:838; ham önem Low / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri) | AÇIK |  |  |
 | P15 | BLG-0241 | - | P15-F03: FINDINGS.md:839; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri) | AÇIK |  |  |
 | P15 | BLG-0242 | - | P15-F04: FINDINGS.md:840; ham önem Low | CI BEKLİYOR | 3bb3016 |  |
 | P15 | BLG-0243 | - | P15-F05: FINDINGS.md:841; ham önem Low | CI BEKLİYOR | 2f16810 |  |
 | P16 | BLG-0244 | bud-vm/src/lib.rs:538-547, 363-367, 453-487 | P16-F01: FINDINGS.md:891; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P16 | BLG-0245 | bud-vm/src/lib.rs:1034-1046, 581-615 | P16-F02: FINDINGS.md:892; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | bdc83be |  |
+| P16 | BLG-0245 | bud-vm/src/lib.rs:1034-1046, 581-615 | P16-F02: FINDINGS.md:892; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | bdc83be |  |
 | P16 | BLG-0246 | - | P16-F03: FINDINGS.md:893; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
-| P16 | BLG-0247 | - | P16-F04: FINDINGS.md:894; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | a4cc5d0 |  |
+| P16 | BLG-0247 | - | P16-F04: FINDINGS.md:894; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | a4cc5d0 |  |
 | P16 | BLG-0248 | - | P16-F05: FINDINGS.md:895; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P16 | BLG-0249 | bud-isa/src/lib.rs:215-268 | P16-F06: FINDINGS.md:896; ham önem Info / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P16 | BLG-0250 | bud-isa/src/lib.rs:59-61, 271-309 | P16-F07: FINDINGS.md:897; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs) | AÇIK |  |  |
@@ -276,7 +276,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P17 | BLG-0268 | account_abstraction/registry.rs:128-149, 225-261 | P17-F02: FINDINGS.md:950; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P17 | BLG-0269 | - | P17-F03: FINDINGS.md:951; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P17 | BLG-0270 | - | P17-F04: FINDINGS.md:952; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P17 | BLG-0271 | - | P17-F05: FINDINGS.md:953; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | acc751c |  |
+| P17 | BLG-0271 | - | P17-F05: FINDINGS.md:953; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | acc751c,b44daaf,338233b |  |
 | P17 | BLG-0272 | - | P17-F06: FINDINGS.md:954; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P17 | BLG-0273 | - | P17-F07: FINDINGS.md:955; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P17 | BLG-0274 | - | P17-F08: FINDINGS.md:956; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -297,7 +297,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P18 | BLG-0289 | ai/registry.rs:878 | P18-F04: FINDINGS.md:969; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri) | AÇIK |  |  |
 | P18 | BLG-0290 | - | P18-F05: FINDINGS.md:970; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P18 | BLG-0291 | mempool/pool.rs:173-185 | P18-F06: FINDINGS.md:971; ham önem Medium | CI BEKLİYOR | 397ffa5 |  |
-| P18 | BLG-0292 | light_client/mod.rs:223-270, 285-356, 431-450 | P18-F07: FINDINGS.md:972; ham önem Medium | CI BEKLİYOR | c8434b9 |  |
+| P18 | BLG-0292 | light_client/mod.rs:223-270, 285-356, 431-450 | P18-F07: FINDINGS.md:972; ham önem Medium | CI BEKLİYOR | c8434b9,1ee9dfa |  |
 | P18 | BLG-0293 | light_client/mod.rs:459-470 | P18-F08: FINDINGS.md:973; ham önem Low | CI BEKLİYOR | 77d27a4 |  |
 | P18 | BLG-0294 | prover/mod.rs:96-110, 203-344 | P18-F09: FINDINGS.md:973; ham önem Low | AÇIK |  |  |
 | P18 | BLG-0295 | prover/mod.rs:157-158 | P18-F10: FINDINGS.md:973; ham önem Low | AÇIK |  |  |
@@ -320,7 +320,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P20 | BLG-0312 | - | P20-F01: FINDINGS.md:1016; ham önem Medium | CI BEKLİYOR | c893704 |  |
 | P20 | BLG-0313 | - | P20-F02: FINDINGS.md:1017; ham önem Medium | CI BEKLİYOR | 5cb13d9 |  |
 | P20 | BLG-0314 | sharding/mod.rs | P20-F03: FINDINGS.md:1018; ham önem Medium / kanıt: blockchain.rs:4744 shards_root üretiyor, :5068-5086 yanlış ve eksik taahhüdü reddediyor, src/tests/sharding_e2e.rs:61-99 iki reddi sınıyor | YANLIŞ POZİTİF |  |  |
-| P20 | BLG-0315 | - | P20-F05: FINDINGS.md:1019; ham önem Medium / kısmi: MaxEmergencyHaltEpochs ve guardrail okuyucuları BAĞIMLI | KODLANIYOR | f2c128f |  |
+| P20 | BLG-0315 | - | P20-F05: FINDINGS.md:1019; ham önem Medium / kısmi: MaxEmergencyHaltEpochs ve guardrail okuyucuları BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | f2c128f |  |
 | P20 | BLG-0316 | - | P20-F06: FINDINGS.md:1020; ham önem Medium / BAĞIMLI: BlockHeader alanı (proto_conversions, light_client, pos.rs); account.rs ve executor.rs yazıcıları | AÇIK |  |  |
 | P20 | BLG-0317 | - | P20-F07: FINDINGS.md:1021; ham önem Low | CI BEKLİYOR | aae3c15 |  |
 | P20 | BLG-0318 | - | P20-F08: FINDINGS.md:1021; ham önem Low | CI BEKLİYOR | f834b2c |  |
@@ -329,9 +329,9 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P20 | BLG-0321 | - | P20-F11: FINDINGS.md:1021; ham önem Low | AÇIK |  |  |
 | P20 | BLG-0322 | - | P20-F12: FINDINGS.md:1021; ham önem Low | AÇIK |  |  |
 | P20 | BLG-0323 | core/encoding.rs | P20-F13: FINDINGS.md:1021; ham önem Low | AÇIK |  |  |
-| P21 | BLG-0324 | cli/commands.rs:388 | P21-F01: FINDINGS.md:1048; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | b6bc6cc |  |
+| P21 | BLG-0324 | cli/commands.rs:388 | P21-F01: FINDINGS.md:1048; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | b6bc6cc |  |
 | P21 | BLG-0325 | - | P21-F02: FINDINGS.md:1049; ham önem Medium | CI BEKLİYOR | 46445c6 |  |
-| P21 | BLG-0326 | - | P21-F03: FINDINGS.md:1050; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 92116ea |  |
+| P21 | BLG-0326 | - | P21-F03: FINDINGS.md:1050; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 92116ea |  |
 | P21 | BLG-0327 | - | P21-F04: FINDINGS.md:1051; ham önem Medium | CI BEKLİYOR | 15c34a8 |  |
 | P21 | BLG-0328 | - | P21-F05: FINDINGS.md:1052; ham önem Low | CI BEKLİYOR | 79838e4 |  |
 | P21 | BLG-0329 | - | P21-F06: FINDINGS.md:1052; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -349,15 +349,15 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P22 | BLG-0341 | - | P22-F10: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
 | P22 | BLG-0342 | - | P22-F11: FINDINGS.md:1042; ham önem Low | AÇIK |  |  |
 | P23 | BLG-0343 | - | P23-F01: FINDINGS.md:1058; ham önem High / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
-| P23 | BLG-0344 | - | P23-F02: FINDINGS.md:1059; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | f72517b |  |
+| P23 | BLG-0344 | - | P23-F02: FINDINGS.md:1059; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | f72517b |  |
 | P23 | BLG-0345 | - | P23-F03: FINDINGS.md:1060; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
 | P23 | BLG-0346 | - | P23-F04: FINDINGS.md:1061; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P23 | BLG-0347 | - | P23-F05: FINDINGS.md:1062; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P23 | BLG-0348 | - | P23-F06: FINDINGS.md:1063; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P23 | BLG-0349 | - | P23-F07: FINDINGS.md:1064; ham önem Medium | CI BEKLİYOR | ff197af |  |
 | P23 | BLG-0350 | - | P23-F08: FINDINGS.md:1065; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
-| P23 | BLG-0351 | - | P23-F09: FINDINGS.md:1066; ham önem Medium | CI BEKLİYOR | 6ad62fa |  |
-| P23 | BLG-0352 | - | P23-F10: FINDINGS.md:1067; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 80b9618 |  |
+| P23 | BLG-0351 | - | P23-F09: FINDINGS.md:1066; ham önem Medium | CI BEKLİYOR | 6ad62fa,05b850d |  |
+| P23 | BLG-0352 | - | P23-F10: FINDINGS.md:1067; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 80b9618,79c9950 |  |
 | P23 | BLG-0353 | - | P23-F11: FINDINGS.md:1068; ham önem Low | AÇIK |  |  |
 | P23 | BLG-0354 | - | P23-F12: FINDINGS.md:1068; ham önem Low | AÇIK |  |  |
 | P23 | BLG-0355 | - | P23-F13: FINDINGS.md:1068; ham önem Low | AÇIK |  |  |
@@ -375,11 +375,11 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P24 | BLG-0367 | - | P24-F08: FINDINGS.md:1079; ham önem Low | AÇIK |  |  |
 | P25 | BLG-0368 | - | P25-F01: FINDINGS.md:1085; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P25 | BLG-0369 | - | P25-F02: FINDINGS.md:1086; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P25 | BLG-0370 | - | P25-F03: FINDINGS.md:1087; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 8049c98 |  |
+| P25 | BLG-0370 | - | P25-F03: FINDINGS.md:1087; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 8049c98 |  |
 | P25 | BLG-0371 | rpc/server.rs:2568-2575 | P25-F04: FINDINGS.md:1088; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
 | P25 | BLG-0372 | - | P25-F05: FINDINGS.md:1089; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P25 | BLG-0373 | - | P25-F06: FINDINGS.md:1090; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs) | AÇIK |  |  |
-| P25 | BLG-0374 | - | P25-F07: FINDINGS.md:1091; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 2943160 |  |
+| P25 | BLG-0374 | - | P25-F07: FINDINGS.md:1091; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 2943160 |  |
 | P25 | BLG-0375 | - | P25-F08: FINDINGS.md:1091; ham önem Low | CI BEKLİYOR | b955ee5 |  |
 | P25 | BLG-0376 | - | P25-F09: FINDINGS.md:1091; ham önem Low | AÇIK |  |  |
 | P25 | BLG-0377 | - | P25-F10: FINDINGS.md:1091; ham önem Low | AÇIK |  |  |
