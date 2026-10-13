@@ -501,9 +501,15 @@ mod tests {
 
         assert_eq!(verify(&proof, &root, &[0x80]).unwrap(), b"receipt-0");
         assert_eq!(verify(&proof, &root, &[0x01]).unwrap(), b"receipt-1");
+        // Key 0x30 leads to an empty branch slot: the key is absent.
+        assert_eq!(
+            verify(&proof, &root, &[0x30]).unwrap_err(),
+            MptError::KeyNotFound
+        );
+        // Key 0x02 reaches leaf_1 but its path differs: a path mismatch.
         assert_eq!(
             verify(&proof, &root, &[0x02]).unwrap_err(),
-            MptError::KeyNotFound
+            MptError::PathMismatch
         );
     }
 
