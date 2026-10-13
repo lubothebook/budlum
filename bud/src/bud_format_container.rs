@@ -509,7 +509,7 @@ impl BudV2File {
     /// Like [`Self::restore_original`], with a ceiling on the TOTAL output.
     /// The per-chunk ceiling alone lets many small chunks each expand to the
     /// full limit; here every chunk may only use what is left of `max_total`.
-    pub fn restore_original_within(&self, max_total: u64) -> Option<Vec<u8>> {
+    fn restore_original_within(&self, max_total: u64) -> Option<Vec<u8>> {
         let mut out: Vec<u8> = Vec::new();
         for c in &self.chunks {
             let left = max_total.checked_sub(out.len() as u64)?;

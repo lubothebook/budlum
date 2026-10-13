@@ -21,7 +21,7 @@ pub const OPTX_VERSION: u8 = 1;
 
 /// The most segments one transfer may have. Split and join share it, so a
 /// set that `split_optical` makes is a set that `join_optical` accepts.
-pub const OPTX_MAX_SEGMENTS: usize = 1_000_000;
+const OPTX_MAX_SEGMENTS: usize = 1_000_000;
 
 /// An optical segment, one per code shown on screen.
 #[derive(Debug, Clone)]

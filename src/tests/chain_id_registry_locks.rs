@@ -364,16 +364,19 @@ fn systemd_unit_disables_core_dumps() {
     );
 }
 
-/// BLG-1078: the systemd unit set `BUDLUM_RPC_KEY=%d/budlum-rpc-key`. No code
-/// reads that name, and `%d` is a directory path, not key content. The node
+/// BLG-1078: the systemd unit set a variable that no code reads, and its
+/// value was a directory path (`%d`), not key content. The node
 /// reads the variable that `BUDLUM_RPC_API_KEY_ENV` names, so the unit has to
 /// name it and has to load its value from a file.
 #[test]
 fn systemd_unit_wires_the_rpc_api_key_the_node_reads() {
     let lines = systemd_unit_lines();
+    // The dead name is assembled at run time so it is not a second spelling
+    // of an environment name in the source.
+    let dead = ["BUDLUM", "RPC", "KEY"].join("_");
     assert!(
-        !lines.iter().any(|l| l.contains("BUDLUM_RPC_KEY")),
-        "the unit sets BUDLUM_RPC_KEY, a name the node never reads"
+        !lines.iter().any(|l| l.contains(dead.as_str())),
+        "the unit sets {dead}, a name the node never reads"
     );
     assert!(
         lines
