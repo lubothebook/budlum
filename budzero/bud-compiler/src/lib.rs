@@ -854,7 +854,7 @@ mod tests {
                     emit Result(r);
                     let n = 3;
                     let count = 0;
-                    for i in 0..n {
+                    for i in 0..(n) {
                         n = n - 1;
                         count = count + 1;
                     }
@@ -896,18 +896,19 @@ mod tests {
     fn test_match_wide_integer_pattern_is_not_truncated() {
         let source = r#"
             contract WidePattern {
-                fn probe(x: u64) {
+                fn probe(x: u64) -> u64 {
                     match (x) {
                         4294967296 => { emit Result(1); },
                         3000000000 => { emit Result(2); },
                         _ => { emit Result(0); },
                     };
+                    return 0;
                 }
                 pub fn main() {
-                    probe(0);
-                    probe(4294967296);
-                    probe(3000000000);
-                    probe(7);
+                    let a = probe(0);
+                    let b = probe(4294967296);
+                    let c = probe(3000000000);
+                    let d = probe(7);
                 }
             }
         "#;
@@ -966,7 +967,7 @@ mod tests {
         for (arms, needle) in [
             ("0 => { emit Result(1); },", "must end with a wildcard"),
             (
-                "_ => { emit Result(0); }, 1 => { emit Result(1); },",
+                "1 => { emit Result(1); }, _ => { emit Result(0); }, _ => { emit Result(2); },",
                 "must be the last arm",
             ),
             (
