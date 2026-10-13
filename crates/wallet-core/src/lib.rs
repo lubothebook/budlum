@@ -225,13 +225,14 @@ pub fn mnemonic_to_entropy(mnemonic: &str) -> Result<Vec<u8>, WalletError> {
         }
         entropy.push(byte);
     }
-    bits.zeroize();
 
     // Extract checksum
     let mut checksum = 0u8;
     for j in 0..checksum_bits {
         checksum = (checksum << 1) | (bits[entropy_bits + j] as u8);
     }
+    // Zeroizing a Vec empties it, so the bits are wiped after the last read.
+    bits.zeroize();
 
     // Verify checksum
     let hash = Sha256::digest(&entropy);
