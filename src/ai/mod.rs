@@ -36,6 +36,7 @@ pub use registry::AiRegistry;
 ///   context, not chain values: nothing binds them to the attaching
 ///   transaction, so one proof can accompany several requests of the same
 ///   model with identical commitments.
+///
 /// While the flag is off this is fail-closed: proof-required models refuse
 /// proofs without public inputs, and `require_proof` payment release accepts
 /// only fully verified attaches (`fully_verified_proofs`).

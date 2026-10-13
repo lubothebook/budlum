@@ -136,7 +136,22 @@ fuzz_target!(|data: &[u8]| {
     // A fully well-formed envelope must get past the metadata, public inputs
     // hash and program hash checks. If it does not, this target has stopped
     // reaching the proof decoder and the STARK verifier.
-    if corrupt & 0x3f == 0 {
+    // The verifier refuses non-canonical Goldilocks scalars before any hash
+    // check, so a well-formed envelope is one whose scalars are canonical.
+    const GOLDILOCKS_P: u64 = 0xFFFF_FFFF_0000_0001;
+    let canonical = [
+        inputs.chain_id,
+        inputs.sender,
+        inputs.nonce,
+        inputs.block_height,
+        inputs.gas_limit,
+        inputs.gas_used,
+        inputs.exit_code,
+        inputs.trace_len,
+    ]
+    .iter()
+    .all(|&v| v < GOLDILOCKS_P);
+    if corrupt & 0x3f == 0 && canonical {
         match &result {
             Err(VerifyError::PublicInputsMismatch) => {
                 panic!("well-formed envelope stopped at a hash check")

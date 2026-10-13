@@ -7725,7 +7725,7 @@ mod tests {
         start
             .ai_registry
             .equivocation_events
-            .insert(key.clone(), 10);
+            .insert(key, 10);
 
         // A live node runs maintenance at every height; the dispute-window
         // row retires once the window has elapsed.
