@@ -16,7 +16,7 @@
   },
   "secrets": {
     "ANTHROPIC_AUTH_TOKEN": {
-      "description": "Arena API anahtarı. portal.api.preview.arena.ai/dashboard/keys adresinden alınır.",
+      "description": "Arena API key. Get it from portal.api.preview.arena.ai/dashboard/keys.",
       "documentationUrl": "https://portal.api.preview.arena.ai/docs/claude-code"
     }
   },

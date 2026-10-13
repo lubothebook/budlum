@@ -27,11 +27,11 @@ This file holds the common task rules of the PR9 finding program. Every task pac
 5. Commit: one finding, one commit. Add only the relevant files with `git add <file>` (no `git add -A`). Message format:
 
 ```
-fix(P17/BLG-0042): <kisa aciklama>
+fix(P17/BLG-0042): <short description>
 
-Dosya: src/storage/erasure.rs:118
-Kanit: <yeniden uretme yontemi>
-Test: <eklenen testin adi>
+File: src/storage/erasure.rs:118
+Evidence: <how to reproduce>
+Test: <name of the added test>
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 ```
@@ -54,13 +54,13 @@ The branch you commit to is your worktree branch. DO NOT PUSH. The main session 
 Your final answer has ONLY this format, one line per finding, no extra comment:
 
 ```
-PAKET: <kimlik>   DAL: <git dal adi>   TABAN: <sha>
-BLG-xxxx | KOD | <sha> | <tek cumle sonuc>
-BLG-xxxx | YP | - | <kanit: dosya:satir veya komut>
-BLG-xxxx | KARAR | - | <soru: secenekler A/B/C, oneri>
-BLG-xxxx | BAGIMLI | - | <hangi dosya, kimin sahipligi>
-BLG-xxxx | ENGELLI | - | <3 deneme sonrasi neden>
-YENI: <paket kapsami disi yeni bulgu: dosya:satir ve kanit>   (varsa)
+PAKET: <id>   DAL: <git branch name>   TABAN: <sha>
+BLG-xxxx | KOD | <sha> | <one-sentence result>
+BLG-xxxx | YP | - | <evidence: file:line or command>
+BLG-xxxx | KARAR | - | <question: options A/B/C, recommendation>
+BLG-xxxx | DEPENDENT | - | <which file, who owns it>
+BLG-xxxx | ENGELLI | - | <why, after 3 attempts>
+YENI: <new finding outside the package scope: file:line and evidence>   (if any)
 ```
 
 After three failed attempts, choose a different approach. If it still fails, write `ENGELLI` and move to the next finding.
