@@ -78,6 +78,17 @@ pub fn compile(source: &str, profile: IsaProfile) -> Result<Vec<u64>, CompileErr
 mod tests {
     use super::*;
 
+    /// BLG-0530: a block comment that ends in `**/` did not end there. The
+    /// lexer ran on to the next `*/` and removed the code in between.
+    #[test]
+    fn block_comment_ending_in_two_stars_ends_there() {
+        let source = "contract A { pub fn main() { /** note **/ emit E(1); /* x */ } }";
+        let bytecode = compile(source, IsaProfile::Production).unwrap();
+        let mut vm = bud_vm::Vm::new(1024);
+        vm.run(&bytecode).unwrap();
+        assert_eq!(vm.events, vec![1]);
+    }
+
     /// BLG-0532: text after the closing brace of the contract was dropped
     /// without a word, so a second contract never reached the bytecode.
     #[test]
