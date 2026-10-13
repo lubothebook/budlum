@@ -113,6 +113,11 @@ const ALLOWED_FILES: &[&str] = &[
     // in the owner's words. Exempt by exact file name only, so a look-alike
     // name is still a finding.
     "BULGU_DEFTERI.md",
+    // The task template carries the literal Turkish field names of the commit
+    // message and the delivery lines (Dosya, Kanit, Test, KOD, KARAR). Agents
+    // and the ledger tooling match those words, so they cannot be translated.
+    // Exact file name only.
+    "GOREV_SABLONU.md",
 ];
 
 /// Path fragments whose contents are a Turkish localisation.
@@ -1002,6 +1007,7 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         "MODEL_ROUTING_KURULUM.md",
         "BUD-AI-KAPSAMLI-DIREKTIF.md",
         "BULGU_DEFTERI.md",
+        "GOREV_SABLONU.md",
     ] {
         if !counted_accepts_with(
             &mut ran,
@@ -1206,7 +1212,7 @@ const CANARY_GROUPS: [CanaryGroup; 3] = [
 /// Hard-coded on purpose. A group that stops testing anything still returns
 /// `Ok`, so the only way to notice is to know the number beforehand. Raise it
 /// deliberately when a canary is added; a drop is a defect.
-const EXPECTED_CANARIES: usize = 75;
+const EXPECTED_CANARIES: usize = 76;
 
 pub fn self_test() -> Result<String, String> {
     let tmp = scratch_dir()?;
