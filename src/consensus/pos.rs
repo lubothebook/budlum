@@ -1010,6 +1010,11 @@ impl ConsensusEngine for PoSEngine {
             seen_blocks.retain(|(_, slot), _| *slot >= min_slot);
             let pruned = before - seen_blocks.len();
             if pruned > 0 {
+                if let Some(store) = storage {
+                    if let Err(error) = store.prune_seen_blocks_below(min_slot) {
+                        tracing::warn!("Failed to prune persisted seen blocks: {error}");
+                    }
+                }
                 tracing::info!(
                     pruned,
                     remaining = seen_blocks.len(),
@@ -1263,6 +1268,33 @@ mod tests {
         forged.signature = Some(vec![0u8; 64]);
         assert!(engine.observe_received_block(&forged).is_err());
         assert_eq!(engine.slashing_evidence.read().unwrap().len(), 1);
+    }
+
+    /// BLG-0021: the memory map of seen blocks was pruned to two epochs, but
+    /// the SEEN records on disk stayed forever and were all loaded at start.
+    #[test]
+    fn pruning_seen_blocks_also_removes_the_persisted_records() {
+        let config = PoSConfig {
+            epoch_length: 4,
+            ..PoSConfig::default()
+        };
+        let engine = PoSEngine::new(config, None);
+        let dir = tempfile::tempdir().unwrap();
+        let storage = crate::storage::db::Storage::new(dir.path().to_str().unwrap()).unwrap();
+        let alice = KeyPair::generate().unwrap();
+
+        let mut old = Block::new(1, "prev".into(), vec![]);
+        old.sign(&alice);
+        engine.record_block(&old, Some(&storage)).unwrap();
+        assert_eq!(storage.load_all_seen_blocks().unwrap().len(), 1);
+
+        let mut recent = Block::new(21, "prev".into(), vec![]);
+        recent.sign(&alice);
+        engine.record_block(&recent, Some(&storage)).unwrap();
+
+        let on_disk = storage.load_all_seen_blocks().unwrap();
+        assert_eq!(on_disk.len(), 1, "the record for height 1 must be gone");
+        assert!(on_disk.keys().all(|(_, slot)| *slot == 21));
     }
 
     /// BLG-0019: a node that is not the leader for the slot drops the block it

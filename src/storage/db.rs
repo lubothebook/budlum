@@ -1558,6 +1558,30 @@ impl Storage {
         self.db.insert(key.as_bytes(), val)?;
         Ok(())
     }
+    /// Removes the persisted seen-block records below `min_slot`. The memory
+    /// map is pruned the same way. Without this, the records grow without
+    /// bound and every start loads all of them.
+    ///
+    /// # Errors
+    ///
+    /// Propagates `std::io::Error` from the step that failed; its variants name the refused
+    /// conditions.
+    pub fn prune_seen_blocks_below(&self, min_slot: u64) -> std::io::Result<usize> {
+        let mut removed = 0usize;
+        for item in self.db.scan_prefix(b"SEEN:") {
+            let (key, _) = item?;
+            let slot = from_utf8(&key)
+                .ok()
+                .and_then(|k| k.rsplit(':').next())
+                .and_then(|s| s.parse::<u64>().ok());
+            if slot.is_some_and(|s| s < min_slot) {
+                self.db.remove(&key)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     /// # Errors
     ///
     /// Propagates `std::io::Error` from the step that failed; its variants name the refused
