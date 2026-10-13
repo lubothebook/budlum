@@ -1754,7 +1754,20 @@ impl Node {
                            // --- Periodic prevote ---
                            if checkpoint_height > 0 && checkpoint_height > self.last_prevote_height {
                                if let Some(block) = self.chain.get_block(checkpoint_height).await {
-                                   let epoch = checkpoint_height / checkpoint_interval;
+                                   // The receiving side derives the epoch as
+                                   // checkpoint_height / epoch_len
+                                   // (`Blockchain::start_prevote_task`).
+                                   // Signing with the checkpoint-interval
+                                   // divisor made every honest prevote fail
+                                   // `add_prevote` with "Prevote epoch
+                                   // mismatch" on every network where the two
+                                   // divisors differ, so the prevote quorum
+                                   // was never reached and native BLS
+                                   // finality never advanced (P10-F01).
+                                   let epoch = checkpoint_height
+                                       / crate::core::chain_config::epoch_len_for_chain_id(
+                                           chain_id,
+                                       );
                                    match self.chain.sign_prevote(
                                        epoch,
                                        checkpoint_height,
