@@ -109,8 +109,25 @@ fn test_modules(src: &str) -> Vec<TestModule> {
 
         let mut glob = false;
         let mut imported = BTreeSet::new();
+        // A `use` that rustfmt wrapped runs over several lines: join it first.
+        let mut statements: Vec<String> = Vec::new();
+        let mut open: Option<String> = None;
         for l in body_lines {
             let t = l.trim();
+            if let Some(mut acc) = open.take() {
+                acc.push_str(t);
+                if t.contains('}') {
+                    statements.push(acc);
+                } else {
+                    open = Some(acc);
+                }
+            } else if t.starts_with("use super::") && t.contains('{') && !t.contains('}') {
+                open = Some(t.to_string());
+            } else {
+                statements.push(t.to_string());
+            }
+        }
+        for t in &statements {
             let Some(spec) = t.strip_prefix("use super::") else {
                 continue;
             };
@@ -298,6 +315,17 @@ mod tests {
     let gm = g.first().ok_or("no test module in glob variant")?;
     if !gm.glob {
         return Err("a glob import was not recognised".into());
+    }
+
+    // A rustfmt-wrapped import spans lines; every name in it counts.
+    let wrapped = narrow.replace(
+        "use super::helper;",
+        "use super::{\n        helper,\n        other,\n    };",
+    );
+    let w = test_modules(&wrapped);
+    let wm = w.first().ok_or("no test module in wrapped variant")?;
+    if !wm.imported.contains("helper") || !wm.imported.contains("other") {
+        return Err("a multi-line import was not read".into());
     }
 
     // `a::b(` must not be read as a bare call to `b`.
