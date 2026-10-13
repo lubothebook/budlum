@@ -1079,7 +1079,9 @@ async fn main() {
     }
 
     for validator in &poa_validators {
-        blockchain.state.add_validator(*validator, 1);
+        // A restart must not reset a stored authority to stake 1, active and
+        // not slashed.
+        blockchain.state.ensure_validator(*validator, 1);
     }
 
     let (chain_actor, chain) = ChainActor::new(blockchain);
