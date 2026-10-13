@@ -771,6 +771,7 @@ mod tests {
             set_hash: snapshot.set_hash.clone(),
         })
         .unwrap();
+        client.linked.insert(header.index, header.hash.clone());
 
         let verified = client
             .verify_checkpoint(&header, &cert, &snapshot)
