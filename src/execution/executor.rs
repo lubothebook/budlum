@@ -2368,9 +2368,15 @@ impl Executor {
                         "proof_bytes is not a valid bud_proof::ProofEnvelope (postcard)",
                     ));
                 }
+                // Only the full STARK path (registered guest program plus the
+                // claimed public inputs re-derived from the request) marks the
+                // proof verified. A structural-only attach stores evidence but
+                // stays out of `fully_verified_proofs`, so it can never release
+                // a `require_proof` escrow.
+                let fully_verified = stark_girisi.is_some() && report.stark_ok == Some(true);
                 state
                     .ai_registry
-                    .attach_execution_proof(request_id, &tx.from, proof.clone())
+                    .attach_execution_proof(request_id, &tx.from, proof.clone(), fully_verified)
                     .map_err(|e| BudlumError::validation("ai_exec_attach", e))?;
                 // If this attach unlocks finalization for require_execution_proof models,
                 // Try re-check by re-submitting is not automatic, next result or

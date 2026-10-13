@@ -3356,11 +3356,25 @@ impl ChainActor {
         // unsettled requests and evidence are never deleted before the
         // finality plus objection period has elapsed.
         let retention = crate::ai::registry::DISPUTE_WINDOW_BLOCKS;
-        let pruned = self
+        let (pruned, refunds) = self
             .blockchain
             .state
             .ai_registry
             .prune_expired(block_height, retention);
+        // Escrowed fees of pruned, never-reclaimed, never-cancelled requests
+        // go back to their requesters here: the pruned row was the only
+        // on-chain record of the escrow, so this is the last chance to pay it.
+        for (requester, max_fee) in refunds {
+            let account = self.blockchain.state.get_or_create(&requester);
+            match account.balance.checked_add(max_fee) {
+                Some(updated) => account.balance = updated,
+                None => tracing::error!(
+                    %requester,
+                    max_fee,
+                    "AI prune refund would overflow the balance; fee left uncredited"
+                ),
+            }
+        }
         let expired = self
             .blockchain
             .state
