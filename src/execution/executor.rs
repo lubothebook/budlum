@@ -2196,6 +2196,17 @@ impl Executor {
                             "public inputs bind the proof to a different chain",
                         ));
                     }
+                    // The envelope's public inputs and the proof struct are two
+                    // prover-supplied claims about the same run. The AIR binds
+                    // `gas_used` to the trace, so a disagreement means the
+                    // envelope describes a different execution than the one the
+                    // struct's commitments were checked against.
+                    if claimed_inputs.gas_used != proof.gas_used {
+                        return Err(BudlumError::validation(
+                            "ai_exec_gas_mismatch",
+                            "public inputs and proof disagree on gas_used",
+                        ));
+                    }
                     let expected_inputs = claimed_inputs.to_execution_inputs();
                     let program = crate::ai::execution::guest_program_for_model(spec)
                         .map_err(|e| BudlumError::validation("ai_exec_program_rebuild", e))?;

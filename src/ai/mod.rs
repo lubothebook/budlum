@@ -22,6 +22,23 @@ pub use registry::AiRegistry;
 /// inference is compiled and tested, but it is not the production
 /// acceptance condition. Flip this only together with an AIR that binds
 /// the initial memory image (F-08) from a Fiat-Shamir transcript (F-09).
+///
+/// Additional flip conditions found by the second-pass audit (P32-F02):
+/// - `initial_state_root` is a prover claim: rebuilding it node-side
+///   (`expected_initial_state_root`) needs the weights, which are not on
+///   chain (the model registers only a digest and dims). Until weights are
+///   available to the verifier or the AIR binds them, a prover can pair a
+///   valid trace with substituted weights that fold to the claimed root.
+/// - `event_digest` is never compared with the result's `output_commitment`
+///   (different hash domains); the output the proof attests is not yet tied
+///   to the output the chain recorded.
+/// - `sender`, `nonce` and `block_height` in the public inputs are guest-VM
+///   context, not chain values: nothing binds them to the attaching
+///   transaction, so one proof can accompany several requests of the same
+///   model with identical commitments.
+/// While the flag is off this is fail-closed: proof-required models refuse
+/// proofs without public inputs, and `require_proof` payment release accepts
+/// only fully verified attaches (`fully_verified_proofs`).
 pub const FULL_AI_STARK_VERIFICATION_LIVE: bool = false;
 pub use types::{
     AiAgentPayment, AiAgentPaymentSettlement, AiAgentReputation, AiCallbackEvent,

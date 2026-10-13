@@ -248,11 +248,20 @@ rather than on the whole feature: missing public inputs
 (`ai_exec_no_program_hash`), a public-inputs program hash that disagrees with
 the registration (`ai_exec_program_hash`), a non-zero exit code
 (`ai_exec_exit_code`), a `chain_id` that does not match the transaction
-(`ai_exec_chain_id`), and finally the STARK itself against the rebuilt program
-(`ai_exec_stark`). Structural checks (commitments, model id, weights digest)
-still run for every model; they bind the claim but do **not** prove that the
-claimed computation happened - the STARK is what does that, and only for
-proof-required models.
+(`ai_exec_chain_id`), a `gas_used` the public inputs and the proof struct
+disagree on (`ai_exec_gas_mismatch`), and finally the STARK itself against the
+rebuilt program (`ai_exec_stark`). Structural checks (commitments, model id,
+weights digest) still run for every model; they bind the claim but do **not**
+prove that the claimed computation happened - the STARK is what does that, and
+only for proof-required models.
+
+Three public-input claims remain unbound node-side (P32-F02):
+`initial_state_root` (rebuilding it needs the weights, which are not on
+chain), `event_digest` (a different hash domain than the recorded
+`output_commitment`), and the guest-VM context fields (`sender`, `nonce`,
+`block_height`), which nothing ties to the attaching transaction. While
+`FULL_AI_STARK_VERIFICATION_LIVE` is off the path is fail-closed; the flip
+conditions are listed on the constant in `src/ai/mod.rs`.
 
 ## Code that is present but unreachable
 
@@ -309,8 +318,8 @@ The original five-step plan, with what has since landed:
    `BETA`/`GAMMA` it is solvable rather than collision-resistant.
 3. Done. The transaction path derives `ExecutionPublicInputs` from the proof's
    own claim (`AiExecutionProof::public_inputs`), binds it to the registration
-   (program hash, `chain_id`, `exit_code`) and rebuilds the guest program from
-   the registered model.
+   (program hash, `chain_id`, `exit_code`, `gas_used`) and rebuilds the guest
+   program from the registered model.
 4. Done. The executor calls `verify_execution_proof_full` and accepts only with
    `stark_ok == Some(true)` plus a structurally valid report; `stark_error`
    carries the verifier's own reason into the rejection.

@@ -68,6 +68,9 @@ fn execution_path_verifies_the_stark_for_proof_required_models() {
         // just as `program_hash` is, or a proof valid on another chain passes
         // here too.
         "ai_exec_chain_id",
+        // The envelope and the proof struct are two claims about one run:
+        // disagreeing `gas_used` means they describe different executions.
+        "ai_exec_gas_mismatch",
         "ai_exec_stark",
     ] {
         assert!(
