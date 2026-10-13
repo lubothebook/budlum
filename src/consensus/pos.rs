@@ -568,15 +568,6 @@ impl PoSEngine {
         let active_validators = state.get_active_validators();
         let total_stake = state.get_total_stake();
 
-        if block.slashing_evidence.is_none() {
-            if let Ok(mut evidences) = self.slashing_evidence.write() {
-                if !evidences.is_empty() {
-                    block.slashing_evidence = Some(evidences.clone());
-                    evidences.clear();
-                }
-            }
-        }
-
         // Fail-closed when validator set is empty.
         // Previously this returned Ok which allowed hash-only blocks without
         // Producer membership or signature - a security gap in the bootstrap window.
@@ -616,6 +607,16 @@ impl PoSEngine {
                         block.vrf_proof = proof_bytes.to_vec();
                     }
 
+                    // Take the pool only now. A node that is not the leader
+                    // drops this block, and the evidence must stay queued.
+                    if block.slashing_evidence.is_none() {
+                        if let Ok(mut evidences) = self.slashing_evidence.write() {
+                            if !evidences.is_empty() {
+                                block.slashing_evidence = Some(evidences.clone());
+                                evidences.clear();
+                            }
+                        }
+                    }
                     block.producer = Some(pubkey);
                     return Ok(());
                 }
@@ -1262,6 +1263,33 @@ mod tests {
         forged.signature = Some(vec![0u8; 64]);
         assert!(engine.observe_received_block(&forged).is_err());
         assert_eq!(engine.slashing_evidence.read().unwrap().len(), 1);
+    }
+
+    /// BLG-0019: a node that is not the leader for the slot drops the block it
+    /// tried to build. The evidence in the pool must stay in the pool then.
+    #[test]
+    fn failed_block_preview_keeps_the_evidence_pool() {
+        let engine = PoSEngine::new(PoSConfig::default(), None);
+        let alice = KeyPair::generate().unwrap();
+        let mut first = Block::new(10, "prev".into(), vec![]);
+        first.sign(&alice);
+        engine.record_block(&first, None).unwrap();
+        let mut rival = Block::new(10, "prev".into(), vec![]);
+        rival.timestamp += 1000;
+        rival.sign(&alice);
+        engine.observe_received_block(&rival).unwrap();
+        assert_eq!(engine.slashing_evidence.read().unwrap().len(), 1);
+
+        let genesis = Block::genesis();
+        let mut candidate = Block::new(1, genesis.hash.clone(), vec![]);
+        let result =
+            engine.preview_block_with_chain(&mut candidate, &AccountState::new(), &[genesis]);
+        assert!(result.is_err(), "no validator is active, so no leader");
+        assert_eq!(
+            engine.slashing_evidence.read().unwrap().len(),
+            1,
+            "a dropped block must not consume the evidence pool"
+        );
     }
 
     /// BLG-0010: a block below the local checkpoint is part of every candidate
