@@ -217,6 +217,28 @@ impl RelayerExternalResult {
         hasher.update([u8::from(self.success)]);
         if let Some(ref msg) = self.message {
             hasher.update(msg.message_id);
+            // P18-F03: the executor acts on these message fields (bridge
+            // state, unlock domain, correlation). Left out of the leaf, a
+            // valid anchored result could be reused with a different kind or
+            // correlation id and settle a transfer it never proved.
+            hasher.update(b"BDLM_RELAYER_RESULT_MSG_V1");
+            let kind_bytes =
+                bincode::serialize(&msg.kind).unwrap_or_else(|_| TX_SERIALIZE_FAILED.to_vec());
+            hasher.update(
+                u64::try_from(kind_bytes.len())
+                    .unwrap_or(u64::MAX)
+                    .to_be_bytes(),
+            );
+            hasher.update(&kind_bytes);
+            match msg.correlation_id {
+                Some(correlation) => {
+                    hasher.update([1u8]);
+                    hasher.update(correlation);
+                }
+                None => hasher.update([0u8]),
+            }
+            hasher.update(msg.source_domain.to_be_bytes());
+            hasher.update(msg.target_domain.to_be_bytes());
         }
         hasher.finalize().into()
     }
@@ -2824,5 +2846,60 @@ mod v29_signing_tests {
             tx.hash = tx.calculate_hash();
             assert!(!tx.verify(), "the amount is signed");
         }
+    }
+}
+
+#[cfg(test)]
+mod relayer_result_leaf_tests {
+    use super::*;
+    use crate::cross_domain::message::{CrossDomainMessage, CrossDomainMessageParams, MessageKind};
+
+    fn result_with(kind: MessageKind, correlation: Option<[u8; 32]>) -> RelayerExternalResult {
+        let params = CrossDomainMessageParams {
+            source_domain: 1,
+            target_domain: 2,
+            source_height: 10,
+            event_index: 0,
+            nonce: 7,
+            sender: Address::from([1u8; 32]),
+            recipient: Address::from([2u8; 32]),
+            payload_hash: [3u8; 32],
+            kind,
+            expiry_height: 100,
+        };
+        let message = match correlation {
+            Some(c) => CrossDomainMessage::new_correlated(params, c),
+            None => CrossDomainMessage::new(params),
+        };
+        RelayerExternalResult {
+            chain: ExternalChain::Solana,
+            tx_hash: "0xabc".into(),
+            success: true,
+            message: Some(message),
+            receipt_proof: vec![1],
+            external_state_root: [9u8; 32],
+        }
+    }
+
+    /// P18-F03: a valid anchored result cannot be reused under another
+    /// message kind, correlation id, or domain pair.
+    #[test]
+    fn leaf_binds_message_kind_correlation_and_domains() {
+        let lock = result_with(MessageKind::BridgeLock, None);
+        let burn = result_with(MessageKind::BridgeBurn, None);
+        assert_ne!(lock.result_leaf(), burn.result_leaf());
+
+        let uncorrelated = result_with(MessageKind::BridgeBurn, None);
+        let correlated = result_with(MessageKind::BridgeBurn, Some([5u8; 32]));
+        assert_ne!(uncorrelated.result_leaf(), correlated.result_leaf());
+
+        let mut other_domain = result_with(MessageKind::BridgeBurn, None);
+        if let Some(ref mut m) = other_domain.message {
+            m.target_domain = 3;
+        }
+        assert_ne!(uncorrelated.result_leaf(), other_domain.result_leaf());
+
+        let same = result_with(MessageKind::BridgeBurn, None);
+        assert_eq!(uncorrelated.result_leaf(), same.result_leaf());
     }
 }
