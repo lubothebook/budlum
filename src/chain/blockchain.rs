@@ -6125,6 +6125,24 @@ impl Blockchain {
         Ok(())
     }
 
+    /// Counts one invalid vote against `voter`. The epoch comes from gossip,
+    /// so a value far ahead of the chain is not counted: it would move the
+    /// tracker epoch forward and every real epoch after it would read as old.
+    fn note_invalid_vote(&mut self, epoch: u64, voter: Address) {
+        if epoch > self.state.epoch_index.saturating_add(1) {
+            tracing::warn!(epoch, "Invalid vote names an epoch far ahead; not counted");
+            return;
+        }
+        let params = *self.state.registry.params();
+        if let Some(report) = self
+            .state
+            .invalid_votes
+            .record_invalid_vote(epoch, voter, &params)
+        {
+            let _ = self.submit_registry_slashing_report(report);
+        }
+    }
+
     pub fn handle_prevote(&mut self, vote: Prevote) -> Result<(), String> {
         // Validate the BLS signature of the prevote against the
         // Voter's registered BLS public key BEFORE ingesting it. An invalid
@@ -6141,14 +6159,7 @@ impl Blockchain {
                 )
                 .is_err()
             {
-                let params = *self.state.registry.params();
-                if let Some(report) =
-                    self.state
-                        .invalid_votes
-                        .record_invalid_vote(vote.epoch, vote.voter_id, &params)
-                {
-                    let _ = self.submit_registry_slashing_report(report);
-                }
+                self.note_invalid_vote(vote.epoch, vote.voter_id);
                 return Err("Invalid prevote signature".into());
             }
         }
@@ -6188,14 +6199,7 @@ impl Blockchain {
                 if crate::chain::finality::verify_bls_sig(&v.bls_public_key, &msg, &vote.sig_bls)
                     .is_err()
                 {
-                    let params = *self.state.registry.params();
-                    if let Some(report) = self.state.invalid_votes.record_invalid_vote(
-                        vote.epoch,
-                        vote.voter_id,
-                        &params,
-                    ) {
-                        let _ = self.submit_registry_slashing_report(report);
-                    }
+                    self.note_invalid_vote(vote.epoch, vote.voter_id);
                     return Err("Invalid precommit signature".into());
                 }
             }
@@ -7350,6 +7354,25 @@ mod tests {
         assert!(bc
             .submit_slashing_evidence(double_sign_evidence(&insider, 1000))
             .is_err());
+    }
+
+    /// BLG-0088: an invalid vote that names a far future epoch must not move
+    /// the tracker epoch, or the spam guard is closed for good.
+    #[test]
+    fn invalid_vote_with_a_far_future_epoch_is_not_counted() {
+        let mut bc = Blockchain::new(
+            Arc::new(crate::consensus::pow::PoWEngine::new(0)),
+            None,
+            45262,
+            None,
+        );
+        let victim = Address::from([3u8; 32]);
+        bc.note_invalid_vote(u64::MAX, victim);
+        assert_eq!(bc.state.invalid_votes.current_epoch(), 0);
+        assert_eq!(bc.state.invalid_votes.invalid_count(&victim), 0);
+
+        bc.note_invalid_vote(0, victim);
+        assert_eq!(bc.state.invalid_votes.invalid_count(&victim), 1);
     }
 
     /// BLG-0170: a parent hash mismatch freezes the domain, and the freeze must
