@@ -501,9 +501,15 @@ mod tests {
 
         assert_eq!(verify(&proof, &root, &[0x80]).unwrap(), b"receipt-0");
         assert_eq!(verify(&proof, &root, &[0x01]).unwrap(), b"receipt-1");
+        // Nibble 3 has an empty branch slot.
+        assert_eq!(
+            verify(&proof, &root, &[0x30]).unwrap_err(),
+            MptError::KeyNotFound
+        );
+        // Key 0x02 reaches the leaf of nibble 0, whose path is [1], not [2].
         assert_eq!(
             verify(&proof, &root, &[0x02]).unwrap_err(),
-            MptError::KeyNotFound
+            MptError::PathMismatch
         );
     }
 
