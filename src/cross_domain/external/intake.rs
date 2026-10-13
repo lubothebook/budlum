@@ -1249,10 +1249,20 @@ mod tests {
         // An unbonded caller and a malformed payload: both are refusals about
         // the caller's input.
         let unbonded = quorum_evidence(&spec, addr(50));
-        let _ = state.submit_evidence(&unbonded, Some(Box::new(StrictTestBls)));
+        assert!(
+            state
+                .submit_evidence(&unbonded, Some(Box::new(StrictTestBls)))
+                .is_err(),
+            "an unbonded caller must be refused"
+        );
         let mut malformed = quorum_evidence(&spec, addr(9));
         malformed.payload.truncate(1);
-        let _ = state.submit_evidence(&malformed, Some(Box::new(StrictTestBls)));
+        assert!(
+            state
+                .submit_evidence(&malformed, Some(Box::new(StrictTestBls)))
+                .is_err(),
+            "a malformed payload must be refused"
+        );
         let reg = state.registry.domain(&key).expect("domain");
         assert_eq!(reg.record.attestations_refused, 2);
         assert_eq!(

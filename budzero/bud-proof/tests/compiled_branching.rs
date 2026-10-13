@@ -176,11 +176,7 @@ contract LoopWithBranch {
     compile_run_prove(source).expect("a branch inside a loop has to be provable");
 }
 
-/// A proof of one compiled program must not verify against the bytecode of
-/// another compiled program.
-#[test]
-fn a_compiled_proof_is_refused_for_other_bytecode() {
-    let if_source = r#"
+const IF_SOURCE: &str = r#"
 contract IfOnly {
     pub fn main() {
         let a = 5;
@@ -192,7 +188,8 @@ contract IfOnly {
     }
 }
 "#;
-    let loop_source = r#"
+
+const LOOP_SOURCE: &str = r#"
 contract ShortLoop {
     pub fn main() {
         let i = 0;
@@ -203,12 +200,17 @@ contract ShortLoop {
     }
 }
 "#;
-    let (envelope, pi, bytecode) = prove_source(if_source).expect("the control proof must exist");
+
+/// A proof of one compiled program must not verify against the bytecode of
+/// another compiled program.
+#[test]
+fn a_compiled_proof_is_refused_for_other_bytecode() {
+    let (envelope, pi, bytecode) = prove_source(IF_SOURCE).expect("the control proof must exist");
     assert!(
         Prover::verify(&envelope, &pi, &bytecode).is_ok(),
         "the control proof must verify, or the refusal below proves nothing"
     );
-    let other = compile(loop_source, IsaProfile::Experimental).expect("the loop must compile");
+    let other = compile(LOOP_SOURCE, IsaProfile::Experimental).expect("the loop must compile");
     assert_ne!(other, bytecode, "the two programs must differ");
     assert!(
         Prover::verify(&envelope, &pi, &other).is_err(),
