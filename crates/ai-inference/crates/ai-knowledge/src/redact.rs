@@ -411,8 +411,9 @@ pub fn redact_text(text: &str) -> RedactionResult {
                 lines.push(format!("{}{REDACTION_TOKEN}", &line[..width]));
                 continue;
             }
-            block = None;
         }
+        // A line that does not nest under the block ends it; the next state
+        // comes from this line alone.
         block = block_scalar_indent(line);
         let l = redact_key_value(line, &mut report);
         lines.push(redact_known_values(&l, &mut report));
