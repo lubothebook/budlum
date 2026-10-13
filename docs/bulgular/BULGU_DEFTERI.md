@@ -8,7 +8,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 |---|---|---|---|---|---|---|
 | P0 | BLG-0001 | .gitleaks.toml | CI #122 Secret Scan: `[[allowlists]] must contain at least one check`; düzeltme b35dd86 (parmak izi .gitleaksignore dosyasına taşındı); yeşil kanıt bekleniyor | CI BEKLİYOR | b35dd86 |  |
 | P0 | BLG-0002 | src/network/regen_health_tick.rs:337 | CI #124 Clippy: `field_reassign_with_default` (-D warnings), iş 115030778899 ve 115030778747 / gp/P0-A:fd859e7 | CI BEKLİYOR | 9aaedcc |  |
-| P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı / karar A: quinn-proto kilit güncellemesi (ana oturum), sonra chacha20 / yerel dogrulama: commit yok, kilit guncellemesi yapilmadi | AÇIK |  |  |
+| P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı / karar A uygulandı: quinn-proto 0.11.19'a yükseltildi (iki kilit de); chacha20 0.9.1 ağaçta bağımlısız bayat kilit girdisi (cargo tree -i boş), GHSA kaydı yok | CI BEKLİYOR | 8ebb6d5 |  |
 | P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile / yerel dogrulama: kapi kirmizi: dead-public-api-is-ratcheted taban 216 iken 212 (taban sikilastirilmadi), no-idle-code decode_qr_video, actionlint/typos/zizmor yerelde yok | AÇIK | 11a9f19,d02f37e |  |
 | P0 | BLG-0005 | PR9 mergeable_state | PR9 `dirty` idi, son iki commit için `pull_request` CI hiç çalışmadı; 030cc60 merge commit ile giderildi | CI BEKLİYOR | 030cc60 |  |
 | P01 | BLG-0006 | - | P01-F01: FINDINGS.md:11; ham önem Critical / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -472,9 +472,9 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P31 | BLG-0464 | src/ai/types.rs:74-84 | P31-F11: notes/P31-scan.md:186; ham önem Low | AÇIK |  |  |
 | P31 | BLG-0465 | src/ai/mod.rs:3007-3018, 3508-3526, 4249-4263, 4675-4696 | P31-F12: notes/P31-scan.md:196; ham önem Low | AÇIK |  |  |
 | P31 | BLG-0466 | src/ai/mod.rs:3589-3603 | P31-F13: notes/P31-scan.md:210; ham önem Info | AÇIK |  |  |
-| P32 | BLG-0467 | src/ai/registry.rs:722-753 | P32-F01: notes/P32-scan.md:45; ham önem High | AÇIK |  |  |
+| P32 | BLG-0467 | src/ai/registry.rs:722-753 | P32-F01: notes/P32-scan.md:45; ham önem High / prune_expired artık reclaim/cancel görmemiş satırların (requester, max_fee) iadesini döndürüyor, chain_actor bakım tick'inde kredilendiriyor; 2 yeni test (prune_refunds_escrow_of_never_reclaimed_request, prune_does_not_refund_cancelled_or_reclaimed_requests) | CI BEKLİYOR | f50e691 |  |
 | P32 | BLG-0468 | src/execution/executor.rs:2146-2193 | P32-F02: notes/P32-scan.md:66; ham önem High | AÇIK |  |  |
-| P32 | BLG-0469 | src/execution/executor.rs:2141-2144, 2210-2215, 2312-2365 | P32-F03: notes/P32-scan.md:87; ham önem High | AÇIK |  |  |
+| P32 | BLG-0469 | src/execution/executor.rs:2141-2144, 2210-2215, 2312-2365 | P32-F03: notes/P32-scan.md:87; ham önem High / fully_verified_proofs kümesi eklendi: require_proof escrow salımı yalnız tam STARK doğrulamalı attach ile, bayrak kapalıyken fail-closed; test require_proof_release_needs_fully_verified_proof | CI BEKLİYOR | f50e691 |  |
 | P32 | BLG-0470 | src/network/proto_conversions.rs:202-222, 1046-1088 | P32-F04: notes/P32-scan.md:106; ham önem Medium | AÇIK |  |  |
 | P32 | BLG-0471 | src/execution/executor.rs:2371 | P32-F05: notes/P32-scan.md:124; ham önem Medium | AÇIK |  |  |
 | P32 | BLG-0472 | src/ai/types.rs:253-282 | P32-F06: notes/P32-scan.md:140; ham önem Medium | AÇIK |  |  |
