@@ -339,9 +339,20 @@ fn engine_store_with(data: &[u8], erasure: bool, ts_unix: u64, fcdc: bool) -> Op
                 data,
                 crate::bud_format_columnar::ColumnarMode::Exact,
             ) {
+                // The transform is kept only when it restores the exact input
+                // bytes. Key order, spacing, escapes and number spelling can
+                // differ after a decode, and a container that restores to
+                // other bytes must not be reported as stored.
                 Some(col) => {
-                    transform_kind = TransformKind::Columnar;
-                    crate::bud_format_columnar::columnar_to_blob(&col)?
+                    let blob = crate::bud_format_columnar::columnar_to_blob(&col)?;
+                    let restored = crate::bud_format_columnar::columnar_from_blob(&blob)
+                        .and_then(|c| crate::bud_format_columnar::columnar_decode(&c));
+                    if restored.as_deref() == Some(data) {
+                        transform_kind = TransformKind::Columnar;
+                        blob
+                    } else {
+                        data.to_vec()
+                    }
                 }
                 None => data.to_vec(),
             }
@@ -576,6 +587,16 @@ mod tests {
         // the record blob
         let blob = res.to_blob();
         assert_eq!(&blob[..8], &ENGINE_MAGIC);
+    }
+
+    /// BLG-0581: a JSON array whose records list their keys in another order
+    /// restored to different bytes while the store reported success.
+    #[test]
+    fn json_that_does_not_roundtrip_exactly_is_stored_untransformed() {
+        let json = br#"[{"a":1,"b":2},{"b":3,"a":4}]"#.to_vec();
+        let res = engine_store(&json, false, 1).expect("engine");
+        let restored = engine_restore_container(&res.container, res.transform_kind.to_u8(), false);
+        assert_eq!(restored, Some(json));
     }
 
     #[test]
