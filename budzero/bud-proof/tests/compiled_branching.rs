@@ -190,7 +190,7 @@ contract IfOnly {
             emit Smaller(a);
         }
     }
-}
+    }
 "#;
     let loop_source = r#"
 contract ShortLoop {
@@ -201,7 +201,7 @@ contract ShortLoop {
         }
         emit R(i);
     }
-}
+    }
 "#;
     let (envelope, pi, bytecode) = prove_source(if_source).expect("the control proof must exist");
     assert!(
