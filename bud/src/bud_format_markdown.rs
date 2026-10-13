@@ -105,12 +105,19 @@ impl MarkdownSplit {
             return None;
         }
         let trailing_newline = md.ends_with('\n');
-        Some(MarkdownSplit {
+        let split = MarkdownSplit {
             sections,
             contents,
             heading_tree,
             trailing_newline,
-        })
+        };
+        // `str::lines` also removes the CR of a CRLF ending. The split must
+        // give the input back byte for byte, so any input it cannot restore
+        // (CRLF) is refused here instead of changing silently.
+        if split.decode() != md {
+            return None;
+        }
+        Some(split)
     }
 
     /// Join the sections. Returns the input of `encode` byte for byte.
@@ -311,6 +318,18 @@ mod tests {
         assert!(
             MarkdownSplit::from_blob(&b).is_none(),
             "a u32::MAX section count with no body must be refused"
+        );
+    }
+
+    /// BLG-0611: a CRLF document lost its CR in the split and came back
+    /// changed. Input the split cannot restore byte for byte is refused.
+    #[test]
+    fn crlf_markdown_is_refused_not_changed() {
+        assert!(MarkdownSplit::encode("# A\r\ntext\r\n").is_none());
+        let lf = "# A\ntext\n";
+        assert_eq!(
+            MarkdownSplit::encode(lf).map(|s| s.decode()).as_deref(),
+            Some(lf)
         );
     }
 
