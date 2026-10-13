@@ -404,7 +404,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P27 | BLG-0396 | src/storage/lrc.rs | P27-F05: notes/P27-scan.md:100; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (bud.rs, storage_deal.rs, registry.rs, bud-vm) | AÇIK |  |  |
 | P27 | BLG-0397 | src/storage/erasure.rs:783-866 | P27-F06: notes/P27-scan.md:118; ham önem Low | CI BEKLİYOR | f89ea31 |  |
 | P27 | BLG-0398 | src/storage/erasure.rs:818-866 | P27-F07: notes/P27-scan.md:132; ham önem Low | CI BEKLİYOR | 5ced5f8 |  |
-| P27 | BLG-0399 | src/storage/payload_crypt.rs:40-48, 146-167 | P27-F08: notes/P27-scan.md:149; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 0c31d97 |  |
+| P27 | BLG-0399 | src/storage/payload_crypt.rs:40-48, 146-167 | P27-F08: notes/P27-scan.md:149; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 0c31d97 |  |
 | P27 | BLG-0400 | src/storage/pact_binding.rs:38, 85, 107 | P27-F09: notes/P27-scan.md:164; ham önem Low | AÇIK |  |  |
 | P27 | BLG-0401 | src/storage/pact_binding.rs:20-30, 115-118 | P27-F10: notes/P27-scan.md:179; ham önem Low | AÇIK |  |  |
 | P27 | BLG-0402 | src/storage/dictionary.rs:217-221, 242-271, 364-394 | P27-F11: notes/P27-scan.md:189; ham önem Low | AÇIK |  |  |
@@ -463,7 +463,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P31 | BLG-0455 | src/ai/types.rs:253-284 | P31-F02: notes/P31-scan.md:60; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P31 | BLG-0456 | src/ai/types.rs:661-673 | P31-F03: notes/P31-scan.md:77; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P31 | BLG-0457 | src/ai/types.rs:944-951, 982-995 | P31-F04: notes/P31-scan.md:94; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P31 | BLG-0458 | src/ai/types.rs:202-251 | P31-F05: notes/P31-scan.md:111; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | b0347aa |  |
+| P31 | BLG-0458 | src/ai/types.rs:202-251 | P31-F05: notes/P31-scan.md:111; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | b0347aa |  |
 | P31 | BLG-0459 | src/ai/types.rs:87-117 | P31-F06: notes/P31-scan.md:126; ham önem Low | CI BEKLİYOR | 3fba7e9 |  |
 | P31 | BLG-0460 | src/ai/types.rs:716-726, 955-962 | P31-F07: notes/P31-scan.md:141; ham önem Info | CI BEKLİYOR | 4436e86 |  |
 | P31 | BLG-0461 | src/ai/types.rs:738-751, 953-979 | P31-F08: notes/P31-scan.md:156; ham önem Info | CI BEKLİYOR | 7629059 |  |
@@ -528,13 +528,13 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P34 | BLG-0520 | crates/ai-inference/crates/ai-ops/src/main.rs:86-92 | P34-F17: notes/P34-scan.md:307; ham önem Info | AÇIK |  |  |
 | P34 | BLG-0521 | crates/ai-inference/crates/ai-core/src/system_prompt.rs:317-357 | P34-F18: notes/P34-scan.md:321; ham önem Low | AÇIK |  |  |
 | P35 | BLG-0522 | budzero/bud-compiler/src/codegen.rs:367-398 | P35-F01: notes/P35-scan.md:39; ham önem High | CI BEKLİYOR | 93c1c55 |  |
-| P35 | BLG-0523 | budzero/bud-compiler/src/codegen.rs:215-221, 271-287, 437-441, 647-649 | P35-F02: notes/P35-scan.md:59; ham önem High | CI BEKLİYOR | 27b3681 |  |
+| P35 | BLG-0523 | budzero/bud-compiler/src/codegen.rs:215-221, 271-287, 437-441, 647-649 | P35-F02: notes/P35-scan.md:59; ham önem High | CI BEKLİYOR | 27b3681,2e21363 |  |
 | P35 | BLG-0524 | budzero/bud-compiler/src/codegen.rs:702-704, 718-744, 751-754 | P35-F03: notes/P35-scan.md:79; ham önem High | CI BEKLİYOR | 19e70b6 |  |
 | P35 | BLG-0525 | budzero/bud-compiler/src/codegen.rs:263-268, 691-699 | P35-F04: notes/P35-scan.md:100; ham önem High / BAĞIMLI: sahip olunmayan dosya (bud.rs, storage_deal.rs, registry.rs, bud-vm) | AÇIK |  |  |
-| P35 | BLG-0526 | budzero/bud-compiler/src/codegen.rs:389-392 | P35-F05: notes/P35-scan.md:117; ham önem Medium | CI BEKLİYOR | 741eb5d |  |
+| P35 | BLG-0526 | budzero/bud-compiler/src/codegen.rs:389-392 | P35-F05: notes/P35-scan.md:117; ham önem Medium | CI BEKLİYOR | 741eb5d,2e21363 |  |
 | P35 | BLG-0527 | budzero/bud-compiler/src/codegen.rs:346-430 | P35-F06: notes/P35-scan.md:132; ham önem Medium | CI BEKLİYOR | 87e6634 |  |
-| P35 | BLG-0528 | budzero/bud-compiler/src/sema.rs:534-553 | P35-F07: notes/P35-scan.md:147; ham önem Medium | CI BEKLİYOR | 5014fa8 |  |
-| P35 | BLG-0529 | budzero/bud-compiler/src/parser.rs:514-583 | P35-F08: notes/P35-scan.md:165; ham önem Medium | CI BEKLİYOR | 7302e59 |  |
+| P35 | BLG-0528 | budzero/bud-compiler/src/sema.rs:534-553 | P35-F07: notes/P35-scan.md:147; ham önem Medium | CI BEKLİYOR | 5014fa8,2e21363 |  |
+| P35 | BLG-0529 | budzero/bud-compiler/src/parser.rs:514-583 | P35-F08: notes/P35-scan.md:165; ham önem Medium | CI BEKLİYOR | 7302e59,12b3aff,e02c3b9 |  |
 | P35 | BLG-0530 | budzero/bud-compiler/src/lexer.rs:95-97 | P35-F09: notes/P35-scan.md:181; ham önem Medium | AÇIK |  |  |
 | P35 | BLG-0531 | budzero/bud-compiler/src/parser.rs:693-712 | P35-F10: notes/P35-scan.md:195; ham önem Medium | AÇIK |  |  |
 | P35 | BLG-0532 | budzero/bud-compiler/src/parser.rs:220-227 | P35-F11: notes/P35-scan.md:211; ham önem Medium | AÇIK |  |  |
@@ -555,7 +555,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P35 | BLG-0547 | budzero/bud-compiler/src/sema.rs:19-27, 303-308 | P35-F26: notes/P35-scan.md:426; ham önem Info | AÇIK |  |  |
 | P36 | BLG-0548 | src/network/proto_conversions.rs:202-228 | P36-F01: notes/P36-scan.md:35; ham önem High | CI BEKLİYOR | d002222 |  |
 | P36 | BLG-0549 | src/network/peer_manager.rs:73-84, 85-101, 399-427 | P36-F02: notes/P36-scan.md:55; ham önem High | CI BEKLİYOR | f95c972 |  |
-| P36 | BLG-0550 | src/network/node.rs:2923-2937 | P36-F03: notes/P36-scan.md:74; ham önem Medium / BAĞIMLI: src/network/node.rs (W2-NODE sahipliği sonraki turda) | CI BEKLİYOR | eefd0be |  |
+| P36 | BLG-0550 | src/network/node.rs:2923-2937 | P36-F03: notes/P36-scan.md:74; ham önem Medium / BAĞIMLI: src/network/node.rs (W2-NODE sahipliği sonraki turda) | CI BEKLİYOR | eefd0be,9b2cc24 |  |
 | P36 | BLG-0551 | src/network/sync_codec.rs:20-34, 56, 67 | P36-F04: notes/P36-scan.md:92; ham önem Medium / BAĞIMLI: src/network/node.rs (W2-NODE sahipliği sonraki turda) | CI BEKLİYOR | 8bfb1f2 |  |
 | P36 | BLG-0552 | src/network/gossip_dedup.rs:167-192, 249-254 | P36-F05: notes/P36-scan.md:110; ham önem Medium | CI BEKLİYOR | c97e8aa |  |
 | P36 | BLG-0553 | src/network/proto_conversions.rs:1698-1701, 1978-1984, 1991-1996, 989-997 | P36-F06: notes/P36-scan.md:128; ham önem Medium | CI BEKLİYOR | 4bc3aba |  |
@@ -578,8 +578,8 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P37 | BLG-0570 | bud/src/bud_format.rs:376-427 | P37-F04: notes/P37-scan.md:94; ham önem Medium | CI BEKLİYOR | eaf1cf8 |  |
 | P37 | BLG-0571 | bud/src/bud_format.rs:302-326, 360-365 | P37-F05: notes/P37-scan.md:104; ham önem Low / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P37 | BLG-0572 | bud/src/bin/bud.rs:819-826 | P37-F06: notes/P37-scan.md:114; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (bud.rs, storage_deal.rs, registry.rs, bud-vm) | AÇIK |  |  |
-| P37 | BLG-0573 | bud/src/bud_format.rs:626-772, 774-796 | P37-F07: notes/P37-scan.md:130; ham önem Medium | CI BEKLİYOR | b487f03 |  |
-| P37 | BLG-0574 | bud/src/bud_format.rs:382, 399, 401, 409, 421, 429-609 | P37-F08: notes/P37-scan.md:144; ham önem Low | CI BEKLİYOR | e27b13d |  |
+| P37 | BLG-0573 | bud/src/bud_format.rs:626-772, 774-796 | P37-F07: notes/P37-scan.md:130; ham önem Medium | CI BEKLİYOR | b487f03,19dceb9 |  |
+| P37 | BLG-0574 | bud/src/bud_format.rs:382, 399, 401, 409, 421, 429-609 | P37-F08: notes/P37-scan.md:144; ham önem Low | CI BEKLİYOR | e27b13d,5e3928e,e02c3b9 |  |
 | P37 | BLG-0575 | bud/src/bud_format.rs:834-841 | P37-F09: notes/P37-scan.md:154; ham önem Low | AÇIK |  |  |
 | P37 | BLG-0576 | bud/src/bud_fixed_point.rs:26-31 | P37-F10: notes/P37-scan.md:171; ham önem Low | AÇIK |  |  |
 | P37 | BLG-0577 | bud/src/bud_fixed_point.rs:116-119 | P37-F11: notes/P37-scan.md:187; ham önem Low | AÇIK |  |  |
@@ -612,7 +612,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P38 | BLG-0604 | bud/src/lib.rs:24-47, 127-149 | P38-F02: notes/P38-scan.md:63; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P38 | BLG-0605 | bud/src/bud_format_integration.rs:99-123 | P38-F03: notes/P38-scan.md:70; ham önem Medium | CI BEKLİYOR | 9a8843f,ca96ba0 |  |
 | P38 | BLG-0606 | bud/src/bud_format_logfield.rs:135-141 | P38-F04: notes/P38-scan.md:84; ham önem Medium | CI BEKLİYOR | 4c55b68 |  |
-| P38 | BLG-0607 | bud/src/bud_format_hw.rs:60-67, 94-107, 124-138 | P38-F05: notes/P38-scan.md:99; ham önem Medium | CI BEKLİYOR | 500cc67 |  |
+| P38 | BLG-0607 | bud/src/bud_format_hw.rs:60-67, 94-107, 124-138 | P38-F05: notes/P38-scan.md:99; ham önem Medium | CI BEKLİYOR | 500cc67,dd7aa54,e02c3b9 |  |
 | P38 | BLG-0608 | bud/src/bud_format_matrix.rs:25-31, 301-324, 332-354, 380-391 | P38-F06: notes/P38-scan.md:111; ham önem Medium | CI BEKLİYOR | 4cb8f86 |  |
 | P38 | BLG-0609 | bud/src/bud_format_huffman.rs:35-91 | P38-F07: notes/P38-scan.md:124; ham önem Medium | CI BEKLİYOR | fdfb0ac |  |
 | P38 | BLG-0610 | bud/src/bud_format_markdown.rs:72-80, 64-65 | P38-F08: notes/P38-scan.md:135; ham önem Low | CI BEKLİYOR | 91cb534 |  |
@@ -639,14 +639,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P38 | BLG-0631 | bud/src/bud_format_exepdf.rs:7-13, 66-103, 128-148 | P38-F29: notes/P38-scan.md:376; ham önem Info | AÇIK |  |  |
 | P38 | BLG-0632 | 18 files: matrix (12 hits), lowrank (20), hardening (9), guardian (5), fidelityg | P38-F30: notes/P38-scan.md:383; ham önem Info | AÇIK |  |  |
 | P38 | BLG-0633 | bud/src/bud_format_genomic.rs:42-99 | P38-F31: notes/P38-scan.md:390; ham önem Info | AÇIK |  |  |
-| P39 | BLG-0634 | bud/src/bud_format_qrvideo.rs:250-264, 267-288, 290-314, 371-385, 218-222, 553-566 | P39-F01: notes/P39-scan.md:25; ham önem Medium | CI BEKLİYOR | 25496cc |  |
+| P39 | BLG-0634 | bud/src/bud_format_qrvideo.rs:250-264, 267-288, 290-314, 371-385, 218-222, 553-566 | P39-F01: notes/P39-scan.md:25; ham önem Medium | CI BEKLİYOR | 25496cc,05b850d |  |
 | P39 | BLG-0635 | bud/src/bud_format_qrvideo.rs:267-288, 318-343 | P39-F02: notes/P39-scan.md:41; ham önem Medium | CI BEKLİYOR | cf0ebec |  |
 | P39 | BLG-0636 | bud/src/bud_format_qrvideo.rs:1-11, 169-203, 132-146, 402-409 | P39-F03: notes/P39-scan.md:56; ham önem Medium | CI BEKLİYOR | b99fce9 |  |
 | P39 | BLG-0637 | bud/src/bud_format_qrmatrix.rs:97-137, 1-13 | P39-F04: notes/P39-scan.md:69; ham önem Medium | CI BEKLİYOR | 029fb30 |  |
 | P39 | BLG-0638 | bud/src/bud_format_por.rs:44-51, 56-66, 72-81, 87-106 | P39-F05: notes/P39-scan.md:84; ham önem Medium | CI BEKLİYOR | 0af74ea |  |
 | P39 | BLG-0639 | bud/src/bud_format_pcap.rs:21, 62-95, 82-83, 146-150, 246-247, 371 | P39-F06: notes/P39-scan.md:99; ham önem Medium | CI BEKLİYOR | a836012 |  |
-| P39 | BLG-0640 | bud/src/bud_format_office.rs:33-64, 71-78, 83-100, 104-198, 11-13, 230-232 | P39-F07: notes/P39-scan.md:113; ham önem Medium / kısmi: DEFLATE çözücü yeni crate KARAR | KODLANIYOR | 0aa9b34 |  |
-| P39 | BLG-0641 | bud/src/bud_format_scrub.rs:36-44, 76-84 | P39-F08: notes/P39-scan.md:128; ham önem Medium | CI BEKLİYOR | 0ff89df |  |
+| P39 | BLG-0640 | bud/src/bud_format_office.rs:33-64, 71-78, 83-100, 104-198, 11-13, 230-232 | P39-F07: notes/P39-scan.md:113; ham önem Medium / kısmi: DEFLATE çözücü yeni crate KARAR / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 0aa9b34 |  |
+| P39 | BLG-0641 | bud/src/bud_format_scrub.rs:36-44, 76-84 | P39-F08: notes/P39-scan.md:128; ham önem Medium | CI BEKLİYOR | 0ff89df,05b850d |  |
 | P39 | BLG-0642 | bud/src/bud_format_recipe_record.rs:74-96, 99-106 | P39-F09: notes/P39-scan.md:141; ham önem Medium | AÇIK |  |  |
 | P39 | BLG-0643 | bud/src/bud_format_recipe_record.rs:44-49, 65-70, 115-126 | P39-F10: notes/P39-scan.md:155; ham önem Medium | AÇIK |  |  |
 | P39 | BLG-0644 | bud/src/bud_format_ratioconsensus.rs:44-52, 71-135, 157-180, 208-243 | P39-F11: notes/P39-scan.md:170; ham önem Medium | AÇIK |  |  |
@@ -671,9 +671,9 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P40 | BLG-0663 | bud/src/bud_format_zkbridge.rs:34-63, 79-91 | P40-F01: notes/P40-scan.md:55; ham önem Medium | CI BEKLİYOR | a19cb1f |  |
 | P40 | BLG-0664 | bud/src/bud_format_zkproof.rs:94-110 | P40-F02: notes/P40-scan.md:77; ham önem Medium | CI BEKLİYOR | 3167af1 |  |
 | P40 | BLG-0665 | bud/src/bud_format_timeseries.rs:25, 179, 236-270 | P40-F03: notes/P40-scan.md:94; ham önem Medium | CI BEKLİYOR | 7d566e7 |  |
-| P40 | BLG-0666 | bud/src/bud_format_view.rs:46-115, 118-139, 164 | P40-F04: notes/P40-scan.md:109; ham önem Medium | CI BEKLİYOR | 7fe61fe |  |
-| P40 | BLG-0667 | bud/src/quantum_chain.rs:49-90 | P40-F05: notes/P40-scan.md:123; ham önem Medium | CI BEKLİYOR | 77d0c07 |  |
-| P40 | BLG-0668 | bud/src/quantum_chain.rs:110-138 | P40-F06: notes/P40-scan.md:139; ham önem Medium | CI BEKLİYOR | 75cfae4 |  |
+| P40 | BLG-0666 | bud/src/bud_format_view.rs:46-115, 118-139, 164 | P40-F04: notes/P40-scan.md:109; ham önem Medium | CI BEKLİYOR | 7fe61fe,9b51306 |  |
+| P40 | BLG-0667 | bud/src/quantum_chain.rs:49-90 | P40-F05: notes/P40-scan.md:123; ham önem Medium | CI BEKLİYOR | 77d0c07,23ccc4b,e02c3b9 |  |
+| P40 | BLG-0668 | bud/src/quantum_chain.rs:110-138 | P40-F06: notes/P40-scan.md:139; ham önem Medium | CI BEKLİYOR | 75cfae4,23ccc4b,e02c3b9 |  |
 | P40 | BLG-0669 | bud/src/quantum_chain.rs:140-235, 186-195 | P40-F07: notes/P40-scan.md:158; ham önem Medium | CI BEKLİYOR | 123a8d7 |  |
 | P40 | BLG-0670 | bud/src/provider.rs:83-96, 118-128 | P40-F08: notes/P40-scan.md:174; ham önem Medium | CI BEKLİYOR | ee65265 |  |
 | P40 | BLG-0671 | bud/src/gates.rs:152-173 | P40-F09: notes/P40-scan.md:188; ham önem Medium | AÇIK |  |  |
@@ -700,15 +700,15 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P41 | BLG-0692 | src/bin/bud.rs:304-308 | P41-F01: notes/P41-scan.md:41; ham önem Medium | CI BEKLİYOR | 86af043 |  |
 | P41 | BLG-0693 | src/bin/budlum-relayer.rs:769-771 | P41-F02: notes/P41-scan.md:61; ham önem Medium | CI BEKLİYOR | cd1a32f |  |
 | P41 | BLG-0694 | src/bin/budlum-relayer.rs:285-343, 352-361, 606-617 | P41-F03: notes/P41-scan.md:77; ham önem Medium | CI BEKLİYOR | 34db0b2 |  |
-| P41 | BLG-0695 | src/bin/budlum-relayer.rs:600-603, 606-617, 638-652 | P41-F04: notes/P41-scan.md:93; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | e71ae67 |  |
+| P41 | BLG-0695 | src/bin/budlum-relayer.rs:600-603, 606-617, 638-652 | P41-F04: notes/P41-scan.md:93; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | e71ae67 |  |
 | P41 | BLG-0696 | src/bin/budlum-relayer.rs:491-498, 504-508 | P41-F05: notes/P41-scan.md:111; ham önem Medium | CI BEKLİYOR | 45e6a03 |  |
 | P41 | BLG-0697 | src/bin/budlum-relayer.rs:181-197 | P41-F06: notes/P41-scan.md:128; ham önem Low | CI BEKLİYOR | a75ec33 |  |
-| P41 | BLG-0698 | src/bin/bud.rs:243-265, 287-288 | P41-F07: notes/P41-scan.md:142; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 2b170e5 |  |
-| P41 | BLG-0699 | budzero/bud-node/src/store.rs:106-136, 154-162 | P41-F08: notes/P41-scan.md:157; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | ad92c01 |  |
+| P41 | BLG-0698 | src/bin/bud.rs:243-265, 287-288 | P41-F07: notes/P41-scan.md:142; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 2b170e5 |  |
+| P41 | BLG-0699 | budzero/bud-node/src/store.rs:106-136, 154-162 | P41-F08: notes/P41-scan.md:157; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | ad92c01 |  |
 | P41 | BLG-0700 | budzero/bud-node/src/bitswap.rs:64-78, 129-130 | P41-F09: notes/P41-scan.md:175; ham önem Low | AÇIK |  |  |
 | P41 | BLG-0701 | budzero/bud-cli/src/main.rs:292-296, 893, 331 | P41-F10: notes/P41-scan.md:189; ham önem Low | AÇIK |  |  |
 | P41 | BLG-0702 | budzero/bud-cli/src/main.rs:40-46, 369-371, 1088-1105 | P41-F11: notes/P41-scan.md:205; ham önem Low | AÇIK |  |  |
-| P41 | BLG-0703 | budzero/bud-cli/src/main.rs:12-30, 995-1021 | P41-F12: notes/P41-scan.md:219; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | a21282b |  |
+| P41 | BLG-0703 | budzero/bud-cli/src/main.rs:12-30, 995-1021 | P41-F12: notes/P41-scan.md:219; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | a21282b |  |
 | P41 | BLG-0704 | budzero/bud-cli/src/main.rs:533-593, 649-678 | P41-F13: notes/P41-scan.md:234; ham önem Low | AÇIK |  |  |
 | P41 | BLG-0705 | src/bin/budlum-light.rs:121-189 | P41-F14: notes/P41-scan.md:249; ham önem Medium | AÇIK |  |  |
 | P41 | BLG-0706 | src/bin/budlum-light.rs:80-96 | P41-F15: notes/P41-scan.md:265; ham önem Low | AÇIK |  |  |
@@ -749,7 +749,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P43 | BLG-0741 | src/pollen/offers.rs:327-335, 693-720 | P43-F04: notes/P43-scan.md:113; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P43 | BLG-0742 | crates/budscan/src/resolve.rs:192-214 | P43-F05: notes/P43-scan.md:130; ham önem Medium | CI BEKLİYOR | 61ce32c |  |
 | P43 | BLG-0743 | crates/budscan/src/bns_proof.rs:104-117, 148-153 | P43-F06: notes/P43-scan.md:146; ham önem Low | CI BEKLİYOR | b52a403 |  |
-| P43 | BLG-0744 | crates/budscan/browser/patches/bud-protocol-handler.patch:36-37 (USE_LIBS), 261- | P43-F07: notes/P43-scan.md:160; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI | KODLANIYOR | 68c7d37 |  |
+| P43 | BLG-0744 | crates/budscan/browser/patches/bud-protocol-handler.patch:36-37 (USE_LIBS), 261- | P43-F07: notes/P43-scan.md:160; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 68c7d37 |  |
 | P43 | BLG-0745 | crates/budscan/browser/patches/address-bar-verification-badge.patch:120-130 | P43-F08: notes/P43-scan.md:176; ham önem Low | CI BEKLİYOR | 7a0e25a |  |
 | P43 | BLG-0746 | crates/budscan/src/resolve.rs:251-254 | P43-F09: notes/P43-scan.md:191; ham önem Low | AÇIK |  |  |
 | P43 | BLG-0747 | src/pollen/offers.rs:418-432 | P43-F10: notes/P43-scan.md:207; ham önem Low | AÇIK |  |  |
