@@ -149,9 +149,7 @@ impl MemoryContentStore {
     /// is that many default-size (256 KiB) chunks.
     pub fn new(max_capacity: usize) -> Self {
         // An overflow means "more than any machine has": no byte bound.
-        let max_bytes = max_capacity
-            .checked_mul(DEFAULT_CHUNK_BYTES)
-            .unwrap_or(usize::MAX);
+        let max_bytes = max_capacity.saturating_mul(DEFAULT_CHUNK_BYTES);
         Self::with_limits(max_capacity, max_bytes)
     }
 
@@ -193,7 +191,7 @@ fn remove_chunk(state: &mut StoreState, id: &ContentId) -> bool {
         Some(data) => {
             // The count is the sum of the stored lengths, so it cannot go
             // below zero; a mismatch resets to zero instead of wrapping.
-            state.bytes = state.bytes.checked_sub(data.len()).unwrap_or(0);
+            state.bytes = state.bytes.saturating_sub(data.len());
             state.order.retain(|queued| queued != id);
             true
         }
@@ -236,12 +234,12 @@ impl ContentStore for MemoryContentStore {
                 break;
             };
             if let Some(old) = state.chunks.remove(&oldest) {
-                state.bytes = state.bytes.checked_sub(old.len()).unwrap_or(0);
+                state.bytes = state.bytes.saturating_sub(old.len());
                 tracing::debug!(%oldest, "evicted oldest chunk (capacity reached)");
             }
         }
 
-        state.bytes = state.bytes.checked_add(data.len()).unwrap_or(usize::MAX);
+        state.bytes = state.bytes.saturating_add(data.len());
         state.order.push_back(id);
         state.chunks.insert(id, data);
         Ok(())
@@ -381,7 +379,7 @@ mod tests {
             })
             .collect();
         // Insert the highest CID first, the lowest CID last.
-        chunks.sort_by(|a, b| b.0.cmp(&a.0));
+        chunks.sort_by_key(|chunk| std::cmp::Reverse(chunk.0));
         store.put(chunks[0].0, chunks[0].1.clone()).unwrap();
         store.put(chunks[1].0, chunks[1].1.clone()).unwrap();
         store.put(chunks[2].0, chunks[2].1.clone()).unwrap();
