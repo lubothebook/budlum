@@ -116,7 +116,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "experimental")]
     fn compiles_for_loop_to_executable_bytecode() {
         let source = r#"
             contract ForTest {
@@ -299,7 +298,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "experimental")]
     fn test_operator_precedence_and_parentheses() {
         let source = r#"
             contract PrecedenceTest {
@@ -332,7 +330,6 @@ mod tests {
     /// (`Div` is absent here: it is now refused over `u64`, for the reason
     /// given in the `division_over_u64_is_refused` test.)
     #[test]
-    #[cfg(feature = "experimental")]
     fn the_uncovered_operators_produce_the_right_result() {
         let source = r#"
             contract OperatorTest {
@@ -459,7 +456,6 @@ mod tests {
     /// returned **0** with no error at all. Both produce contracts that branch
     /// on a silently wrong number, so this is cut off at compile time.
     #[test]
-    #[cfg(feature = "experimental")]
     fn division_over_u64_is_refused() {
         let source = r#"
             contract DivU64 {
@@ -487,7 +483,6 @@ mod tests {
     /// The gate targets only `u64`. Without this test an overly broad ban
     /// (refusing Div on every type) would pass unnoticed.
     #[test]
-    #[cfg(feature = "experimental")]
     fn division_stays_allowed_on_field() {
         let source = r#"
             contract DivField {
@@ -506,7 +501,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "experimental")]
     fn test_comments_support() {
         let source = r#"
             // This is a single-line comment at the beginning
