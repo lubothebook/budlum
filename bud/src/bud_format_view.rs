@@ -59,6 +59,9 @@ impl CompiledView {
         // The key set, taken from the first record, preserving its order.
         let first = arr[0].as_object()?;
         let mut keys: Vec<String> = first.keys().cloned().collect();
+        if keys.len() > MAX_VIEW_KEYS {
+            return None;
+        }
         // All keys, including the optional ones.
         for rec in arr {
             if let Some(o) = rec.as_object() {
