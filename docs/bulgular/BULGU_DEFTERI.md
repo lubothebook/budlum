@@ -8,14 +8,14 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 |---|---|---|---|---|---|---|
 | P0 | BLG-0001 | .gitleaks.toml | CI #122 Secret Scan: `[[allowlists]] must contain at least one check`; düzeltme b35dd86 (parmak izi .gitleaksignore dosyasına taşındı); yeşil kanıt bekleniyor | CI BEKLİYOR | b35dd86 |  |
 | P0 | BLG-0002 | src/network/regen_health_tick.rs:337 | CI #124 Clippy: `field_reassign_with_default` (-D warnings), iş 115030778899 ve 115030778747 / gp/P0-A:fd859e7 | CI BEKLİYOR | 9aaedcc |  |
-| P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı / karar A: quinn-proto kilit güncellemesi (ana oturum), sonra chacha20 | KODLANIYOR |  |  |
-| P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile | CI BEKLİYOR | 11a9f19 |  |
+| P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı / karar A: quinn-proto kilit güncellemesi (ana oturum), sonra chacha20 / yerel dogrulama: commit yok, kilit guncellemesi yapilmadi | AÇIK |  |  |
+| P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile / yerel dogrulama: kapi kirmizi: dead-public-api-is-ratcheted taban 216 iken 212 (taban sikilastirilmadi), no-idle-code decode_qr_video, actionlint/typos/zizmor yerelde yok | AÇIK | 11a9f19,d02f37e |  |
 | P0 | BLG-0005 | PR9 mergeable_state | PR9 `dirty` idi, son iki commit için `pull_request` CI hiç çalışmadı; 030cc60 merge commit ile giderildi | CI BEKLİYOR | 030cc60 |  |
 | P01 | BLG-0006 | - | P01-F01: FINDINGS.md:11; ham önem Critical / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P01 | BLG-0007 | - | P01-F02: FINDINGS.md:18; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P01 | BLG-0008 | - | P01-F03: FINDINGS.md:24; ham önem High / BAĞIMLI: src/main.rs:1595 PoA üretim döngüsü | CI BEKLİYOR | def3112 |  |
 | P01 | BLG-0009 | - | P01-F04: FINDINGS.md:29; ham önem Critical / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P01 | BLG-0010 | - | P01-F05: FINDINGS.md:35; ham önem High / gp/P01-A:9493856 kısmi: F05b suffix ile try_reorg src/network/node.rs:2375-2390,3040-3097 BAĞIMLI | KODLANIYOR | 23026dc,ba9dbce |  |
+| P01 | BLG-0010 | - | P01-F05: FINDINGS.md:35; ham önem High / gp/P01-A:9493856 kısmi: F05b suffix ile try_reorg src/network/node.rs:2375-2390,3040-3097 BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 23026dc,ba9dbce |  |
 | P01 | BLG-0011 | - | P01-F06: FINDINGS.md:41; ham önem High / gp/P01-A:503a8c5 | CI BEKLİYOR | 7770e6f |  |
 | P01 | BLG-0012 | - | P01-F07: FINDINGS.md:46; ham önem High / BAĞIMLI: main.rs:545-560,1008,1033 ve executor.rs; genesis admin kararı gerekir / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P01 | BLG-0013 | - | P01-F08: FINDINGS.md:52; ham önem Medium / gp/P01-A:45e80cf | CI BEKLİYOR | bc20f46 |  |
@@ -48,7 +48,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P02 | BLG-0040 | .github/workflows/ci.yml | P02-F04: FINDINGS.md:98; ham önem Medium; PARTLY / BAĞIMLI: ci.yml bpqs işi; BLG-1047 (P58-F01) ile aynı kök | AÇIK |  |  |
 | P02 | BLG-0041 | settlement/mod.rs:27-28 | P02-F05: FINDINGS.md:99; ham önem Low; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P02 | BLG-0042 | crates/bpqs/src/wots.rs:26-32, 63-69, 137-148 | P02-F06: FINDINGS.md:100; ham önem Low; CONFIRMED / gp/P02-A:2a5a113 | CI BEKLİYOR | e018bd2 |  |
-| P02 | BLG-0043 | src/crypto/primitives.rs:505-518, 677-689 | P02-F07: FINDINGS.md:101; ham önem Low; CONFIRMED / gp/P02-A:e7f02f6 kısmi: keygen create_new kısmı main.rs:341-362,452-459 BAĞIMLI | KODLANIYOR | 68a679d,f10b9c6 |  |
+| P02 | BLG-0043 | src/crypto/primitives.rs:505-518, 677-689 | P02-F07: FINDINGS.md:101; ham önem Low; CONFIRMED / gp/P02-A:e7f02f6 kısmi: keygen create_new kısmı main.rs:341-362,452-459 BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 68a679d,f10b9c6 |  |
 | P02 | BLG-0044 | src/crypto/mainnet_policy.rs:119-124, 90-136 | P02-F08: FINDINGS.md:102; ham önem Medium / gp/P02-A:a78996d | CI BEKLİYOR | f3c85e0 |  |
 | P02 | BLG-0045 | - | P02-F09: FINDINGS.md:103; ham önem Medium | AÇIK |  |  |
 | P02 | BLG-0046 | - | P02-F10: FINDINGS.md:104; ham önem Low | AÇIK |  |  |
@@ -67,7 +67,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P03 | BLG-0059 | core/account.rs:2456-2458 | P03-F02: FINDINGS.md:122; ham önem Medium; CONFIRMED / gp/P03-A:7fbcd05 | CI BEKLİYOR | f166834 |  |
 | P03 | BLG-0060 | - | P03-F03: FINDINGS.md:123; ham önem Low / gp/P03-A:509fe1e | CI BEKLİYOR | d3a1684 |  |
 | P03 | BLG-0061 | - | P03-F04: FINDINGS.md:124; ham önem Low / gp/P03-A:059a7c5 | CI BEKLİYOR | 5be8a61 |  |
-| P03 | BLG-0062 | src/settlement/proof_market.rs:296-316, 634-650, 695-697 | P03-F05: FINDINGS.md:125; ham önem Low; CONFIRMED / gp/P03-A:3e30204 kısmi | KODLANIYOR | 10ed1b1 |  |
+| P03 | BLG-0062 | src/settlement/proof_market.rs:296-316, 634-650, 695-697 | P03-F05: FINDINGS.md:125; ham önem Low; CONFIRMED / gp/P03-A:3e30204 kısmi / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 10ed1b1 |  |
 | P03 | BLG-0063 | - | P03-F06: FINDINGS.md:127; ham önem Low / gp/P03-A:99ed814 | CI BEKLİYOR | af58733 |  |
 | P03 | BLG-0064 | core/account.rs:1570 | P03-F07: FINDINGS.md:128; ham önem Medium / BAĞIMLI: executor.rs, account.rs; önce escrow kararı | AÇIK |  |  |
 | P03 | BLG-0065 | - | P03-F08: FINDINGS.md:129; ham önem Low / gp/P03-A:5683bd8 | CI BEKLİYOR | 59ad42d |  |
@@ -89,7 +89,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P03 | BLG-0081 | src/settlement/proof_verifier.rs:67-117 | P03-F24: FINDINGS.md:145; ham önem Low | AÇIK |  |  |
 | P03 | BLG-0082 | - | P03-F25: FINDINGS.md:146; ham önem Info | AÇIK |  |  |
 | P04 | BLG-0083 | src/registry/invalid_vote.rs:66-107 | P04-F01: FINDINGS.md:152; ham önem Critical; CONFIRMED / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P04 | BLG-0084 | src/registry/permissionless.rs:480-515, 690-737 | P04-F02: FINDINGS.md:154; ham önem High; CONFIRMED / gp/P04-A:1bbd9f7 kısmi: registry yarısı; kalan yarı account.rs/blockchain.rs/executor.rs | KODLANIYOR | e7c4ad7 |  |
+| P04 | BLG-0084 | src/registry/permissionless.rs:480-515, 690-737 | P04-F02: FINDINGS.md:154; ham önem High; CONFIRMED / gp/P04-A:1bbd9f7 kısmi: registry yarısı; kalan yarı account.rs/blockchain.rs/executor.rs / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | e7c4ad7 |  |
 | P04 | BLG-0085 | - | P04-F03: FINDINGS.md:155; ham önem High; CONFIRMED / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | CI BEKLİYOR | 19bc02b |  |
 | P04 | BLG-0086 | rpc/tests.rs:1146 | P04-F04: FINDINGS.md:157; ham önem Medium; PARTLY / BAĞIMLI: sahip olunmayan dosya (account.rs/blockchain.rs/executor.rs/snapshot.rs) | CI BEKLİYOR | 51210e7 |  |
 | P04 | BLG-0087 | - | P04-F05: FINDINGS.md:160; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -115,7 +115,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P04 | BLG-0107 | - | P04-F25: FINDINGS.md:180; ham önem Info | AÇIK |  |  |
 | P05 | BLG-0108 | src/tests/bridge_lifecycle.rs:80 | P05-F01: FINDINGS.md:199; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P05 | BLG-0109 | - | P05-F02: FINDINGS.md:200; ham önem High / gp/P05-A:6ac3baa | CI BEKLİYOR | be0ed19 |  |
-| P05 | BLG-0110 | evm/mpt.rs:181-194 | P05-F03: FINDINGS.md:201; ham önem Medium / gp/P05-A:55593f9 | CI BEKLİYOR | b53aab1 |  |
+| P05 | BLG-0110 | evm/mpt.rs:181-194 | P05-F03: FINDINGS.md:201; ham önem Medium / gp/P05-A:55593f9 | CI BEKLİYOR | b53aab1,61ee4bd |  |
 | P05 | BLG-0111 | evm/header.rs:117-158 | P05-F04: FINDINGS.md:202; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P05 | BLG-0112 | - | P05-F05: FINDINGS.md:203; ham önem Medium / gp/P05-A:4067958 tamamlandı (W2-CHAIN) önceki kısmi: blockchain.rs:3270-3320 rollback BAĞIMLI | CI BEKLİYOR | 63a82c0,54fd689 |  |
 | P05 | BLG-0113 | - | P05-F06: FINDINGS.md:204; ham önem Medium / BAĞIMLI: blockchain.rs, rpc/server.rs, node.rs; mesaj imzalı blok işlemi olmalı (tasarım) | AÇIK |  |  |
@@ -137,7 +137,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P05 | BLG-0129 | - | P05-F22: FINDINGS.md:220; ham önem Info | AÇIK |  |  |
 | P06 | BLG-0130 | src/cross_domain/external/ethereum.rs:393-406 | P06-F01: FINDINGS.md:250; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P06 | BLG-0131 | src/cross_domain/external/ethereum.rs:255-257, 299-306, 344-376, 399-425 | P06-F02: FINDINGS.md:266; ham önem High / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P06 | BLG-0132 | src/cross_domain/external/ethereum.rs:361-425 | P06-F03: FINDINGS.md:281; ham önem Medium / gp/P06-A:afa7834 kısmi: politika yarısı | KODLANIYOR | 2ad2ec8 |  |
+| P06 | BLG-0132 | src/cross_domain/external/ethereum.rs:361-425 | P06-F03: FINDINGS.md:281; ham önem Medium / gp/P06-A:afa7834 kısmi: politika yarısı / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 2ad2ec8 |  |
 | P06 | BLG-0133 | src/cross_domain/external/domain_bridge.rs:108-160 | P06-F04: FINDINGS.md:291; ham önem Medium / BAĞIMLI: spec.rs, blockchain.rs / soru PR9 yorumunda (W2-CHAIN: A/B/C) | KARAR BEKLİYOR |  |  |
 | P06 | BLG-0134 | src/cross_domain/external/zkvm_proof.rs:202-263 | P06-F05: FINDINGS.md:302; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P06 | BLG-0135 | src/cross_domain/evm/adapter.rs:153-172, 328-357, 221-272 | P06-F06: FINDINGS.md:312; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
@@ -151,12 +151,12 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P06 | BLG-0143 | src/cross_domain/external/zkvm_proof.rs:86-108 | P06-F14: FINDINGS.md:393; ham önem Low | AÇIK |  |  |
 | P06 | BLG-0144 | src/cross_domain/evm/adapter.rs:1 | P06-F15: FINDINGS.md:403; ham önem Low | AÇIK |  |  |
 | P06 | BLG-0145 | src/cross_domain/evm/adapter.rs:343-357 | P06-F16: FINDINGS.md:413; ham önem Info | AÇIK |  |  |
-| P07 | BLG-0146 | src/rpc/server.rs:1712-1722 | P07-F01: FINDINGS.md:432; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor / kısmi: require_operator yapıldı; submitter imzası KARAR | KODLANIYOR | 9fe7219 |  |
+| P07 | BLG-0146 | src/rpc/server.rs:1712-1722 | P07-F01: FINDINGS.md:432; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor / kısmi: require_operator yapıldı; submitter imzası KARAR / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil | AÇIK | 9fe7219 |  |
 | P07 | BLG-0147 | src/cross_domain/external/intake.rs:64-131 | P07-F02: FINDINGS.md:443; ham önem High / BAĞIMLI: BLG-0146 src/rpc/server.rs:1712 + spec.rs; BLG-0147 kök neden P06-F01/F02 (ethereum.rs), karar bekliyor | AÇIK |  |  |
-| P07 | BLG-0148 | src/cross_domain/external/registry.rs:452-471 | P07-F03: FINDINGS.md:454; ham önem High / gp/P07-A:11ce6db | CI BEKLİYOR | 3e553e0 |  |
+| P07 | BLG-0148 | src/cross_domain/external/registry.rs:452-471 | P07-F03: FINDINGS.md:454; ham önem High / gp/P07-A:11ce6db | CI BEKLİYOR | 3e553e0,441debd |  |
 | P07 | BLG-0149 | src/cross_domain/external/registry.rs:51-52, 638-754 | P07-F04: FINDINGS.md:466; ham önem Medium / gp/P07-A:862f6c6 | CI BEKLİYOR | b0493bc |  |
 | P07 | BLG-0150 | src/cross_domain/external/registry.rs:337-371 | P07-F05: FINDINGS.md:477; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
-| P07 | BLG-0151 | src/cross_domain/external/intake.rs:521-545 | P07-F06: FINDINGS.md:487; ham önem Medium / gp/P07-A:89d695c | CI BEKLİYOR | 59a5429 |  |
+| P07 | BLG-0151 | src/cross_domain/external/intake.rs:521-545 | P07-F06: FINDINGS.md:487; ham önem Medium / gp/P07-A:89d695c | CI BEKLİYOR | 59a5429,441debd,e02c3b9 |  |
 | P07 | BLG-0152 | src/cross_domain/external/intake_quorum.rs:251-271, 357-363 | P07-F07: FINDINGS.md:497; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P07 | BLG-0153 | src/cross_domain/external/intake.rs:391-403 | P07-F08: FINDINGS.md:508; ham önem Medium / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P07 | BLG-0154 | src/cross_domain/external/intake.rs:240-246 | P07-F09: FINDINGS.md:518; ham önem Medium | AÇIK |  |  |
@@ -1104,4 +1104,4 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P0 | BLG-1096 | src/storage/three_pipe.rs (decode_qr_video) | CI #124 Repo Lint gate no-idle-code: yeni boşta kalan genel öğe `pub fn decode_qr_video`; BLG-0004 alt kalemi / soru PR9 yorumunda | KARAR BEKLİYOR |  |  |
 | P0 | BLG-1097 | docs/audit/SECOND_PASS_ALPHA.md:323; notes/second-pass-alpha-P01.md:105 | CI #124 Repo Lint gate tree-is-english: Türkçe sözcük `Katmani`; BLG-0004 alt kalemi | CI BEKLİYOR | cbf8740 |  |
 | P0 | BLG-1098 | src/domain/deal_open.rs:430-720; src/tests/storage_tx_door.rs:654-764; budzero/bud-proof/src/relayer.rs:718; budzero/bud-vm/src/lib.rs:1694 | CI #124 Repo Lint gate rejection-tests-assert-rejection: 18 teste ret adı verilmiş ama ret doğrulanmıyor; BLG-0004 alt kalemi | CI BEKLİYOR | 6d4f107,b0d4145,9dee29e |  |
-| P0 | BLG-1099 | docs/bulgular/*; xtask/gates/src/gates/tree_is_english.rs | docs/bulgular dosyaları Türkçe: tree-is-english kapısı kırmızı olur; şablon İngilizceye çevrilir, defter için tam dosya adı muafiyeti (sahibin direktifi defteri Türkçe ister) | CI BEKLİYOR | 44caad6,4c6d269 |  |
+| P0 | BLG-1099 | docs/bulgular/*; xtask/gates/src/gates/tree_is_english.rs | docs/bulgular dosyaları Türkçe: tree-is-english kapısı kırmızı olur; şablon İngilizceye çevrilir, defter için tam dosya adı muafiyeti (sahibin direktifi defteri Türkçe ister) | CI BEKLİYOR | 44caad6,4c6d269,71901d4 |  |
