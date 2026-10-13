@@ -4523,7 +4523,17 @@ impl Blockchain {
                 .registry
                 .params()
                 .slash_ratio(crate::registry::permissionless::SlashingCondition::DoubleSign);
-            state.apply_slashing(evidences, slash_ratio_fixed);
+            // Headers signed for another chain are not proof of anything here.
+            // A key shared by two chains would otherwise let anyone replay
+            // real signatures from the other chain and slash a validator.
+            let own_chain: Vec<SlashingEvidence> = evidences
+                .iter()
+                .filter(|e| {
+                    e.header1.chain_id == block.chain_id && e.header2.chain_id == block.chain_id
+                })
+                .cloned()
+                .collect();
+            state.apply_slashing(&own_chain, slash_ratio_fixed);
         }
 
         let epoch_length = crate::core::chain_config::epoch_len_for_chain_id(block.chain_id);
@@ -7282,6 +7292,32 @@ mod tests {
             sig1,
             sig2,
         )
+    }
+
+    /// BLG-0018: double-sign evidence signed for another chain id must not
+    /// slash a validator of this chain.
+    #[test]
+    fn block_evidence_for_another_chain_does_not_slash() {
+        let keys = crate::crypto::primitives::ValidatorKeys::generate().unwrap();
+        let producer = Address::from(keys.sig_key.public_key_bytes());
+        let evidence = double_sign_evidence(&keys, 10);
+        let evidence_chain = evidence.header1.chain_id;
+
+        let mut foreign_block =
+            Block::new_with_chain_id(11, "prev".into(), vec![], evidence_chain + 1);
+        foreign_block.slashing_evidence = Some(vec![evidence.clone()]);
+        let mut state = AccountState::new();
+        state.add_validator(producer, 1_000_000);
+        Blockchain::apply_system_effects(&mut state, &foreign_block);
+        assert!(
+            !state.get_validator(&producer).unwrap().slashed,
+            "evidence from another chain slashed a validator"
+        );
+
+        let mut own_block = Block::new_with_chain_id(11, "prev".into(), vec![], evidence_chain);
+        own_block.slashing_evidence = Some(vec![evidence]);
+        Blockchain::apply_system_effects(&mut state, &own_block);
+        assert!(state.get_validator(&producer).unwrap().slashed);
     }
 
     /// BLG-0171: evidence from a key that is not a validator is refused, and
