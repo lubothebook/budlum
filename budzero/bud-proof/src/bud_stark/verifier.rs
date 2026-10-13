@@ -261,8 +261,11 @@ where
         num_permutation_challenges: 3,
         ..layout
     };
+    // A width of 0 would hand the AIR an empty permutation window, and the
+    // symbolic builder panics when the AIR reads it. One column and no
+    // challenges keep the aux guard off, which is what "without aux" means.
     let without_aux = AirLayout {
-        permutation_width: 0,
+        permutation_width: 1,
         num_permutation_challenges: 0,
         ..layout
     };

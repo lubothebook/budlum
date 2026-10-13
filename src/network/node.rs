@@ -3567,7 +3567,12 @@ mod vote_history_wiring_tests {
     /// The two defaults are deliberately *not* wired the same way.
     #[test]
     fn vote_history_is_not_gated_on_persist_banned_peers() {
-        let src = include_str!("node.rs");
+        // The production half only: the needles below also sit in this test.
+        let whole = include_str!("node.rs");
+        let parts = whole.split_once("#[cfg(test)]");
+        let src = parts
+            .map(|(before, _)| before)
+            .expect("this file keeps its tests behind #[cfg(test)]");
         let at = src
             .find("pub fn apply_network_security")
             .expect("apply_network_security must exist");
@@ -3638,7 +3643,7 @@ mod mobile_profile_wiring_tests {
     /// would drift from the profile again the moment a fifth mode existed.
     #[test]
     fn the_peer_cap_is_not_decided_a_second_time_in_this_file() {
-        let src = include_str!("node.rs");
+        let whole = include_str!("node.rs");
         // Assembled at runtime rather than written as one literal. Spelled
         // out, the needle appears in this test's own source, `include_str!`
         // reads the whole file including these lines, and the test fails on
@@ -3650,8 +3655,8 @@ mod mobile_profile_wiring_tests {
         // themselves, so searching the whole file would let the test satisfy
         // itself: it would pass on a tree where the wiring had been deleted
         // and only these lines remained.
-        let production = src
-            .split_once("#[cfg(test)]")
+        let parts = whole.split_once("#[cfg(test)]");
+        let production = parts
             .map(|(before, _)| before)
             .expect("this file keeps its tests behind #[cfg(test)]");
 
@@ -3673,7 +3678,7 @@ mod mobile_profile_wiring_tests {
         // Canary: the split has to actually remove something, or the three
         // assertions above silently went back to reading the whole file.
         assert!(
-            production.len() < src.len(),
+            production.len() < whole.len(),
             "the #[cfg(test)] split matched nothing, so this test is measuring \
              its own source and proves nothing about the production path"
         );

@@ -186,7 +186,7 @@ contract IfOnly {
             emit Smaller(a);
         }
     }
-}
+    }
 "#;
 
 const LOOP_SOURCE: &str = r#"
@@ -198,7 +198,7 @@ contract ShortLoop {
         }
         emit R(i);
     }
-}
+    }
 "#;
 
 /// A proof of one compiled program must not verify against the bytecode of
