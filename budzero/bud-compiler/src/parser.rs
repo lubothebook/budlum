@@ -253,6 +253,14 @@ impl<'a> Parser<'a> {
             }
         }
         self.expect(Token::BraceClose)?;
+        // Nothing may follow the contract. A second contract or stray text
+        // would be dropped, and the program hash would not cover it.
+        if self.pos < self.tokens.len() {
+            return Err(CompileError::ParserError(format!(
+                "Unexpected {:?} after the contract",
+                self.peek()
+            )));
+        }
 
         Ok(Contract {
             name,

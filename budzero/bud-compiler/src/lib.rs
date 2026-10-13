@@ -78,6 +78,19 @@ pub fn compile(source: &str, profile: IsaProfile) -> Result<Vec<u64>, CompileErr
 mod tests {
     use super::*;
 
+    /// BLG-0532: text after the closing brace of the contract was dropped
+    /// without a word, so a second contract never reached the bytecode.
+    #[test]
+    fn text_after_the_contract_is_refused() {
+        let source = "contract A { pub fn main() { } } contract B { pub fn main() { } }";
+        let error = compile(source, IsaProfile::Production).unwrap_err();
+        assert!(
+            error.to_string().contains("after the contract"),
+            "unexpected error: {error}"
+        );
+        assert!(compile("contract A { pub fn main() { } }", IsaProfile::Production).is_ok());
+    }
+
     #[test]
     #[cfg(feature = "experimental")]
     fn compiles_for_loop_to_executable_bytecode() {
