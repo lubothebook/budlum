@@ -368,7 +368,10 @@ mod tests {
         // (1) trailing bytes after the last record.
         let mut p = sample_pcap();
         p.extend_from_slice(&[1, 2, 3]);
-        assert!(pcap_transform(&p).is_none(), "trailing bytes would be dropped");
+        assert!(
+            pcap_transform(&p).is_none(),
+            "trailing bytes would be dropped"
+        );
         // (2) a ts_usec of 1,000,000 or more is renormalised by the restore.
         let mut p = sample_pcap();
         p[28..32].copy_from_slice(&1_000_000u32.to_le_bytes());

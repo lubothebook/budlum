@@ -219,7 +219,11 @@ mod tests {
     fn a_fake_prover_output_is_recorded_but_still_not_verified() {
         let dir = std::env::temp_dir();
         let script = dir.join("budzk-test-prover.sh");
-        std::fs::write(&script, "#!/bin/sh\nprintf 'fake-proof-bytes'\nhead -c 49 \"$1\" | tail -c 32\n").expect("script");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nprintf 'fake-proof-bytes'\nhead -c 49 \"$1\" | tail -c 32\n",
+        )
+        .expect("script");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

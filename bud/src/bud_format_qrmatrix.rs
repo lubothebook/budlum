@@ -226,7 +226,11 @@ mod tests {
                 }
             }
         }
-        assert_eq!(dark, data.len() * 8, "data bits were lost on function modules");
+        assert_eq!(
+            dark,
+            data.len() * 8,
+            "data bits were lost on function modules"
+        );
     }
 
     #[test]

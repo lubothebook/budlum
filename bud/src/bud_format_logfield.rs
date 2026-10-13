@@ -153,8 +153,7 @@ impl LogFieldColumnar {
         // The preallocation is bounded: a crafted file must not reserve
         // memory for ten million lines before the first bad line is seen.
         let reserve = line_count.min(4096);
-        let mut columns: Vec<Vec<Vec<u8>>> =
-            (0..7).map(|_| Vec::with_capacity(reserve)).collect();
+        let mut columns: Vec<Vec<Vec<u8>>> = (0..7).map(|_| Vec::with_capacity(reserve)).collect();
         for line in data.split_inclusive(|&b| b == b'\n') {
             let (_, values) = parse_nginx_line(line)?;
             for (ci, v) in values.iter().enumerate() {

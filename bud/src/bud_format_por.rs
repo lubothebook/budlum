@@ -165,7 +165,10 @@ mod tests {
             indices: ch.indices.clone(),
             nonce: [9u8; 32],
         };
-        assert!(!key.verify(&blk, &fresh, &resp), "a replayed response is REFUSED");
+        assert!(
+            !key.verify(&blk, &fresh, &resp),
+            "a replayed response is REFUSED"
+        );
         let again = key.respond(&blk, &fresh).expect("response");
         assert!(key.verify(&blk, &fresh, &again));
     }

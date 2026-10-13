@@ -177,7 +177,9 @@ impl TimeSeriesColumnar {
         let first_ts = r.read_bits(64)? as i64;
         let first_value = f64::from_bits(r.read_bits(64)?);
         // Bound the reservation by what the stream can hold (2 bits per later point).
-        let cap = self.points.min(self.bits.len().checked_mul(4).unwrap_or(self.points));
+        let cap = self
+            .points
+            .min(self.bits.len().checked_mul(4).unwrap_or(self.points));
         let mut out = Vec::with_capacity(cap);
         out.push((first_ts, first_value));
         let mut prev_ts = first_ts;

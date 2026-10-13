@@ -337,13 +337,23 @@ mod tests {
     #[test]
     fn finality_same_set() {
         assert!(HybridFinalityVote::verify_quorum(true, true, &[0, 1, 2], 4));
-        assert!(!HybridFinalityVote::verify_quorum(true, false, &[0, 1, 2], 4));
+        assert!(!HybridFinalityVote::verify_quorum(
+            true,
+            false,
+            &[0, 1, 2],
+            4
+        ));
         // Two of three is not a supermajority; three of three is.
         assert!(!HybridFinalityVote::verify_quorum(true, true, &[0, 1], 3));
         assert!(HybridFinalityVote::verify_quorum(true, true, &[0, 1, 2], 3));
         assert!(!HybridFinalityVote::verify_quorum(true, true, &[], 0));
         // Repeated or out-of-range signers add nothing.
-        assert!(!HybridFinalityVote::verify_quorum(true, true, &[0, 0, 0, 1, 9], 3));
+        assert!(!HybridFinalityVote::verify_quorum(
+            true,
+            true,
+            &[0, 0, 0, 1, 9],
+            3
+        ));
     }
     #[test]
     fn the_p2p_gate_is_false_without_a_handshake() {
@@ -351,10 +361,18 @@ mod tests {
         assert!(!SnowHybrid::is_quantum_resistant());
         assert!(!QuantumChainGates::kq_p2p());
         let mut t = FiatShamirTranscript::new();
-        for l in ["proof_data", "polynomial_degree", "fri_config", "public_inputs"] {
+        for l in [
+            "proof_data",
+            "polynomial_degree",
+            "fri_config",
+            "public_inputs",
+        ] {
             t.observe(l);
         }
-        assert!(!QuantumChainGates::kq_stark(&t), "labels out of order are refused");
+        assert!(
+            !QuantumChainGates::kq_stark(&t),
+            "labels out of order are refused"
+        );
     }
     #[test]
     fn dual_wallet_required() {
@@ -368,7 +386,10 @@ mod tests {
         let pq_sk = ml_dsa::SigningKey::<ml_dsa::MlDsa87>::from_seed(&w.pq_seed.into());
         let pq_vk: &ml_dsa::VerifyingKey<ml_dsa::MlDsa87> = pq_sk.as_ref();
         let pq_pk: Vec<u8> = pq_vk.encode().into_iter().collect();
-        assert_eq!(addr, DualWallet::address_from_pubkeys(ed_pk.as_bytes(), &pq_pk));
+        assert_eq!(
+            addr,
+            DualWallet::address_from_pubkeys(ed_pk.as_bytes(), &pq_pk)
+        );
         // the old construction hashed the secret seeds; it must differ
         let mut old = Sha3_256::new();
         old.update(w.ed_seed);
