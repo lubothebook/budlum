@@ -281,7 +281,7 @@ pub enum IntakeError {
 /// The most seats one quorum round may hold. Rounds are consensus state and
 /// are digested on every call, so the seat count must have a bound the
 /// operator cannot lift.
-pub const MAX_QUORUM_PARTICIPANTS: usize = 256;
+pub(crate) const MAX_QUORUM_PARTICIPANTS: usize = 256;
 
 impl IntakeState {
     #[must_use]
@@ -1249,10 +1249,14 @@ mod tests {
         // An unbonded caller and a malformed payload: both are refusals about
         // the caller's input.
         let unbonded = quorum_evidence(&spec, addr(50));
-        let _ = state.submit_evidence(&unbonded, Some(Box::new(StrictTestBls)));
+        assert!(state
+            .submit_evidence(&unbonded, Some(Box::new(StrictTestBls)))
+            .is_err());
         let mut malformed = quorum_evidence(&spec, addr(9));
         malformed.payload.truncate(1);
-        let _ = state.submit_evidence(&malformed, Some(Box::new(StrictTestBls)));
+        assert!(state
+            .submit_evidence(&malformed, Some(Box::new(StrictTestBls)))
+            .is_err());
         let reg = state.registry.domain(&key).expect("domain");
         assert_eq!(reg.record.attestations_refused, 2);
         assert_eq!(
