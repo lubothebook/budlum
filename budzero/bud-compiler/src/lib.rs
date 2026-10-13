@@ -78,6 +78,19 @@ pub fn compile(source: &str, profile: IsaProfile) -> Result<Vec<u64>, CompileErr
 mod tests {
     use super::*;
 
+    /// BLG-0531: in `for i in 0..n {` the name `n` followed by `{` was read as
+    /// a struct literal, so a loop over a variable bound did not parse.
+    #[test]
+    fn for_loop_accepts_a_variable_end_bound() {
+        let source = "contract A { pub fn main() { let n = 3; let sum = 0; \
+                      for i in 0..n { sum = sum + i; } emit E(sum); } }";
+        assert!(
+            compile(source, IsaProfile::Production).is_ok(),
+            "{:?}",
+            compile(source, IsaProfile::Production)
+        );
+    }
+
     /// BLG-0530: a block comment that ends in `**/` did not end there. The
     /// lexer ran on to the next `*/` and removed the code in between.
     #[test]
