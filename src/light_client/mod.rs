@@ -939,7 +939,10 @@ mod tests {
         assert_eq!(client.next_checkpoint_height(10, 9), None);
         assert_eq!(client.next_checkpoint_height(0, 100), None);
         assert_eq!(client.next_checkpoint_height(1, 100), Some(5));
-        assert_eq!(client.next_checkpoint_height(u64::MAX, u64::MAX), Some(u64::MAX));
+        assert_eq!(
+            client.next_checkpoint_height(u64::MAX, u64::MAX),
+            Some(u64::MAX)
+        );
         let top = LightClient::new(TrustedCheckpoint {
             height: u64::MAX,
             block_hash: "0".repeat(64),

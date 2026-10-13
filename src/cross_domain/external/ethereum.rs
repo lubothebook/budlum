@@ -364,8 +364,9 @@ impl crate::cross_domain::external::spec::ExternalFinalityAdapter for EthereumSy
         // says `slashable: false` after the fact.
         if policy.require_slashable {
             return Err(AdapterError::ConsensusRule {
-                rule: "the policy requires slashable backing; a sync committee set is not slashable"
-                    .to_string(),
+                rule:
+                    "the policy requires slashable backing; a sync committee set is not slashable"
+                        .to_string(),
             });
         }
 

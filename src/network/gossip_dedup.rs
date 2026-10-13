@@ -420,8 +420,8 @@ mod tests {
         let _ = dedup.check_and_record(b"old message", &relay);
         for _ in 0..100 {
             if let Some(s) = dedup.peer_scores.get_mut(&relay) {
-                s.last_duplicate_at = std::time::Instant::now()
-                    .checked_sub(std::time::Duration::from_secs(60));
+                s.last_duplicate_at =
+                    std::time::Instant::now().checked_sub(std::time::Duration::from_secs(60));
             }
             assert_eq!(
                 dedup.check_and_record(b"old message", &relay),

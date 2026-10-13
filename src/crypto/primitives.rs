@@ -41,11 +41,14 @@ fn write_key_file(path: &Path, bytes: &[u8]) -> Result<(), CryptoError> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let result = options.open(&tmp_path).map_err(io_err).and_then(|mut file| {
-        file.write_all(bytes).map_err(io_err)?;
-        file.sync_all().map_err(io_err)?;
-        std::fs::rename(&tmp_path, path).map_err(io_err)
-    });
+    let result = options
+        .open(&tmp_path)
+        .map_err(io_err)
+        .and_then(|mut file| {
+            file.write_all(bytes).map_err(io_err)?;
+            file.sync_all().map_err(io_err)?;
+            std::fs::rename(&tmp_path, path).map_err(io_err)
+        });
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp_path);
     }
@@ -982,7 +985,10 @@ mod tests {
         kp.save(&path).unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
-        assert_eq!(KeyPair::load(&path).unwrap().private_key_bytes(), kp.private_key_bytes());
+        assert_eq!(
+            KeyPair::load(&path).unwrap().private_key_bytes(),
+            kp.private_key_bytes()
+        );
         let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
         assert_eq!(names.len(), 1, "no temp file may remain");
     }
@@ -994,7 +1000,10 @@ mod tests {
         std::fs::write(dir.path().join("kp.bin.tmp"), b"stale").unwrap();
         let kp = KeyPair::generate().unwrap();
         kp.save(&path).unwrap();
-        assert_eq!(KeyPair::load(&path).unwrap().private_key_bytes(), kp.private_key_bytes());
+        assert_eq!(
+            KeyPair::load(&path).unwrap().private_key_bytes(),
+            kp.private_key_bytes()
+        );
     }
     #[test]
     fn test_keypair_generation() {

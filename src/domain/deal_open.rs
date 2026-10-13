@@ -446,8 +446,7 @@ mod tests {
         let manifest = manifest();
         let mut t = terms(&manifest, operator());
         t.end_epoch = t.start_epoch;
-        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
-            .unwrap_err();
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0).unwrap_err();
         assert!(err.contains("Deal duration must be > 0"), "got {err:?}");
     }
 
@@ -456,8 +455,7 @@ mod tests {
         let manifest = manifest();
         let mut t = terms(&manifest, operator());
         t.shard_id = crate::storage::ContentId([0xEEu8; 32]);
-        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
-            .unwrap_err();
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0).unwrap_err();
         assert!(err.contains("is not part of manifest"), "got {err:?}");
     }
 
@@ -489,8 +487,7 @@ mod tests {
         let manifest = manifest();
         let t = terms(&manifest, operator());
         let fee = fee_of(&t);
-        let err = open_without_write(funded(fee - 1, 5_000_000), &t, payer(), 0, 0)
-            .unwrap_err();
+        let err = open_without_write(funded(fee - 1, 5_000_000), &t, payer(), 0, 0).unwrap_err();
         assert!(err.contains("Insufficient payer balance"), "got {err:?}");
     }
 
@@ -498,8 +495,7 @@ mod tests {
     fn a_short_operator_is_refused_without_a_write() {
         let manifest = manifest();
         let t = terms(&manifest, operator());
-        let err = open_without_write(funded(5_000_000, BOND - 1), &t, payer(), 0, 0)
-            .unwrap_err();
+        let err = open_without_write(funded(5_000_000, BOND - 1), &t, payer(), 0, 0).unwrap_err();
         assert!(err.contains("Insufficient operator balance"), "got {err:?}");
     }
 
@@ -508,8 +504,7 @@ mod tests {
         let manifest = manifest();
         let mut t = terms(&manifest, operator());
         t.merkle_proof = None;
-        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
-            .unwrap_err();
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0).unwrap_err();
         assert!(err.contains("open_deal failed"), "got {err:?}");
     }
 
@@ -518,8 +513,7 @@ mod tests {
         let manifest = manifest();
         let mut t = terms(&manifest, operator());
         t.economics.operator_bond = BOND - 1;
-        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
-            .unwrap_err();
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0).unwrap_err();
         assert!(err.contains("open_deal failed"), "got {err:?}");
     }
 
@@ -709,8 +703,7 @@ mod tests {
     fn a_hybrid_with_an_oversized_prefix_is_refused_without_a_write() {
         let manifest = hybrid_manifest(100);
         let t = unit_rate_terms(&manifest, operator());
-        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0)
-            .unwrap_err();
+        let err = open_without_write(funded(5_000_000, 5_000_000), &t, payer(), 0, 0).unwrap_err();
         assert!(err.contains("held_bytes refused the source"), "got {err:?}");
     }
 

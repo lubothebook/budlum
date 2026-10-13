@@ -195,7 +195,9 @@ fn check_canonical<P: BpqsParams>(sig: &BpqsSignature<P>) -> Result<(), BpqsErro
     let unused_path = sig.path.iter().skip(P::T_LOG2);
     for lane in unused_chains.chain(unused_path) {
         if lane.iter().any(|b| *b != 0) {
-            return Err(BpqsError::Malformed("non-zero bytes in an unused signature lane"));
+            return Err(BpqsError::Malformed(
+                "non-zero bytes in an unused signature lane",
+            ));
         }
     }
     Ok(())

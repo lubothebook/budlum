@@ -569,10 +569,7 @@ impl IntakeState {
                 reason: "the threshold is not a strict majority of the seats",
             });
         }
-        let bonded = self
-            .registry
-            .domain(key)
-            .map_or(0, |reg| reg.provers.len());
+        let bonded = self.registry.domain(key).map_or(0, |reg| reg.provers.len());
         if policy.agreement_threshold > bonded {
             return Err(IntakeError::InvalidQuorumPolicy {
                 reason: "fewer provers are bonded than the threshold needs",

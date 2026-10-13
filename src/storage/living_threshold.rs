@@ -1338,7 +1338,10 @@ mod tests {
                 epoch: 5_000,
                 count: 1,
             },
-            AccessEvent { epoch: 10, count: 4 },
+            AccessEvent {
+                epoch: 10,
+                count: 4,
+            },
         ];
         let derived = AccessEstimate::from_events(&events, 100);
         // The future event is skipped, the late one counts at epoch 10.

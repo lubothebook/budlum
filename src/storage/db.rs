@@ -1325,11 +1325,7 @@ impl Storage {
     /// be exactly one below the block the walk came from. The height rule
     /// makes a `previous_hash` cycle impossible: heights fall at every step,
     /// so the walk ends.
-    fn check_walk_step(
-        key: &str,
-        block: &Block,
-        child_index: Option<u64>,
-    ) -> std::io::Result<()> {
+    fn check_walk_step(key: &str, block: &Block, child_index: Option<u64>) -> std::io::Result<()> {
         if block.hash != key {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -1355,7 +1351,7 @@ impl Storage {
     /// Propagates `std::io::Error` from the step that failed; its variants name the refused
     /// conditions.
     pub fn load_chain(&self) -> std::io::Result<Vec<Block>> {
-        let mut chain = Vec::new();
+        let mut chain: Vec<Block> = Vec::new();
         if let Some(mut current_hash) = self.get_last_hash()? {
             // A read error is not the end of the chain. `while let Ok(Some)`
             // ended the walk on `Err` the same way as on `Ok(None)`, so one

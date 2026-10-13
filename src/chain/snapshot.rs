@@ -463,7 +463,9 @@ fn v2_loader_skip_reason(data: &str) -> Option<String> {
     if version < u64::from(MIN_SUPPORTED_STATE_SNAPSHOT_SCHEMA_VERSION)
         || version > u64::from(CURRENT_STATE_SNAPSHOT_SCHEMA_VERSION)
     {
-        return Some(format!("schema_version {version} is outside the supported window"));
+        return Some(format!(
+            "schema_version {version} is outside the supported window"
+        ));
     }
     None
 }

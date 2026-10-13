@@ -974,9 +974,8 @@ mod tests {
                 "duplicate match pattern 1",
             ),
         ] {
-            let source = format!(
-                "contract M {{ pub fn main() {{ let x = 0; match (x) {{ {arms} }}; }} }}"
-            );
+            let source =
+                format!("contract M {{ pub fn main() {{ let x = 0; match (x) {{ {arms} }}; }} }}");
             match compile(&source, IsaProfile::Production) {
                 Ok(_) => panic!("malformed match compiled: {arms}"),
                 Err(CompileError::SemanticError(msg)) => {

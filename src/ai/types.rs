@@ -987,7 +987,9 @@ impl AiAgentReputation {
     /// selection or fees. The state root hashes the integer counters only.
     /// Factors in payment reliability, inference quality, and equivocation rate.
     pub fn trust_score(&self) -> f64 {
-        let total_payments = self.payments_completed.saturating_add(self.payments_defaulted);
+        let total_payments = self
+            .payments_completed
+            .saturating_add(self.payments_defaulted);
         if total_payments == 0 && self.results_submitted == 0 {
             return 0.0;
         }

@@ -214,9 +214,7 @@ impl BudGateway {
     ) -> Result<(), String> {
         for cid in pollen_guard_ids(resolved) {
             if self.chain.pollen_asset_for_content(cid).await.is_some() {
-                return Err(
-                    "Content is Pollen-protected; an AccessGrant is required".to_string()
-                );
+                return Err("Content is Pollen-protected; an AccessGrant is required".to_string());
             }
         }
         Ok(())

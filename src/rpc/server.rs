@@ -3356,7 +3356,11 @@ impl BudlumApiServer for RpcServer {
         })
         .await
         .map_err(|e| {
-            ErrorObjectOwned::owned(-32603, format!("verify_encoding task failed: {e}"), None::<()>)
+            ErrorObjectOwned::owned(
+                -32603,
+                format!("verify_encoding task failed: {e}"),
+                None::<()>,
+            )
         })?;
         verdict.map_err(|e| {
             ErrorObjectOwned::owned(-32602, format!("verify_encoding failed: {e}"), None::<()>)

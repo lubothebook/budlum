@@ -223,7 +223,9 @@ impl L1NoteRegistry {
                 "live commitment set full ({}/{}) - transfer would add {} notes",
                 self.live_commitments.len(),
                 MAX_LIVE_COMMITMENTS,
-                output_commitments.len().saturating_sub(spent_commitments.len())
+                output_commitments
+                    .len()
+                    .saturating_sub(spent_commitments.len())
             ));
         }
 
@@ -394,7 +396,8 @@ mod tests {
         assert!(r.contains_commitment(&input));
         assert!(!r.is_nullifier_spent(&nullifier));
         // One for one keeps the size and is still allowed.
-        r.apply_transfer(&[input], &[nullifier], &outs[..1]).unwrap();
+        r.apply_transfer(&[input], &[nullifier], &outs[..1])
+            .unwrap();
         assert_eq!(r.live_count(), MAX_LIVE_COMMITMENTS);
     }
 

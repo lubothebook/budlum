@@ -866,7 +866,9 @@ impl Blockchain {
                     state.message_registry = registry;
                 }
                 Err(e) => {
-                    error!("CRITICAL ERROR: stored cross domain message registry is unreadable: {e}");
+                    error!(
+                        "CRITICAL ERROR: stored cross domain message registry is unreadable: {e}"
+                    );
                     #[cfg(not(test))]
                     std::process::exit(1);
                     #[cfg(test)]
@@ -4151,10 +4153,7 @@ impl Blockchain {
     /// After a reorg `get_qc_blob` can still return the blob of the old fork
     /// from disk, and a certificate of the new fork must not be finalized with
     /// it (BLG-0181).
-    fn ensure_blob_matches_checkpoint(
-        blob: &QcBlob,
-        checkpoint_hash: &str,
-    ) -> Result<(), String> {
+    fn ensure_blob_matches_checkpoint(blob: &QcBlob, checkpoint_hash: &str) -> Result<(), String> {
         if blob.checkpoint_hash != checkpoint_hash {
             return Err(format!(
                 "QC blob checkpoint hash {} does not match certificate hash {} at height {}",
@@ -7187,8 +7186,8 @@ mod tests {
             created_epoch: 1,
         };
         assert!(Blockchain::ensure_blob_matches_checkpoint(&blob, &"aa".repeat(32)).is_ok());
-        let error = Blockchain::ensure_blob_matches_checkpoint(&blob, &"bb".repeat(32))
-            .unwrap_err();
+        let error =
+            Blockchain::ensure_blob_matches_checkpoint(&blob, &"bb".repeat(32)).unwrap_err();
         assert!(error.contains("does not match certificate hash"));
     }
 
@@ -7218,7 +7217,8 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
         let raw = raw.unwrap();
-        raw.insert(b"PROOF_CLAIM_REGISTRY", vec![0xFFu8; 3]).unwrap();
+        raw.insert(b"PROOF_CLAIM_REGISTRY", vec![0xFFu8; 3])
+            .unwrap();
         raw.flush().unwrap();
         drop(raw);
         let storage = Storage::new(path).unwrap();
@@ -7249,7 +7249,12 @@ mod tests {
         bc.register_consensus_domain(domain).unwrap();
         bc.advance_domain_to_proof_claim(1, 7, [0x33; 32]).unwrap();
 
-        let stored = bc.storage.as_ref().unwrap().load_consensus_domains().unwrap();
+        let stored = bc
+            .storage
+            .as_ref()
+            .unwrap()
+            .load_consensus_domains()
+            .unwrap();
         let stored = stored.iter().find(|d| d.id == 1).unwrap();
         assert_eq!(stored.last_committed_height, 7);
         assert_eq!(stored.last_committed_hash, [0x33; 32]);
@@ -7340,16 +7345,19 @@ mod tests {
         block2.tx_root = block2.calculate_tx_root();
         block2.hash = block2.calculate_hash();
         let root = [0u8; 32];
-        let c1 =
-            crate::domain::DomainCommitment::from_block(&domain, &block1, root, [0u8; 32], 0)
-                .unwrap();
-        let c2 =
-            crate::domain::DomainCommitment::from_block(&domain, &block2, root, [0u8; 32], 1)
-                .unwrap();
+        let c1 = crate::domain::DomainCommitment::from_block(&domain, &block1, root, [0u8; 32], 0)
+            .unwrap();
+        let c2 = crate::domain::DomainCommitment::from_block(&domain, &block2, root, [0u8; 32], 1)
+            .unwrap();
         bc.submit_domain_commitment(c1).unwrap();
         assert!(bc.submit_domain_commitment(c2).is_err());
 
-        let stored = bc.storage.as_ref().unwrap().load_consensus_domains().unwrap();
+        let stored = bc
+            .storage
+            .as_ref()
+            .unwrap()
+            .load_consensus_domains()
+            .unwrap();
         let stored = stored.iter().find(|d| d.id == 1).unwrap();
         assert_eq!(stored.status, DomainStatus::Frozen);
     }
@@ -7379,12 +7387,10 @@ mod tests {
         block2.tx_root = block2.calculate_tx_root();
         block2.hash = block2.calculate_hash();
         let root = [0u8; 32];
-        let c1 =
-            crate::domain::DomainCommitment::from_block(&domain, &block1, root, [0u8; 32], 0)
-                .unwrap();
-        let c2 =
-            crate::domain::DomainCommitment::from_block(&domain, &block2, root, [0u8; 32], 1)
-                .unwrap();
+        let c1 = crate::domain::DomainCommitment::from_block(&domain, &block1, root, [0u8; 32], 0)
+            .unwrap();
+        let c2 = crate::domain::DomainCommitment::from_block(&domain, &block2, root, [0u8; 32], 1)
+            .unwrap();
         let root1 = c1.state_root;
         let root2 = c2.state_root;
         assert_ne!(root1, root2);
@@ -7530,20 +7536,31 @@ mod tests {
         block.state_root = "22".repeat(32);
         block.tx_root = block.calculate_tx_root();
         block.hash = block.calculate_hash();
-        let commitment =
-            crate::domain::DomainCommitment::from_block(&domains[0], &block, tree.root(), [0u8; 32], 0)
-                .unwrap();
+        let commitment = crate::domain::DomainCommitment::from_block(
+            &domains[0],
+            &block,
+            tree.root(),
+            [0u8; 32],
+            0,
+        )
+        .unwrap();
         bc.submit_domain_commitment(commitment).unwrap();
 
         // Fill the supply cap so the mint cannot fit.
         let headroom = bc.state.supply_capacity_remaining();
         bc.state.get_or_create(&recipient).balance += headroom;
         let proof = tree.proof(0).unwrap();
-        assert!(bc.submit_relay_proof(message_id, relayer, &proof, 1).is_err());
+        assert!(bc
+            .submit_relay_proof(message_id, relayer, &proof, 1)
+            .is_err());
         assert!(!bc.universal_relayer.is_relayed(&message_id));
         assert_eq!(bc.pending_relay_count(), 1);
         assert!(matches!(
-            bc.state.bridge_state.get_transfer(&message_id).unwrap().status,
+            bc.state
+                .bridge_state
+                .get_transfer(&message_id)
+                .unwrap()
+                .status,
             crate::cross_domain::bridge::BridgeStatus::Locked { .. }
         ));
     }

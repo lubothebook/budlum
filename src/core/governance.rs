@@ -533,8 +533,8 @@ impl GovernanceState {
 
         // Validate proposal duration
         const MAX_PROPOSAL_DURATION: u64 = 100_000; // Maximum 100,000 epochs
-        // Minimum 10 epochs. A constitution amendment must also respect the
-        // constitution's own MinConstitutionProposalEpochs (P20-F05).
+                                                    // Minimum 10 epochs. A constitution amendment must also respect the
+                                                    // constitution's own MinConstitutionProposalEpochs (P20-F05).
         let min_proposal_duration = match &p_type {
             ProposalType::SetConstitutionParameter(_) => self.constitution.min_proposal_epochs(),
             _ => 10,

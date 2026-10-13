@@ -26,7 +26,9 @@
 use crate::core::hash::{calculate_hash_bytes, hash_fields_bytes};
 use crate::storage::qr_carousel::{oneshot_drop_count, CarouselEncoder, CarouselError};
 use crate::storage::qr_frame::{fold_frame_digests, frame_digest, pack_frame, FrameError};
-use crate::storage::qr_payload::{pack_payload_opts, payload_commitment, PayloadError, PayloadKind};
+use crate::storage::qr_payload::{
+    pack_payload_opts, payload_commitment, PayloadError, PayloadKind,
+};
 use crate::storage::qr_png::frame_to_qr_png;
 use crate::storage::qr_recipe::ThreeRecipePublic;
 use crate::storage::qr_video::{QrVideo, QrVideoError, MAX_VIDEO_FRAMES, VIDEO_MAGIC};

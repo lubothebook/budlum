@@ -1771,7 +1771,8 @@ impl AccountState {
                     // A full governance slash also takes the stake that is
                     // still waiting to unbond. Otherwise unstake before the
                     // vote would keep it whole.
-                    self.unbonding_queue.retain(|entry| entry.address != *address);
+                    self.unbonding_queue
+                        .retain(|entry| entry.address != *address);
                     tracing::info!(
                         "Executing Governance: Slashed validator {address} (evidence-verified)"
                     );
@@ -3335,8 +3336,8 @@ mod tests {
             None,
         );
         assert!(state.slash_from_report(&report).unwrap().is_some());
-        let record_bytes = bincode::serialize(&state.registry.slashing_history()[0].report)
-            .unwrap_or_default();
+        let record_bytes =
+            bincode::serialize(&state.registry.slashing_history()[0].report).unwrap_or_default();
         let evidence_hash: [u8; 32] = sha2::Sha256::digest(&record_bytes).into();
         let p = Proposal::new(
             1,

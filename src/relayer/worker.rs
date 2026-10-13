@@ -106,7 +106,9 @@ struct PendingResult {
     /// at [`MAX_REQUESTER_LOOKUP_FAILURES`] the entry is dropped and logged.
     #[serde(default)]
     requester_lookups_failed: u32,
-    done: false,
+    /// True once the result transaction sits in a finalized block.
+    #[serde(default)]
+    done: bool,
 }
 
 /// The file name of the pending-result store, next to the cursor file.
@@ -1913,7 +1915,11 @@ mod pending_results {
             external_nonce: 7,
         };
         let outcome = again.process_relay("req-a", user, request).await;
-        assert_eq!(outcome, RelayOutcome::Submitted, "no second external action");
+        assert_eq!(
+            outcome,
+            RelayOutcome::Submitted,
+            "no second external action"
+        );
 
         again.release_behind_cursor();
         assert!(again.load_pending().expect("load").is_empty());

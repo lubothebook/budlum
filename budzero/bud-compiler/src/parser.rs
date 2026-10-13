@@ -870,7 +870,11 @@ mod tests {
         for expr in [sum, product, fields] {
             let source = format!("contract T {{ pub fn main() {{ let x = {expr}; }} }}");
             let res = crate::compile(&source, bud_isa::IsaProfile::Production);
-            assert!(matches!(res, Err(CompileError::ParserError(_))), "{:?}", res.err());
+            assert!(
+                matches!(res, Err(CompileError::ParserError(_))),
+                "{:?}",
+                res.err()
+            );
         }
     }
 

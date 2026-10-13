@@ -738,8 +738,8 @@ mod open_deal {
         let mut body = unsigned_body(&m, &op);
         body.operator_consent = consent(&op, MAINNET, &payer(), 0, &body);
 
-        let err = apply_without_write(&mut state, &op.address(), open_tx(body, MAINNET))
-            .unwrap_err();
+        let err =
+            apply_without_write(&mut state, &op.address(), open_tx(body, MAINNET)).unwrap_err();
         assert!(err.contains("mainnet"), "got {err}");
     }
 
@@ -748,8 +748,7 @@ mod open_deal {
         let (mut state, m, op) = world();
         let mut tx = open_tx(signed_body(&m, &op), DEFAULT_CHAIN_ID);
         tx.amount = 5;
-        let err = apply_without_write(&mut state, &op.address(), tx)
-            .unwrap_err();
+        let err = apply_without_write(&mut state, &op.address(), tx).unwrap_err();
         assert!(err.contains("storage_amount_must_be_zero"), "got {err}");
     }
 

@@ -305,7 +305,8 @@ impl PoWEngine {
     }
 
     fn adjusted_difficulty(&self, current: usize, first: &Block, last: &Block) -> usize {
-        let actual_time = last.timestamp.saturating_sub(first.timestamp) / 1000;
+        let actual_time = u64::try_from(last.timestamp.saturating_sub(first.timestamp) / 1000)
+            .unwrap_or(u64::MAX);
         let expected_time = self
             .config
             .target_block_time

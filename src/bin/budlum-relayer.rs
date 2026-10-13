@@ -957,7 +957,10 @@ mod tests {
             advance_cursor(10, 20, true, MAX_WINDOW_ATTEMPTS - 2),
             (10, MAX_WINDOW_ATTEMPTS - 1)
         );
-        assert_eq!(advance_cursor(10, 20, true, MAX_WINDOW_ATTEMPTS - 1), (20, 0));
+        assert_eq!(
+            advance_cursor(10, 20, true, MAX_WINDOW_ATTEMPTS - 1),
+            (20, 0)
+        );
     }
 
     /// The check used to compare lowercased strings, so a prefix difference

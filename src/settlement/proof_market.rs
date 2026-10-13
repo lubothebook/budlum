@@ -1036,9 +1036,13 @@ mod tests {
     fn a_failed_payment_leaves_the_receipt_pending() {
         let mut market = ProofMarketState::new();
         market.total_rewards_paid = u64::MAX;
-        market
-            .pending_receipts
-            .push(ProofReceipt::new([1u8; 32], test_address(2), 20, [3u8; 32], 5_000));
+        market.pending_receipts.push(ProofReceipt::new(
+            [1u8; 32],
+            test_address(2),
+            20,
+            [3u8; 32],
+            5_000,
+        ));
         assert!(market.pay_receipt(0).unwrap_err().contains("overflow"));
         assert!(market.pending_receipts[0].is_payable());
         assert_eq!(market.total_rewards_paid, u64::MAX);

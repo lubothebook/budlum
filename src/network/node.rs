@@ -720,14 +720,18 @@ impl Node {
     /// `try_reorg` needs the whole candidate chain from genesis. The peer
     /// sends only the blocks from the fork height, so the shared prefix is
     /// taken from the local chain. The result is logged, never dropped.
-    async fn reorg_to_peer_suffix(&self, suffix: Vec<crate::core::block::Block>, peer: &PeerId) {
+    async fn reorg_to_peer_suffix(
+        chain: ChainHandle,
+        suffix: Vec<crate::core::block::Block>,
+        peer: &PeerId,
+    ) {
         let Some(first) = suffix.first() else {
             return;
         };
         let start = first.index;
         let mut prefix = Vec::new();
         for height in 0..start {
-            match self.chain.get_block(height).await {
+            match chain.get_block(height).await {
                 Some(block) => prefix.push(block),
                 None => {
                     warn!("Reorg from {peer} skipped: local block {height} is missing");
@@ -742,7 +746,7 @@ impl Node {
                 return;
             }
         };
-        match self.chain.try_reorg(candidate).await {
+        match chain.try_reorg(candidate).await {
             Ok(true) => info!("Reorg to the chain of {peer} done"),
             Ok(false) => info!("Reorg to the chain of {peer} not needed: not a better chain"),
             Err(error) => warn!("Reorg to the chain of {peer} failed: {error}"),
@@ -2591,7 +2595,7 @@ impl Node {
                                                    let our_block_at_start = self.chain.get_block(start_idx).await;
                                                    if let Some(our_b) = our_block_at_start {
                                                        if our_b.hash != blocks[0].hash {
-                                                           self.reorg_to_peer_suffix(blocks.clone(), &peer_id).await;
+                                                           Self::reorg_to_peer_suffix(self.chain.clone(), blocks.clone(), &peer_id).await;
                                                        } else {
                                                            for block in blocks {
                                                                let h = self.chain.get_height().await;
@@ -3320,7 +3324,7 @@ impl Node {
                                                                    let our_block = self.chain.get_block(start_idx).await;
                                                                    if let Some(our_b) = our_block {
                                                                        if our_b.hash != blocks[0].hash {
-                                                                           self.reorg_to_peer_suffix(blocks, &peer).await;
+                                                                           Self::reorg_to_peer_suffix(self.chain.clone(), blocks, &peer).await;
                                                                        } else {
                                                                            for block in blocks {
                                                                                let h = self.chain.get_height().await;
@@ -3799,7 +3803,10 @@ mod sync_handler_order_tests {
         assert!(super::precommit_height_is_new(101, 100));
         let src = production();
         let old = format!("checkpoint_height > self.{}", "last_precommit_height");
-        assert!(!src.contains(&old), "the guard must use the aggregator height");
+        assert!(
+            !src.contains(&old),
+            "the guard must use the aggregator height"
+        );
     }
 
     /// BLG-0209: the cid a Bitswap response is checked against comes from the
@@ -3808,7 +3815,10 @@ mod sync_handler_order_tests {
     fn bitswap_response_is_checked_against_the_requested_cid() {
         let src = production();
         let own = format!("handle_response({}, response)", "response_cid");
-        assert!(!src.contains(&own), "the response must not vouch for itself");
+        assert!(
+            !src.contains(&own),
+            "the response must not vouch for itself"
+        );
         assert!(src.contains("handle_response(requested_cid, response)"));
         assert!(src.contains("self.bitswap_requests.insert(request_id, want_cid)"));
         assert!(src.contains("self.bitswap_requests.remove(request_id)"));
