@@ -470,14 +470,15 @@ fn invariant_3_any_account_can_challenge_any_deal() {
 
 /// Invariant 4: if the operator bond is above
 /// `StorageDomainParams::min_operator_bond` anyone can open a deal - no KYC, no
-/// whitelist, no official application. The same account may open several deals (replicas) for the same shard.
+/// whitelist, no official application. Each replica of a shard goes to its own operator.
 #[test]
 fn invariant_4_any_account_meeting_bond_can_open_deal() {
     let mut reg = StorageRegistry::new();
     let manifest = good_manifest();
     let shard_id = manifest.shards[0].shard_id;
     let dp = domain_params();
-    for i in 0..5u8 {
+    let replicas = crate::domain::storage_deal::STORAGE_REPLICATION_TARGET;
+    for i in 0..replicas {
         reg.open_deal(
             1,
             &manifest,
@@ -493,7 +494,7 @@ fn invariant_4_any_account_meeting_bond_can_open_deal() {
         )
         .expect("any account with bond can open a deal");
     }
-    assert_eq!(reg.all_deals().len(), 5);
+    assert_eq!(reg.all_deals().len(), usize::from(replicas));
 }
 
 /// Invariant 5: a challenge opener_bond must be > 0, otherwise anyone could
