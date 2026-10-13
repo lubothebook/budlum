@@ -336,3 +336,38 @@ fn shipped_profiles_match_the_chain_id_of_their_genesis_file() {
     }
     assert!(checked >= 7, "only {checked} profiles were checked");
 }
+
+/// Reads the systemd unit without its comment lines.
+fn systemd_unit_lines() -> Vec<String> {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(root.join("ops/budlum-core.service"))
+        .expect("systemd unit is readable")
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .map(str::to_string)
+        .collect()
+}
+
+/// BLG-1078: the systemd unit set `BUDLUM_RPC_KEY=%d/budlum-rpc-key`. No code
+/// reads that name, and `%d` is a directory path, not key content. The node
+/// reads the variable that `BUDLUM_RPC_API_KEY_ENV` names, so the unit has to
+/// name it and has to load its value from a file.
+#[test]
+fn systemd_unit_wires_the_rpc_api_key_the_node_reads() {
+    let lines = systemd_unit_lines();
+    assert!(
+        !lines.iter().any(|l| l.contains("BUDLUM_RPC_KEY")),
+        "the unit sets BUDLUM_RPC_KEY, a name the node never reads"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l == "Environment=BUDLUM_RPC_API_KEY_ENV=BUDLUM_RPC_API_KEY"),
+        "the unit must tell the node which variable holds the RPC key"
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with("EnvironmentFile=")),
+        "the unit must load the key value from an environment file"
+    );
+}
