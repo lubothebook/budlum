@@ -114,6 +114,10 @@ mod tests {
         ));
         // A failed or ignored result is not a pass.
         assert!(!line_matches(
+            "test tests::burn_is_capped ... ignored, token expiry",
+            "burn_is_capped"
+        ));
+        assert!(!line_matches(
             "test tests::burn_is_capped ... FAILED",
             "burn_is_capped"
         ));

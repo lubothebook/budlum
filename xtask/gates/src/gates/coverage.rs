@@ -13,14 +13,19 @@ fn baseline(root: &Path) -> Result<f64, String> {
         .map_err(|e| format!("the baseline could not be read ({}): {e}", f.display()))?;
     // The file holds a plain float (`64.30`), as the shell gate's `float()`
     // read it; a trailing `%` is tolerated for hand-edited values.
-    text.lines()
+    let value = text
+        .lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
         .ok_or_else(|| format!("the baseline could not be read ({})", f.display()))?
         .trim_end_matches('%')
         .trim()
         .parse::<f64>()
-        .map_err(|e| format!("the baseline is not a number: {e}"))
+        .map_err(|e| format!("the baseline is not a number: {e}"))?;
+    if !value.is_finite() || !(0.0..=100.0).contains(&value) {
+        return Err(format!("the baseline is not a percentage: {value}"));
+    }
+    Ok(value)
 }
 
 /// Pull the line-coverage percentage out of the llvm-cov JSON export:
@@ -36,6 +41,7 @@ fn percent_from_json(text: &str) -> Option<f64> {
         .get("lines")?
         .get("percent")?
         .as_f64()
+        .filter(|pct| pct.is_finite() && (0.0..=100.0).contains(pct))
 }
 
 /// # Errors
@@ -98,6 +104,31 @@ pub fn self_test() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_baselines_are_refused() {
+        let dir =
+            crate::gates::rust_literals::exclusive_scratch_dir("budlum-cov-test").expect("fixture");
+        std::fs::create_dir(dir.join(".github")).expect("config dir");
+        let path = dir.join(".github/coverage-baseline.txt");
+        for value in ["NaN", "inf", "-inf", "-5", "100.01", "", "unknown"] {
+            std::fs::write(&path, value).expect("baseline");
+            assert!(baseline(&dir).is_err(), "{value}");
+        }
+        for value in ["0", "64.30%", "100"] {
+            std::fs::write(&path, value).expect("baseline");
+            assert!(baseline(&dir).is_ok(), "{value}");
+        }
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn invalid_measured_percentages_are_refused() {
+        for pct in ["-1", "101", "null", "\"NaN\""] {
+            let report = format!(r#"{{"data":[{{"totals":{{"lines":{{"percent":{pct}}}}}}}]}}"#);
+            assert_eq!(percent_from_json(&report), None, "{pct}");
+        }
+    }
 
     #[test]
     fn parses_percent() {
