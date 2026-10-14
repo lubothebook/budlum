@@ -1333,6 +1333,15 @@ fn repo_root() -> PathBuf {
     }
 }
 
+// Workflow command data must stay on one line. Escape percent first so an
+// input that contains an encoded newline cannot inject another command.
+fn annotation_data(message: &str) -> String {
+    message
+        .replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -1388,6 +1397,10 @@ fn main() {
             Ok(msg) => println!("{msg}"),
             Err(msg) => {
                 eprintln!("FAIL [{}]: {msg}", g.name);
+                if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+                    let finding = annotation_data(&format!("FAIL [{}]: {msg}", g.name));
+                    println!("::error::{finding}");
+                }
                 failed.push(g.name);
             }
         }
@@ -1403,5 +1416,16 @@ fn main() {
             failed.join(", ")
         );
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod annotation_tests {
+    #[test]
+    fn annotation_data_cannot_inject_workflow_commands() {
+        assert_eq!(
+            super::annotation_data("reason%0A\r\n::error::other"),
+            "reason%250A%0D%0A::error::other"
+        );
     }
 }
