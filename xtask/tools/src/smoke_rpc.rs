@@ -218,7 +218,9 @@ pub fn run(root: &Path, cfg: &Config) -> Result<String, String> {
 
     println!("[smoke] RPC response: {body}");
     if reply_chain_id(&body) != Some(expected) {
-        return Err(format!("expected a successful chain id reply for {expected}"));
+        return Err(format!(
+            "expected a successful chain id reply for {expected}"
+        ));
     }
     Ok(format!(
         "[smoke] OK - bud_chainId responded on {}",

@@ -64,11 +64,11 @@ jobs:
           for report in /tmp/tooling-tests.log /tmp/tooling-clippy.log /tmp/tooling-format.log; do
             if [ -s "$report" ]; then
               # One escaped annotation per report. No pipeline changes a verdict.
-              message=$(tail -n 100 "$report")
+              message=$(tail -n 40 "$report" | tail -c 3000)
               message="${message//'%'/'%25'}"
               message="${message//$'\r'/'%0D'}"
               message="${message//$'\n'/'%0A'}"
-              printf '::error::%s (last 100 lines): %s\n' "$report" "$message"
+              printf '::error::%s (bounded tail): %s\n' "$report" "$message"
             fi
           done
   budlum-pq-build:

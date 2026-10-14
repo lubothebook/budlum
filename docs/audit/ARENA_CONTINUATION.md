@@ -64,7 +64,7 @@ have a test-only red run and are not represented as red-green proof.
   triggered a newer run. It is not test evidence.
 - PR 11 CI run `38560075471` at `ba81620` was queued at the last read.
 - Typos run `38560075430`, job `115838674284`, failed after the upload.
-  Checks annotations report the Turkish word `Analist` as an English typo.
+  Checks annotations flag the Turkish analyst role name as an English typo.
   The owner directive policy already preserves such documents in Turkish.
 - `gh run view --log-failed` could not reach the Actions log download host.
   The GitHub API for job steps and annotations works. Failure annotations
@@ -104,3 +104,12 @@ Do not use `ask_user` while independent, unblocked work remains.
    red-green evidence with a statement that tests should pass.
 5. Update this record and PR 11 when evidence changes. The main commit whose
    entire required CI is green has not yet been established from live data.
+
+### Evidence update: 7a65b15
+
+Run `38560779381`, tools job `115841480299`: unit tests and clippy passed.
+Format failed on the wrapping of one error message in `smoke_rpc.rs`. The
+Checks API supplied the exact diff; the follow-up applies that diff only.
+Typos run `38560779224`, job `115841006887`, found the quoted Turkish role
+name in this record. The record now describes the word in English. This is
+not a new spelling exception. The gates matrix job was still queued.
