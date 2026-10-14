@@ -24,10 +24,8 @@ jobs:
     #   * Base = `pull_request.base.sha` on a PR, `push.before` on a main push.
     #   * Two separate checkouts (current/baseline) + `--baseline-root`.
     #   * A nightly toolchain (for cargo-semver-checks rustdoc-json generation).
-    #   * Gate: `semver` (Rust, xtask/gates) - FAIL if there is a breakage and
-    #     `.github/semver-exceptions.txt` is empty. Exception lines follow the
-    #     approved, justified "evidenced skip-list" pattern
-    #     (the same discipline as .quality/deny.toml [advisories]).
+    #   * Gate: `semver` (Rust, xtask/gates) - FAIL on every nonzero result.
+    #     Historical exception lines cannot approve unrelated API removals.
     name: "Semver Check (item 5: public API breakage gate)"
     runs-on: ubuntu-latest
     timeout-minutes: 40

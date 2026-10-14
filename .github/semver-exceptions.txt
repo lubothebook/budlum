@@ -1,23 +1,10 @@
-# SEMVER EXCEPTIONS - the budlum-core public API breakage exception list (step 1, 2026-07-21)
+# SEMVER EXCEPTIONS - historical approval evidence only
 #
-# This list must stay EMPTY; an empty list = the cargo-semver-checks gate runs
-# fully fail-closed (item 5: public API breakage detection -> FAIL).
+# Legacy exception entries are not gate overrides. A line about one API
+# used to approve every unrelated API removal in the same report (P54-F01).
+# No text in this file can turn a nonzero cargo-semver-checks result green.
+# Restore compatibility or make the required, reviewed version change.
 #
-# Exception rules (the same discipline as deny.toml [advisories]):
-#   * Each line carries a single accepted breakage and MUST contain a justification.
-#   * No line is added without approval; the approval evidence (a STATUS_ONLINE
-#     entry / decision note) is referenced on the line.
-#   * Format: <semver-checks lint name or API surface> | <justification> | <approval evidence>
-#
-# Example (a template - NOT ACTIVE, kept commented out with #):
-#   # method_missing: AccountState::legacy_probe | deliberate pre-mainnet API
-#   #   cleanup, the 0.x version line | STATUS_ONLINE 2026-07-21 approval
-#
-# Note: comment lines in this file DO NOT AFFECT the gate; only non-comment
-# lines count as exceptions (see scripts/check-semver.sh).
-#
-# EIP-1559 fee distribution (step G): a new public method.
-# AccountState::distribute_block_fees - fee distribution at block finalization.
-# cargo-semver-checks detects that a new method was added; on this 0.x version
-# line a minor addition is accepted. Approval: STATUS_ONLINE 2026-07-21.
-AccountState::distribute_block_fees | EIP-1559 fee distribution wiring (step G) - a new public method wired into block finalization | STATUS_ONLINE 2026-07-21 approval
+# Historical approval evidence retained for review:
+# AccountState::distribute_block_fees | EIP-1559 fee distribution wiring
+# STATUS_ONLINE 2026-07-21 approval

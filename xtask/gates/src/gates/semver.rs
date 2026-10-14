@@ -4,12 +4,10 @@
 //! checkout against a baseline root:
 //!
 //!   * `cargo semver-checks` exits 0 -> PASS (no public API breakage).
-//!   * exit != 0 (a breakage report OR an infrastructure failure) ->
-//!     `.github/semver-exceptions.txt` is consulted. A comment-only file
-//!     means FAIL; a file with at least one justified, user-approved entry
-//!     means PASS-EXCEPTION. Infrastructure crashes are never masked by an
-//!     exception: a crash means "unknown", not "no breakage", so those are
-//!     fail-closed (the same rule the shell gate enforced).
+//!   * exit != 0 -> FAIL. Historical exception lines did not bind the
+//!     actual removed API and could approve unrelated breakage. They are
+//!     no longer an override. Restore compatibility or make the explicit
+//!     version change that cargo-semver-checks requires.
 //!
 //! The port keeps the shell gate's two-root call shape, its ANSI stripping
 //! (colour codes would split the "error:" regexes), its 240-line report
@@ -151,8 +149,7 @@ fn classify_report(report: &str, exc: &Path) -> Verdict {
     if lines.iter().any(|line| line_is_infra(line)) {
         return Err(String::from(
             "SEMVER GATE: FAIL - the tool ended inconclusive with an INFRASTRUCTURE \
-             error (a crash is not a breakage; no exception applies).\n\
-             The exception mechanism applies only to real breakage reports.",
+             error (a crash is not a breakage; no exception applies).",
         ));
     }
     if !lines.iter().any(|line| line_is_breakage(line)) {
@@ -163,30 +160,22 @@ fn classify_report(report: &str, exc: &Path) -> Verdict {
     }
     let entries = has_justified_entries(exc)?;
     if !entries.is_empty() {
-        let mut msg = String::from(
-            "SEMVER GATE: PASS-EXCEPTION - .github/semver-exceptions.txt contains a \
-             justified acceptance:\n",
-        );
-        for entry in entries {
-            msg.push_str("  ISTISNA: ");
-            msg.push_str(&entry);
-            msg.push('\n');
-        }
-        return Ok(msg);
+        return Err(String::from(
+            "SEMVER GATE: FAIL - legacy exception entries cannot approve this report. \
+             Restore API compatibility or make an explicit version change.",
+        ));
     }
 
     Err(String::from(
         "SEMVER GATE: FAIL - a public API breakage with no exception.\n\
-         Options: (a) revert the breakage, (b) if MAJOR/MINOR is intended and \
-         approved, add a justified line to .github/semver-exceptions.txt.",
+         Restore API compatibility or make an explicit version change.",
     ))
 }
 
 /// # Errors
 ///
-/// Returns a finding when `cargo semver-checks` reports breakage without a
-/// justified exception, or crashes, or the classification is unrecognised.
-pub fn run_args(root: &Path, args: &[&str]) -> Verdict {
+/// Returns a finding on breakage, a tool failure or an unknown report.
+pub fn run_args(_root: &Path, args: &[&str]) -> Verdict {
     let (current_s, baseline_s) = match args {
         [current, baseline] => (*current, *baseline),
         _ => {
@@ -210,11 +199,9 @@ pub fn run_args(root: &Path, args: &[&str]) -> Verdict {
         ));
     }
     if !baseline.join("Cargo.toml").is_file() {
-        // First release / empty baseline: there is no previous version to compare against,
-        // so there is no such measure as a public API break. This is
-        // not an infrastructure error but the first-PR scenario; let it pass.
-        return Ok(String::from(
-            "SEMVER GATE: PASS - the baseline is empty (first release), no comparison.",
+        return Err(format!(
+            "baseline root without Cargo.toml: {}",
+            baseline.display()
         ));
     }
 
@@ -230,12 +217,9 @@ pub fn run_args(root: &Path, args: &[&str]) -> Verdict {
         ));
     }
 
-    // The exceptions file belongs to the checkout under test; fall back to
-    // the gate's own tree when the current root predates it.
-    let mut exc = current.join(".github/semver-exceptions.txt");
-    if !exc.is_file() {
-        exc = root.join(".github/semver-exceptions.txt");
-    }
+    // Only the base can supply the historical record. A PR cannot approve
+    // itself by writing an exception in the checkout under test.
+    let exc = baseline.join(".github/semver-exceptions.txt");
 
     compare(&current, &baseline, &exc)
 }
@@ -435,8 +419,7 @@ fn scratch_dir() -> Result<PathBuf, String> {
 /// Returns the first canary that misbehaves. The canaries mirror the shell
 /// gate's: the exceptions file is present and well-formed, an infrastructure
 /// crash is never masked by an exception, unrecognised output is fail-closed,
-/// breakage without an exception fails, and breakage with a justified
-/// exception passes.
+/// breakage fails even when a legacy exception is present.
 pub fn self_test() -> Result<String, String> {
     let root = std::env::var_os("BUDLUM_ROOT").map_or_else(
         || std::env::current_dir().unwrap_or_default(),
@@ -506,13 +489,11 @@ pub fn self_test() -> Result<String, String> {
         ));
     }
 
-    // A real breakage with a justified exception must pass; without this the
-    // gate would reject everything and the four checks above would pass for
-    // free.
-    if classify_report(breaking, &filled_exc).is_err() {
+    // An unrelated old approval must not suppress a new API removal.
+    if classify_report(breaking, &filled_exc).is_ok() {
         let _ = fs::remove_dir_all(&tmp);
         return Err(String::from(
-            "self-test: a justified exception was not accepted (the gate refuses everything)",
+            "self-test: a legacy exception suppressed an unrelated breakage",
         ));
     }
 
@@ -539,7 +520,7 @@ pub fn self_test() -> Result<String, String> {
     let _ = fs::remove_dir_all(&tmp);
     Ok(format!(
         "canary OK: a crash is not masked, unrecognised output is fail-closed, a breakage \
-         FAILs without an exception / PASSes with a justified one (the gate is not vacuous){live}.",
+         FAILs with or without a legacy exception{live}.",
     ))
 }
 
@@ -642,6 +623,28 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_baseline_checkout_is_refused_before_running_the_tool() {
+        let dir = scratch();
+        let current = dir.join("current");
+        let baseline = dir.join("baseline");
+        fs::create_dir(&current).expect("current");
+        fs::create_dir(&baseline).expect("baseline");
+        fs::write(current.join("Cargo.toml"), "[package]\nname = \"fixture\"\n")
+            .expect("manifest");
+        let verdict = run_args(
+            &dir,
+            &[
+                current.to_str().expect("path"),
+                baseline.to_str().expect("path"),
+            ],
+        );
+        assert!(verdict
+            .expect_err("missing manifest")
+            .contains("baseline root without Cargo.toml"));
+        fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
     fn ansi_sequences_are_stripped() {
         assert_eq!(strip_ansi("\u{1b}[31mred\u{1b}[0m"), "red");
         assert_eq!(strip_ansi("\u{1b}[1;31m bold \u{1b}[m"), " bold ");
@@ -674,7 +677,7 @@ mod tests {
         fs::write(&filled, "method_missing: X | justification | approval\n").expect("fixture");
         let breaking = "--- failure struct_missing: pub struct removed\n";
         assert!(classify_report(breaking, &empty).is_err());
-        assert!(classify_report(breaking, &filled).is_ok());
+        assert!(classify_report(breaking, &filled).is_err());
         let _ = fs::remove_dir_all(&d);
     }
 
