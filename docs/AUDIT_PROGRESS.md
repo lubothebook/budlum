@@ -78,3 +78,11 @@ Rules for the next session:
 3. Ask the owner the two open decisions (proposer liveness, checkpoint and reorg rule; STATUS.md:102) before writing handoffs.
 4. Fix the try_reorg suffix bug (P01-F05b) first: it is plain wiring and blocks every reorg test.
 5. Update this file and docs/audit/FINDINGS.md and commit after every result.
+
+## PR 11 continuation (2026-10-14)
+
+The owner requested solo implementation from PR 9 and uploaded the Arena
+directives in `ba81620`. Current execution, constraints, package ownership and
+CI evidence are recorded in [ARENA_CONTINUATION.md](audit/ARENA_CONTINUATION.md).
+The ledger remains `docs/bulgular/BULGU_DEFTERI.md`; no whole-audit completion
+or independent approval is claimed. PR 11 is a draft.

@@ -910,7 +910,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P51 | BLG-0902 | xtask/gates/src/gates/coding_audit_samples_the_relationship.rs:119-156 | P51-F09: notes/P51-scan.md:129; ham önem Medium | AÇIK |  |  |
 | P51 | BLG-0903 | xtask/gates/src/gates/docker_toolchain.rs:88-103 | P51-F10: notes/P51-scan.md:139; ham önem Medium | AÇIK |  |  |
 | P51 | BLG-0904 | xtask/gates/src/gates/dead_pub_api.rs:216-218, 248-259 | P51-F11: notes/P51-scan.md:149; ham önem Low | AÇIK |  |  |
-| P51 | BLG-0905 | xtask/gates/src/gates/coverage.rs:10-24, 61 | P51-F12: notes/P51-scan.md:159; ham önem Low | AÇIK |  |  |
+| P51 | BLG-0905 | xtask/gates/src/gates/coverage.rs:10-24, 61 | P51-F12: notes/P51-scan.md:159; ham önem Low / PR11 partial: invalid percentages rejected in 5064f1c; historical floor decrease still open | AÇIK | 5064f1c |  |
 | P51 | BLG-0906 | xtask/gates/src/gates/consensus_state_only_changes_in_blocks.rs:27-33, 75-125 | P51-F13: notes/P51-scan.md:169; ham önem Low | AÇIK |  |  |
 | P51 | BLG-0907 | xtask/gates/src/gates/domain_tags.rs:44-78, 91-119, 137 | P51-F14: notes/P51-scan.md:179; ham önem Low | AÇIK |  |  |
 | P51 | BLG-0908 | xtask/gates/src/gates/every_fuzz_target_is_run.rs:111-121, 169-184 | P51-F15: notes/P51-scan.md:189; ham önem Low | AÇIK |  |  |
@@ -971,9 +971,9 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P53 | BLG-0963 | xtask/gates/src/gates/refusals_no_mutate.rs:162-193, 429 | P53-F25: notes/P53-scan.md:283; ham önem Low | AÇIK |  |  |
 | P53 | BLG-0964 | xtask/gates/src/gates/regen_health_door.rs:245-275 | P53-F26: notes/P53-scan.md:293; ham önem Medium | AÇIK |  |  |
 | P53 | BLG-0965 | xtask/gates/src/gates/regen_health_door.rs:276-286, 215-220 | P53-F27: notes/P53-scan.md:303; ham önem Low | AÇIK |  |  |
-| P54 | BLG-0966 | .github/semver-exceptions.txt:20 | P54-F01: notes/P54-scan.md:35; ham önem Medium | AÇIK |  |  |
-| P54 | BLG-0967 | xtask/gates/src/gates/semver.rs:233-238 | P54-F02: notes/P54-scan.md:52; ham önem Medium | AÇIK |  |  |
-| P54 | BLG-0968 | xtask/gates/src/gates/semver.rs:212-219 | P54-F03: notes/P54-scan.md:68; ham önem Low | AÇIK |  |  |
+| P54 | BLG-0966 | .github/semver-exceptions.txt:20 | P54-F01: notes/P54-scan.md:35; ham önem Medium / PR11: legacy exception no longer masks unrelated breakage; CI pending | CI BEKLİYOR | dc80dd6 |  |
+| P54 | BLG-0967 | xtask/gates/src/gates/semver.rs:233-238 | P54-F02: notes/P54-scan.md:52; ham önem Medium / PR11: historical exception source is the base; no exception overrides failure; CI pending | CI BEKLİYOR | dc80dd6 |  |
+| P54 | BLG-0968 | xtask/gates/src/gates/semver.rs:212-219 | P54-F03: notes/P54-scan.md:68; ham önem Low / PR11: missing baseline manifest fails closed; regression test added; CI pending | CI BEKLİYOR | dc80dd6 |  |
 | P54 | BLG-0969 | xtask/gates/src/gates/required_tests.rs:190-243 | P54-F04: notes/P54-scan.md:82; ham önem Medium | AÇIK |  |  |
 | P54 | BLG-0970 | xtask/gates/src/gates/relay.rs:428-467 | P54-F05: notes/P54-scan.md:99; ham önem Medium | AÇIK |  |  |
 | P54 | BLG-0971 | xtask/gates/src/gates/relay.rs:215-220, 242, 326, 397-398 | P54-F06: notes/P54-scan.md:117; ham önem Low | AÇIK |  |  |
@@ -1017,7 +1017,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P55 | BLG-1009 | xtask/gates/src/gates/tree_is_english.rs:85-107, 120, 161-319, 438-447, 531-534 | P55-F21: notes/P55-scan.md:247; ham önem Low | AÇIK |  |  |
 | P55 | BLG-1010 | shard_placement.rs:315,327; storage_penalties.rs:416; threshold_rates.rs:147,211 | P55-F22: notes/P55-scan.md:257; ham önem Info | AÇIK |  |  |
 | P55 | BLG-1011 | xtask/gates/src/gates/suppressions_are_justified.rs:59-64 | P55-F23: notes/P55-scan.md:267; ham önem Info | AÇIK |  |  |
-| P56 | BLG-1012 | xtask/gates/src/gates/named_tests.rs:19-24 | P56-F01: notes/P56-scan.md:34; ham önem Medium | AÇIK |  |  |
+| P56 | BLG-1012 | xtask/gates/src/gates/named_tests.rs:19-24 | P56-F01: notes/P56-scan.md:34; ham önem Medium / PR11: inherited exact-match fix; regression pins ignored reason containing token; CI pending | CI BEKLİYOR | 4cc9b67,5064f1c |  |
 | P56 | BLG-1013 | xtask/gates/src/gates/zero_tests_witness.rs:132, 97-101, 189-291 | P56-F02: notes/P56-scan.md:50; ham önem Medium | AÇIK |  |  |
 | P56 | BLG-1014 | xtask/gates/src/gates/zkvm_immune_regeneration.rs:227-248 | P56-F03: notes/P56-scan.md:67; ham önem Medium | AÇIK |  |  |
 | P56 | BLG-1015 | xtask/gates/src/gates/zkvm_immune_regeneration.rs:36-48, 83-109 | P56-F04: notes/P56-scan.md:84; ham önem Medium | AÇIK |  |  |
@@ -1034,11 +1034,11 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 | P56 | BLG-1026 | xtask/gates/src/gates/zizmor.rs:83,85 | P56-F15: notes/P56-scan.md:251; ham önem Info | AÇIK |  |  |
 | P56 | BLG-1027 | xtask/gates/src/main.rs:1316-1334, 1361-1364 | P56-F16: notes/P56-scan.md:261; ham önem Info | AÇIK |  |  |
 | P57 | BLG-1028 | xtask/tools/src/audit_guard.rs:56-62, 145-152 | P57-F01: notes/P57-scan.md:47; ham önem Medium | AÇIK |  |  |
-| P57 | BLG-1029 | xtask/tools/Cargo.toml:1-20 | P57-F02: notes/P57-scan.md:67; ham önem Medium | AÇIK |  |  |
-| P57 | BLG-1030 | xtask/tools/src/smoke_rpc.rs:108-110, 172-194 | P57-F03: notes/P57-scan.md:77; ham önem Medium | AÇIK |  |  |
-| P57 | BLG-1031 | xtask/tools/src/smoke_rpc.rs:56, 133-142, 208-218 | P57-F04: notes/P57-scan.md:95; ham önem Medium | AÇIK |  |  |
+| P57 | BLG-1029 | xtask/tools/Cargo.toml:1-20 | P57-F02: notes/P57-scan.md:67; ham önem Medium / PR11: independent tooling test, clippy and fmt matrix added; CI pending | CI BEKLİYOR | 2c5d73d |  |
+| P57 | BLG-1030 | xtask/tools/src/smoke_rpc.rs:108-110, 172-194 | P57-F03: notes/P57-scan.md:77; ham önem Medium / PR11: structured response, network identity, occupied-port and child-exit checks; CI pending | CI BEKLİYOR | 4f92dc4 |  |
+| P57 | BLG-1031 | xtask/tools/src/smoke_rpc.rs:56, 133-142, 208-218 | P57-F04: notes/P57-scan.md:95; ham önem Medium / PR11: exclusive directory creation replaces recursive deletion; preservation and symlink tests; CI pending | CI BEKLİYOR | 4f92dc4 |  |
 | P57 | BLG-1032 | xtask/tools/src/backup_drill.rs:82-110, 168, 191-200 | P57-F05: notes/P57-scan.md:112; ham önem Medium | AÇIK |  |  |
-| P57 | BLG-1033 | xtask/tools/src/fsf_fit.rs:284-322 | P57-F06: notes/P57-scan.md:129; ham önem Low | AÇIK |  |  |
+| P57 | BLG-1033 | xtask/tools/src/fsf_fit.rs:284-322 | P57-F06: notes/P57-scan.md:129; ham önem Low / PR11: combined self-test/check validates the document; conflicting write/check refused; CI pending | CI BEKLİYOR | 4f92dc4 |  |
 | P57 | BLG-1034 | xtask/tools/src/audit_guard.rs:121-130, 218-228 | P57-F07: notes/P57-scan.md:145; ham önem Low | AÇIK |  |  |
 | P57 | BLG-1035 | xtask/tools/src/audit_guard.rs:133-238 | P57-F08: notes/P57-scan.md:160; ham önem Low | AÇIK |  |  |
 | P57 | BLG-1036 | xtask/tools/src/audit_guard.rs:134-137, 202-216, 230-237 | P57-F09: notes/P57-scan.md:170; ham önem Low | AÇIK |  |  |

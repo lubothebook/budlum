@@ -27,6 +27,9 @@ extend-exclude = [
   "/MODEL_ROUTING.md",
   "/MODEL_ROUTING_KURULUM.md",
   "/BUD-AI-KAPSAMLI-DIREKTIF.md",
+  # Uploaded by the owner in ba81620; retain the original Turkish rules.
+  "/ARENA_BULGU_ORKESTRASYON_DIREKTIFI (1).md",
+  "/ARENA_SUREKLI_CALISMA_DIREKTIFI.md",
   "/.claude/agents/",
   "repo-lubot/patches/",  # git format-patch output: the text is another repo's
                           # commit message, re-verified verbatim by `git am`, not

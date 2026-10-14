@@ -108,6 +108,8 @@ const ALLOWED_FILES: &[&str] = &[
     // the rules it carries.
     "MODEL_ROUTING_REF.md",
     "BUD-AI-KAPSAMLI-DIREKTIF.md",
+    "ARENA_BULGU_ORKESTRASYON_DIREKTIFI (1).md",
+    "ARENA_SUREKLI_CALISMA_DIREKTIFI.md",
     // The owner's finding ledger. The owner dictated it in Turkish and its
     // status values (for example AÇIK) are part of that dictation, so it stays
     // in the owner's words. Exempt by exact file name only, so a look-alike
@@ -1006,6 +1008,8 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         "MODEL_ROUTING.md",
         "MODEL_ROUTING_KURULUM.md",
         "BUD-AI-KAPSAMLI-DIREKTIF.md",
+        "ARENA_BULGU_ORKESTRASYON_DIREKTIFI (1).md",
+        "ARENA_SUREKLI_CALISMA_DIREKTIFI.md",
         "BULGU_DEFTERI.md",
         "GOREV_SABLONU.md",
     ] {
