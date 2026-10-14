@@ -291,3 +291,32 @@ pub fn self_test() -> Result<String, String> {
         "guards-reachable canary OK: an uncalled guard is counted, a called one is not, and a call written on a definition line is not mistaken for a definition.",
     ))
 }
+
+#[cfg(test)]
+mod test_file_regressions {
+    use super::*;
+
+    #[test]
+    fn tests_rs_calls_cannot_wire_a_production_guard() {
+        let dir = crate::gates::rust_literals::exclusive_scratch_dir("budlum-guard-tests")
+            .expect("scratch directory");
+        std::fs::create_dir_all(dir.join("src/rpc")).expect("source directory");
+        std::fs::create_dir(dir.join(".github")).expect("baseline directory");
+        std::fs::write(dir.join(BASELINE_FILE), "0\n").expect("baseline");
+        std::fs::write(
+            dir.join("src/guard.rs"),
+            "pub fn verify_unique_guard() -> bool {\n    false\n}\n",
+        )
+        .expect("guard");
+        std::fs::write(
+            dir.join("src/rpc/tests.rs"),
+            "#[test]\nfn only_test_caller() {\n    verify_unique_guard();\n}\n",
+        )
+        .expect("test caller");
+        let result = run(&dir);
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+        let reason = result.expect_err("a test caller is not production wiring");
+        assert!(reason.contains("unwired guards: 1 | baseline: 0"));
+        assert!(reason.contains("verify_unique_guard"));
+    }
+}

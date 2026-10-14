@@ -464,3 +464,41 @@ pub fn self_test() -> Result<String, String> {
          entry, a doc token exempts at the declaration, and a test-only caller does not count.",
     ))
 }
+
+#[cfg(test)]
+mod test_file_regressions {
+    use super::*;
+
+    #[test]
+    fn out_of_line_test_callers_cannot_make_public_api_live() {
+        for test_file in [
+            "src/rpc/tests.rs",
+            "src/tests/integration.rs",
+            "src/feature_tests.rs",
+            "crates/example/tests/integration.rs",
+            "budzero/bud-vm/tests/integration.rs",
+        ] {
+            let dir = crate::gates::rust_literals::exclusive_scratch_dir("budlum-dead-api-tests")
+                .expect("scratch directory");
+            std::fs::create_dir(dir.join("src")).expect("source directory");
+            std::fs::create_dir(dir.join(".github")).expect("baseline directory");
+            std::fs::write(dir.join(BASELINE_FILE), "").expect("baseline");
+            std::fs::write(
+                dir.join("src/helper.rs"),
+                "pub fn orphan_for_regression() -> bool {\n    false\n}\n",
+            )
+            .expect("public helper");
+            let caller = dir.join(test_file);
+            std::fs::create_dir_all(caller.parent().expect("test directory")).expect("directories");
+            std::fs::write(
+                &caller,
+                "#[test]\nfn test_caller() {\n    orphan_for_regression();\n}\n",
+            )
+            .expect("test caller");
+            let result = run(&dir);
+            std::fs::remove_dir_all(&dir).expect("cleanup");
+            let reason = result.expect_err("test-only use must remain dead public API");
+            assert!(reason.contains("src/helper.rs:orphan_for_regression"));
+        }
+    }
+}
