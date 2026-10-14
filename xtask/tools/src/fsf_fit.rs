@@ -290,11 +290,14 @@ pub fn cli(args: &[&str], root: &Path) -> Report {
             _ => return usage(),
         }
     }
+    if write && check {
+        return usage();
+    }
     let errors = check_policy();
-    if self_test {
-        if !errors.is_empty() {
-            return Report::fail_with(format!("{}\n", errors.join("\n")), 1);
-        }
+    if !errors.is_empty() {
+        return Report::fail_with(format!("{}\n", errors.join("\n")), 1);
+    }
+    if self_test && !check && !write {
         return Report::ok(format!(
             "fsf project fit self-test ok: {} projects\n",
             PROJECTS.len()
@@ -309,9 +312,6 @@ pub fn cli(args: &[&str], root: &Path) -> Report {
         };
     }
     if check {
-        if !errors.is_empty() {
-            return Report::fail_with(format!("{}\n", errors.join("\n")), 1);
-        }
         let Ok(bytes) = std::fs::read(&doc) else {
             return Report::fail_with(format!("missing {DOC_REL}\n"), 1);
         };
@@ -400,5 +400,28 @@ mod tests {
     #[test]
     fn unknown_arguments_are_a_usage_error() {
         assert_eq!(cli(&["--bogus"], Path::new(".")).code, 2);
+    }
+
+    #[test]
+    fn self_test_does_not_bypass_the_document_check() {
+        let dir = crate::support::make_temp_dir("budlum-fsf-test").expect("dir");
+        std::fs::create_dir(dir.join("docs")).expect("docs");
+        assert_eq!(cli(&["--self-test", "--check"], &dir).code, 1);
+        std::fs::write(dir.join(DOC_REL), "stale").expect("stale doc");
+        assert_eq!(cli(&["--self-test", "--check"], &dir).code, 1);
+        std::fs::write(dir.join(DOC_REL), render()).expect("current doc");
+        assert_eq!(cli(&["--self-test", "--check"], &dir).code, 0);
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn write_and_check_cannot_silently_repair_a_stale_document() {
+        let dir = crate::support::make_temp_dir("budlum-fsf-test").expect("dir");
+        std::fs::create_dir(dir.join("docs")).expect("docs");
+        let doc = dir.join(DOC_REL);
+        std::fs::write(&doc, "stale").expect("stale doc");
+        assert_eq!(cli(&["--write", "--check"], &dir).code, 2);
+        assert_eq!(std::fs::read_to_string(doc).expect("doc"), "stale");
+        std::fs::remove_dir_all(dir).expect("cleanup");
     }
 }

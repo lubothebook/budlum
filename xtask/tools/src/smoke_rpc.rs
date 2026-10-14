@@ -10,14 +10,16 @@
 //! `SMOKE_RPC_PORT` (default 18546, the operator listener),
 //! `SMOKE_PUBLIC_RPC_PORT` (default 18545), `SMOKE_DB_PATH`, `SMOKE_BIN`,
 //! `RUST_LOG` (default `warn`) and `BUDLUM_RPC_AUTH_REQUIRED` (default `0`).
+//! An explicit `SMOKE_DB_PATH` must not exist. Existing data is never removed.
 
+use std::net::{Ipv4Addr, TcpListener};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use crate::support::{make_temp_dir, tail_lines};
-use crate::{has_program, rpc};
+use crate::{has_program, json, rpc};
 
 const TRIES: u32 = 60;
 const POLL_PAUSE: Duration = Duration::from_millis(500);
@@ -102,11 +104,36 @@ pub fn node_args(cfg: &Config, operator: u16, db: &Path) -> Vec<String> {
     ]
 }
 
-/// A reply passes when it carries a `"result"` member. This is the same
-/// substring test the shell version made.
-#[must_use]
-pub fn reply_has_result(body: &str) -> bool {
-    body.contains("\"result\"")
+/// Read the chain id from a successful response to this probe, not from a
+/// nested member or an error message that happens to mention `result`.
+fn reply_chain_id(body: &str) -> Option<u64> {
+    let value = json::parse(body).ok()?;
+    if value.get("jsonrpc").and_then(json::Value::as_str) != Some("2.0")
+        || value.get("id") != Some(&json::Value::Number("1".to_string()))
+        || value.get("error").is_some()
+    {
+        return None;
+    }
+    rpc::parse_hex_quantity(value.get("result")?.as_str()?)
+}
+
+fn expected_chain_id(network: &str) -> Result<u64, String> {
+    // Keep in sync with Network::chain_id in src/core/chain_config.rs.
+    match network {
+        "mainnet" => Ok(45260),
+        "testnet" => Ok(45261),
+        "devnet" => Ok(45262),
+        _ => Err(format!("unknown smoke network: {network}")),
+    }
+}
+
+fn require_free_port(port: u16) -> Result<(), String> {
+    if port == 0 {
+        return Err("the smoke RPC ports must be nonzero".to_string());
+    }
+    TcpListener::bind((Ipv4Addr::LOCALHOST, port))
+        .map(drop)
+        .map_err(|e| format!("smoke RPC port {port} is not free: {e}"))
 }
 
 /// Kills and reaps the node when the run ends, however it ends.
@@ -124,22 +151,22 @@ impl Drop for NodeGuard {
 /// # Errors
 ///
 /// If no binary can be found or built, the node cannot start or exits early,
-/// the RPC never answers, or the answer has no result.
+/// the RPC never answers, or the reply does not identify the selected network.
 pub fn run(root: &Path, cfg: &Config) -> Result<String, String> {
     let (operator, note) = operator_port(cfg.rpc_port, cfg.public_port)?;
     if let Some(note) = note {
         eprintln!("[smoke] {note}");
     }
-    let db = match &cfg.db_path {
-        Some(p) => p.clone(),
-        None => make_temp_dir("budlum-smoke-db")?,
-    };
+    let expected = expected_chain_id(&cfg.network)?;
+    // A pre-existing listener must not answer on behalf of our child.
+    require_free_port(operator)?;
+    require_free_port(cfg.public_port)?;
     let bin = match &cfg.bin {
         Some(b) => b.clone(),
         None => find_binary(root)?,
     };
 
-    reset_dir(&db)?;
+    let db = prepare_db(cfg.db_path.as_deref())?;
     std::fs::create_dir_all(db.join("secrets"))
         .map_err(|e| format!("{} could not be created: {e}", db.display()))?;
     let log_path = db.join("node.log");
@@ -171,14 +198,15 @@ pub fn run(root: &Path, cfg: &Config) -> Result<String, String> {
 
     let mut body = None;
     for attempt in 1..=TRIES {
-        if let Ok(reply) = rpc::call(operator, "bud_chainId", "[]", REQUEST_TIME) {
+        let reply = rpc::call(operator, "bud_chainId", "[]", REQUEST_TIME);
+        if guard.0.try_wait().map_err(|e| e.to_string())?.is_some() {
+            return Err(format!("node exited early; log:\n{}", log_tail(&log_path)));
+        }
+        if let Ok(reply) = reply {
             body = Some(reply);
             break;
         }
         std::thread::sleep(POLL_PAUSE);
-        if matches!(guard.0.try_wait(), Ok(Some(_))) {
-            return Err(format!("node exited early; log:\n{}", log_tail(&log_path)));
-        }
         if attempt == TRIES {
             return Err(format!(
                 "timeout waiting for RPC; log:\n{}",
@@ -189,8 +217,8 @@ pub fn run(root: &Path, cfg: &Config) -> Result<String, String> {
     let body = body.ok_or_else(|| "no RPC reply".to_string())?;
 
     println!("[smoke] RPC response: {body}");
-    if !reply_has_result(&body) {
-        return Err("the reply carries no \"result\"".to_string());
+    if reply_chain_id(&body) != Some(expected) {
+        return Err(format!("expected a successful chain id reply for {expected}"));
     }
     Ok(format!(
         "[smoke] OK - bud_chainId responded on {}",
@@ -202,19 +230,15 @@ fn log_tail(path: &Path) -> String {
     std::fs::read_to_string(path).map_or_else(|_| String::new(), |t| tail_lines(&t, 80))
 }
 
-/// `rm -rf` then `mkdir -p`, with a guard the shell version lacked: an empty
-/// or root path is refused, because `rm -rf ""` style slips are exactly what
-/// this crate exists to prevent.
-fn reset_dir(path: &Path) -> Result<(), String> {
-    if path.as_os_str().is_empty() || path.parent().is_none() {
-        return Err(format!("refusing to wipe {:?}", path.display().to_string()));
-    }
-    if path.exists() {
-        std::fs::remove_dir_all(path)
-            .map_err(|e| format!("{} could not be wiped: {e}", path.display()))?;
-    }
-    std::fs::create_dir_all(path)
-        .map_err(|e| format!("{} could not be created: {e}", path.display()))
+/// Never reset or adopt an existing path. An explicit path must be new;
+/// the default is already created exclusively by `make_temp_dir`.
+fn prepare_db(requested: Option<&Path>) -> Result<PathBuf, String> {
+    let Some(path) = requested else {
+        return make_temp_dir("budlum-smoke-db");
+    };
+    std::fs::create_dir(path)
+        .map_err(|e| format!("refusing to reuse smoke directory {}: {e}", path.display()))?;
+    Ok(path.to_path_buf())
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -312,28 +336,61 @@ mod tests {
     }
 
     #[test]
-    fn a_reply_needs_a_result_member() {
-        assert!(reply_has_result(
-            r#"{"jsonrpc":"2.0","result":"0xb0ce","id":1}"#
-        ));
-        assert!(!reply_has_result(
-            r#"{"jsonrpc":"2.0","error":{"code":-32601},"id":1}"#
-        ));
+    fn a_reply_must_match_the_probe_and_have_no_error() {
+        assert_eq!(
+            reply_chain_id(r#"{"jsonrpc":"2.0","result":"0xb0ce","id":1}"#),
+            Some(45262)
+        );
+        for body in [
+            r#"{"jsonrpc":"2.0","error":{"code":-32601,"result":"0xb0ce"},"id":1}"#,
+            r#"{"jsonrpc":"2.0","result":"0xb0ce","error":null,"id":1}"#,
+            r#"{"jsonrpc":"2.0","result":null,"id":1}"#,
+            r#"{"jsonrpc":"2.0","result":"0xb0ce","id":2}"#,
+            r#"{"result":"0xb0ce","id":1}"#,
+            "not JSON with \"result\" in it",
+        ] {
+            assert_eq!(reply_chain_id(body), None, "{body}");
+        }
+        assert_ne!(
+            reply_chain_id(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#),
+            expected_chain_id("devnet").ok()
+        );
+        assert!(expected_chain_id("unknown").is_err());
     }
 
     #[test]
-    fn the_wipe_refuses_an_empty_or_root_path() {
-        assert!(reset_dir(Path::new("")).is_err());
-        assert!(reset_dir(Path::new("/")).is_err());
+    fn existing_listener_is_refused() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("listener");
+        let port = listener.local_addr().expect("address").port();
+        assert!(require_free_port(port).is_err());
+        assert!(require_free_port(0).is_err());
     }
 
     #[test]
-    fn the_wipe_recreates_a_directory() {
+    fn existing_directory_is_not_deleted_or_adopted() {
         let dir = make_temp_dir("budlum-smoke-test").expect("dir");
-        std::fs::write(dir.join("old"), b"x").expect("file");
-        reset_dir(&dir).expect("reset");
-        assert!(dir.is_dir());
-        assert!(!dir.join("old").exists());
-        let _ = std::fs::remove_dir_all(&dir);
+        let sentinel = dir.join("keep");
+        std::fs::write(&sentinel, b"preserve").expect("file");
+        for path in [Path::new(""), Path::new("/"), Path::new("."), &dir] {
+            assert!(prepare_db(Some(path)).is_err());
+        }
+        assert_eq!(std::fs::read(&sentinel).expect("sentinel"), b"preserve");
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&dir, &link).expect("symlink");
+        assert!(prepare_db(Some(&link)).is_err());
+        assert_eq!(std::fs::read(&sentinel).expect("sentinel"), b"preserve");
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn new_directory_is_created_exclusively() {
+        let parent = make_temp_dir("budlum-smoke-test").expect("parent");
+        let requested = parent.join("new-db");
+        assert_eq!(prepare_db(Some(&requested)).expect("new db"), requested);
+        assert!(prepare_db(Some(&requested)).is_err());
+        let automatic = prepare_db(None).expect("automatic db");
+        assert!(automatic.is_dir());
+        std::fs::remove_dir_all(automatic).expect("cleanup");
+        std::fs::remove_dir_all(parent).expect("cleanup");
     }
 }
