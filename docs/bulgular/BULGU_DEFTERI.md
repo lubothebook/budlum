@@ -6,7 +6,7 @@ Kaynak: ham bulgular `docs/audit/FINDINGS.md` ve `notes/Pxx-scan.md` içindedir.
 
 | Parça | ID | Dosya:Satır | Kanıt | Durum | Commit SHA | CI run |
 |---|---|---|---|---|---|---|
-| P0 | BLG-0001 | .gitleaks.toml | CI #122 Secret Scan: `[[allowlists]] must contain at least one check`; düzeltme b35dd86 (parmak izi .gitleaksignore dosyasına taşındı); yeşil kanıt bekleniyor | CI BEKLİYOR | b35dd86 |  |
+| P0 | BLG-0001 | .gitleaks.toml | CI #122 config load failed; fingerprint moved to .gitleaksignore. Full-history Secret Scan passed at PR9 head 4a2132f, job 115405636367 | KAPALI | b35dd86 | 38428202021 |
 | P0 | BLG-0002 | src/network/regen_health_tick.rs:337 | CI #124 Clippy: `field_reassign_with_default` (-D warnings), iş 115030778899 ve 115030778747 / gp/P0-A:fd859e7 | CI BEKLİYOR | 9aaedcc |  |
 | P0 | BLG-0003 | Cargo.lock; budzero/Cargo.lock | CI #124 `cargo audit`: iş 115030778600: 3 zafiyet ve 9 reddedilen uyarı, ikinci kilit dosyasında 5 zafiyet ve 5 reddedilen uyarı / karar A uygulandı: quinn-proto 0.11.19'a yükseltildi (iki kilit de); chacha20 0.9.1 ağaçta bağımlısız bayat kilit girdisi (cargo tree -i boş), GHSA kaydı yok | CI BEKLİYOR | 8ebb6d5 |  |
 | P0 | BLG-0004 | .github/workflows/ci.yml (Repo Lint, Rust gates) | CI #124 iş 115030778593: `Rust gates` adımı "One house rule OK" satırından sonra exit 1, hata satırı yok / umbrella: kapanışı BLG-1095..1098 ile / yerel dogrulama: kapi kirmizi: dead-public-api-is-ratcheted taban 216 iken 212 (taban sikilastirilmadi), no-idle-code decode_qr_video, actionlint/typos/zizmor yerelde yok | AÇIK | 11a9f19,d02f37e |  |

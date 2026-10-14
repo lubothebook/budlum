@@ -1333,6 +1333,12 @@ fn repo_root() -> PathBuf {
     }
 }
 
+// Escape workflow command data, not shell syntax. A finding can contain source
+// text, so an embedded newline must never become another workflow command.
+fn annotation_data(message: &str) -> String {
+    message.replace('%', "%25").replace('\r', "%0D").replace('\n', "%0A")
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -1388,6 +1394,10 @@ fn main() {
             Ok(msg) => println!("{msg}"),
             Err(msg) => {
                 eprintln!("FAIL [{}]: {msg}", g.name);
+                if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+                    let data = annotation_data(&format!("FAIL [{}]: {msg}", g.name));
+                    println!("::error::{data}");
+                }
                 failed.push(g.name);
             }
         }
@@ -1403,5 +1413,20 @@ fn main() {
             failed.join(", ")
         );
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod annotation_tests {
+    use super::annotation_data;
+
+    #[test]
+    fn workflow_data_cannot_inject_a_second_command() {
+        assert_eq!(
+            annotation_data("bad 10%\r\n::warning::injected"),
+            "bad 10%25%0D%0A::warning::injected"
+        );
+        assert_eq!(annotation_data("%0A"), "%250A");
+        assert_eq!(annotation_data("plain: finding"), "plain: finding");
     }
 }
