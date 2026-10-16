@@ -22,7 +22,7 @@ name: OSV Scanner
 
 on:
   pull_request:
-    branches: [main, fix/architecture-tip-adlari]
+    branches: [main, fix/architecture-tip-adlari, claude/branch-change-pra-check-j01l81]
   push:
     branches: [main]
   schedule:
