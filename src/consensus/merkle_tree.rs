@@ -5,8 +5,8 @@
 //! caller supplies a binary `combine` for paired nodes and a unary
 //! `promote` for an unpaired tail.
 //!
-//! An unpaired tail is **promoted under its own domain tag, never paired
-//! with itself**. The self-pairing made the tail contribute exactly what a
+//! An unpaired tail is promoted under its own domain tag, never paired
+//! with itself. The self-pairing made the tail contribute exactly what a
 //! duplicated leaf would, so the root of `[a, b, c]` equalled the root of
 //! `[a, b, c, c]`: two different commitments, one digest (the F-6 shape,
 //! in every tree that used this module's duplicate-tail rule). A promoted
@@ -27,12 +27,14 @@ use sha3::{Digest, Sha3_256};
 
 /// SHA3-256 node combine, the production hash for QC blob Merkle trees.
 ///
-/// Mirrors the internal-node hash of `QcBlob::merkle_layers` exactly: the two
-/// child digests concatenated into one SHA3-256 call, no domain prefix (the
-/// tree is already domain-separated by its position in the block).
+/// Mirrors the internal-node hash of `QcBlob::merkle_layers` exactly. The
+/// domain prefix (P01-F27) keeps an inner node out of the leaf preimage set:
+/// without it, a leaf and a pair of children that concatenated to the same
+/// bytes produced one digest serving both roles.
 #[must_use]
 pub fn combine_sha3(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     let mut hasher = Sha3_256::new();
+    hasher.update(b"BDLM_QC_NODE_V2");
     hasher.update(left);
     hasher.update(right);
     let result = hasher.finalize();

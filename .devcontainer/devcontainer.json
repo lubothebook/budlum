@@ -3,15 +3,22 @@
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
-    "ghcr.io/devcontainers/features/rust:1": {}
+    "ghcr.io/devcontainers/features/rust:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "containerEnv": {
     "ANTHROPIC_BASE_URL": "https://api.preview.arena.ai",
-    "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT": "1",
-    "ANTHROPIC_MODEL": "coding-router-preview",
-    "ANTHROPIC_SMALL_FAST_MODEL": "coding-router-preview",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "coding-router-preview",
-    "CLAUDE_CODE_MODEL_CAPABILITIES": "coding-router-preview=-effort"
+    "ANTHROPIC_API_KEY": "",
+    "ANTHROPIC_MODEL": "claude-opus-5-5",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-opus-5-5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-5-5",
+    "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT": "1"
+  },
+  "secrets": {
+    "ANTHROPIC_AUTH_TOKEN": {
+      "description": "Arena API key. Get it from portal.api.preview.arena.ai/dashboard/keys.",
+      "documentationUrl": "https://portal.api.preview.arena.ai/docs/claude-code"
+    }
   },
   "postCreateCommand": "npm install -g @anthropic-ai/claude-code"
 }

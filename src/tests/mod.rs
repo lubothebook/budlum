@@ -103,6 +103,8 @@ pub mod relayer_worker_locks;
 #[cfg(test)]
 pub mod settlement_prod;
 #[cfg(test)]
+pub mod storage_tx_door;
+#[cfg(test)]
 pub mod tokenomics;
 pub mod tokenomics_proptest;
 #[cfg(test)]
@@ -183,6 +185,8 @@ pub mod hardening_locks;
 pub mod mempool_dos_locks;
 pub mod network_hardening_locks;
 #[cfg(test)]
+pub mod p01_consensus_rounds;
+#[cfg(test)]
 pub mod regression_lock;
 pub mod slashing_matrix;
 // (2026-07-21) cross-platform consensus determinism digest'i.
@@ -205,5 +209,7 @@ pub mod consensus_bypass_locks;
 // Differential tests against real chain fixtures (merkle, RLP, halving).
 // The fixture is the single source: config/fixtures/real-chain.json, and the
 // xtask `fixture-integrity` gate verifies the same file.
+#[cfg(test)]
+pub mod block_clock;
 #[cfg(test)]
 pub mod real_chain_fixtures;

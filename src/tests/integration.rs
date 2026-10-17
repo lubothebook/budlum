@@ -190,10 +190,19 @@ mod integration_tests {
 
         let mut block = Block::new(1, "0".repeat(64), vec![]);
         block.producer = Some(validator_pubkey);
+        // Slot and epoch match the index, so the block cannot fail on them.
+        block.epoch = 0;
+        block.slot = 1;
         block.hash = block.calculate_hash();
 
-        let result = engine.validate_block(&block, &[], &state);
-        assert!(result.is_err(), "PoS should reject unsigned blocks");
+        let error = engine
+            .validate_block(&block, &[], &state)
+            .expect_err("PoS should reject unsigned blocks");
+        assert!(
+            error.0.contains("Invalid block signature"),
+            "rejected for the wrong reason: {}",
+            error.0
+        );
     }
 
     #[test]
@@ -335,7 +344,6 @@ mod integration_tests {
         let config = PoAConfig {
             quorum_numerator: 2,
             quorum_denominator: 3,
-            block_period: 5,
             ..PoAConfig::default()
         };
 
@@ -625,7 +633,7 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_qc_fault_proof_invalidates_cert_without_slashing() {
+    fn test_qc_fault_proof_on_unverifiable_signature_is_refused() {
         use crate::chain::finality::{FinalityCert, ValidatorEntry, ValidatorSetSnapshot};
         use crate::consensus::qc::{sign_attestation, QcBlob};
 
@@ -725,12 +733,20 @@ mod integration_tests {
             .verified_qc_blobs
             .insert(invalid_blob.checkpoint_height, invalid_blob);
 
-        blockchain.handle_qc_fault_proof(proof).unwrap();
+        // P01-F22: an unverifiable signature is not evidence against the
+        // named validator - garbage bytes naming anyone are free to produce,
+        // so acting on them would make the permissionless challenge RPC a
+        // frame-up rail. The challenge is refused and neither finality nor
+        // the named validator's stake moves.
+        let err = blockchain.handle_qc_fault_proof(proof).unwrap_err();
+        assert!(
+            err.contains("not evidence"),
+            "the refusal must say why no verdict issues, got: {err}"
+        );
 
         let validator = blockchain.state.get_validator(&pubkey).unwrap();
-        // InvalidDilithium fault proof slashes the offender.
-        assert!(validator.slashed);
-        assert_eq!(blockchain.finalized_height, 0);
+        assert!(!validator.slashed);
+        assert_eq!(blockchain.finalized_height, 10);
     }
 
     #[test]
@@ -808,6 +824,7 @@ mod integration_tests {
             checkpoint_hash: hash.clone(),
             voter_id: validator_addr,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         vote1.sig_bls = sign_bls(&bls_sk, &vote1.signing_message());
         assert!(bc.handle_prevote(vote1).is_ok());
@@ -818,6 +835,7 @@ mod integration_tests {
             checkpoint_hash: hash.clone(),
             voter_id: validator_addr,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         vote2.sig_bls = sign_bls(&bls_sk, &vote2.signing_message());
         let result = bc.handle_precommit(vote2);
@@ -869,6 +887,7 @@ mod integration_tests {
             checkpoint_hash: "wrong_hash".to_string(),
             voter_id: v_addr,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         wrong_vote.sig_bls = sign_bls(&bls_sk, &wrong_vote.signing_message());
         let result = bc.handle_prevote(wrong_vote);
@@ -923,6 +942,7 @@ mod integration_tests {
             checkpoint_hash: "test_cp_hash".to_string(),
             voter_id: voter,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
 
         let msg = vote.signing_message();
@@ -1036,12 +1056,14 @@ mod integration_tests {
                 checkpoint_hash: "cp_hash".into(),
                 voter_id: addrs[i].0,
                 sig_bls: vec![],
+                auth_sig: Vec::new(),
             };
             let msg = vote.signing_message();
             let sig = sign_bls(&bls_keys[i].secret_key, &msg);
 
             let signed_vote = Prevote {
                 sig_bls: sig,
+                auth_sig: Vec::new(),
                 ..vote
             };
             agg.add_prevote(signed_vote).unwrap();
@@ -1057,6 +1079,7 @@ mod integration_tests {
                 checkpoint_hash: "cp_hash".into(),
                 voter_id: addrs[i].0,
                 sig_bls: vec![],
+                auth_sig: Vec::new(),
             };
             let msg = pc.signing_message();
             let sig = sign_bls(&bls_keys[i].secret_key, &msg);
@@ -1115,11 +1138,13 @@ mod integration_tests {
             checkpoint_hash: "cp_hash".into(),
             voter_id: addr,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         let msg = vote.signing_message();
         let sig = sign_bls(&bls_key.secret_key, &msg);
         agg.add_prevote(Prevote {
             sig_bls: sig,
+            auth_sig: Vec::new(),
             ..vote
         })
         .unwrap();
@@ -1146,12 +1171,14 @@ mod integration_tests {
             checkpoint_hash: "cp_hash".into(),
             voter_id: addr,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         let msg = vote1.signing_message();
         let sig = sign_bls(&bls_key.secret_key, &msg);
 
         agg.add_prevote(Prevote {
             sig_bls: sig.clone(),
+            auth_sig: Vec::new(),
             ..vote1.clone()
         })
         .unwrap();
@@ -1159,6 +1186,7 @@ mod integration_tests {
         // Duplicate prevote from same validator should be rejected
         let result = agg.add_prevote(Prevote {
             sig_bls: sig,
+            auth_sig: Vec::new(),
             ..vote1
         });
         assert!(result.is_err());
@@ -1182,6 +1210,7 @@ mod integration_tests {
             checkpoint_hash: "cp_hash".into(),
             voter_id: addr,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         let msg = pc.signing_message();
         let sig = sign_bls(&bls_key.secret_key, &msg);
@@ -1216,11 +1245,13 @@ mod integration_tests {
                 checkpoint_hash: "cp_hash".into(),
                 voter_id: addrs[i].0,
                 sig_bls: vec![],
+                auth_sig: Vec::new(),
             };
             let msg = vote.signing_message();
             let sig = sign_bls(&bls_keys[i].secret_key, &msg);
             agg.add_prevote(Prevote {
                 sig_bls: sig,
+                auth_sig: Vec::new(),
                 ..vote
             })
             .unwrap();
@@ -1233,6 +1264,7 @@ mod integration_tests {
                 checkpoint_hash: "cp_hash".into(),
                 voter_id: addrs[i].0,
                 sig_bls: vec![],
+                auth_sig: Vec::new(),
             };
             let msg = pc.signing_message();
             let sig = sign_bls(&bls_keys[i].secret_key, &msg);
