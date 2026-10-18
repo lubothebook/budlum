@@ -1,0 +1,48 @@
+BLG-0567 | SKIP-KARAR | wiring bud-core into the node is an architecture change
+BLG-0571 | SKIP-KARAR | needs a signer key registry / header-signing format change (undecided)
+BLG-0572 | SKIP-KARAR | v1 has no original length and never decompresses; fix needs format change and storage_deal.rs/registry.rs
+BLG-0575 | SKIP-KARAR | always-Ok gates need a semantic decision (remove or implement); no data to check
+BLG-0576 | KOD | a986607
+BLG-0577 | KOD | 2289486
+BLG-0578 | SKIP-KARAR | binding a vote to content id/epoch/chain is a new vote message format (undecided fields)
+BLG-0579 | KOD | e7330eb
+BLG-0580 | KOD | 2b69e97
+BLG-0582 | KOD | 72c0822
+BLG-0583 | KOD | f4ae927
+BLG-0584 | KOD | efd89c9
+BLG-0585 | SKIP-KARAR | binding the codec byte / original hash into the root id changes the v2 content id definition (format decision)
+BLG-0587 | KOD | 4cdbdea
+BLG-0590 | SKIP-KARAR | signed ownership record needs a signature scheme and record format (undecided)
+BLG-0591 | SKIP-KARAR | needs a verifier nonce and data binding in the challenge (protocol change)
+BLG-0592 | KOD | 96662f7
+BLG-0593 | SKIP-KARAR | struct contradicts recorded decision 71 (cross-tenant dedup); keep-or-remove is an owner decision
+BLG-0594 | KOD | 377931e
+BLG-0595 | KOD | 0d7911a
+BLG-0596 | SKIP-KARAR | a real cache model needs an object key and eviction policy (API and model change)
+BLG-0597 | KOD | ca6fa2b
+BLG-0598 | KOD | 8ac4944
+BLG-0599 | KOD | 29b2a37
+BLG-0600 | KOD | 8e4e479
+BLG-0601 | SKIP-KARAR | wire-or-delete per module is an owner decision (idle-code baseline); dbd_digest framing is a digest format change
+BLG-0602 | SKIP-DOC | Info note only; the f64 digests are local heuristics, no fix needed
+BLG-0604 | SKIP-KARAR | wiring unused modules is an architecture decision (see P37-F01)
+BLG-0613 | KOD | 6c27c62
+BLG-0614 | KOD | 8634940
+BLG-0616 | KOD | f344f05
+BLG-0617 | KOD | fbac6ac
+BLG-0618 | KOD | 16c0f4e
+BLG-0619 | KOD | 80492d0
+BLG-0620 | SKIP-KARAR | linking the PACT to the original needs a producer id/seed and record format decision
+BLG-0621 | KOD | 081ab84
+BLG-0622 | KOD | 89c9c30
+BLG-0623 | KOD | 8c59ed1
+BLG-0624 | KOD | 32e1d53
+BLG-0625 | KOD | a7fa1fe
+BLG-0626 | KOD | fae17f9
+BLG-0627 | KOD | 37a1428
+BLG-0628 | KOD | b20c22a
+BLG-0629 | KOD | eda4c3d
+BLG-0630 | SKIP-KARAR | a 256-entry gear table and a real FastCDC hash change every chunk boundary and id (dedup format decision); the extra copies alone have no failing test
+BLG-0631 | SKIP-DOC | Info: header text mismatch only, the code is correct
+BLG-0632 | SKIP-DOC | Info: future constraint, bud-core is not linked into the node so Z8 is not violated
+BLG-0633 | SKIP-DOC | Info: files read, no defect found

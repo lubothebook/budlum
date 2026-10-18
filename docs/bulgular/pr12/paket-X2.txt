@@ -1,0 +1,67 @@
+BLG-0967 | P54-F02 | AÇIK | loc=xtask/gates/src/gates/semver.rs:233-238 | sha= | P54-F02: notes/P54-scan.md:52; ham önem Medium
+BLG-0968 | P54-F03 | AÇIK | loc=xtask/gates/src/gates/semver.rs:212-219 | sha= | P54-F03: notes/P54-scan.md:68; ham önem Low
+BLG-0970 | P54-F05 | AÇIK | loc=xtask/gates/src/gates/relay.rs:428-467 | sha= | P54-F05: notes/P54-scan.md:99; ham önem Medium
+BLG-0971 | P54-F06 | AÇIK | loc=xtask/gates/src/gates/relay.rs:215-220, 242, 326, 397-398 | sha= | P54-F06: notes/P54-scan.md:117; ham önem Low
+BLG-0972 | P54-F07 | AÇIK | loc=xtask/gates/src/gates/security_scans_can_fail.rs:166-219 | sha= | P54-F07: notes/P54-scan.md:133; ham önem Medium
+BLG-0973 | P54-F08 | AÇIK | loc=xtask/gates/src/gates/security_scans_can_fail.rs:237-264, 283-294 | sha= | P54-F08: notes/P54-scan.md:149; ham önem Medium
+BLG-0976 | P54-F11 | AÇIK | loc=xtask/gates/src/gates/regeneration.rs:812-828, 842-881, 1103-1144 | sha= | P54-F11: notes/P54-scan.md:197; ham önem Medium
+BLG-0977 | P54-F12 | AÇIK | loc=xtask/gates/src/gates/regeneration.rs:664-747, 889-898 | sha= | P54-F12: notes/P54-scan.md:215; ham önem Low
+BLG-0978 | P54-F13 | AÇIK | loc=xtask/gates/src/gates/security_parameters.rs:241-265, 744-763, 837-847 | sha= | P54-F13: notes/P54-scan.md:232; ham önem Medium
+BLG-0979 | P54-F14 | AÇIK | loc=xtask/gates/src/gates/security_parameters.rs:461-530, 574-609, 704-739, 864-866 | sha= | P54-F14: notes/P54-scan.md:248; ham önem Low
+BLG-0980 | P54-F15 | AÇIK | loc=xtask/gates/src/gates/self_derived_ids_cover_every_field.rs:238-276, 297-316, 346-374 | sha= | P54-F15: notes/P54-scan.md:264; ham önem Medium
+BLG-0981 | P54-F16 | AÇIK | loc=xtask/gates/src/gates/self_derived_ids_cover_every_field.rs:45, 421-473 | sha= | P54-F16: notes/P54-scan.md:280; ham önem Low
+BLG-0982 | P54-F17 | AÇIK | loc=xtask/gates/src/gates/rejection_tests.rs:243-248 | sha= | P54-F17: notes/P54-scan.md:296; ham önem Medium
+BLG-0983 | P54-F18 | AÇIK | loc=xtask/gates/src/gates/rejection_tests.rs:23, 63-148 | sha= | P54-F18: notes/P54-scan.md:315; ham önem Low
+BLG-0984 | P54-F19 | AÇIK | loc=xtask/gates/src/gates/release_profile_pins.rs:100-107 | sha= | P54-F19: notes/P54-scan.md:331; ham önem Low
+BLG-0985 | P54-F20 | AÇIK | loc=xtask/gates/src/gates/repair_fires.rs:11-110 | sha= | P54-F20: notes/P54-scan.md:347; ham önem Low
+BLG-0986 | P54-F21 | AÇIK | loc=xtask/gates/src/gates/serialize_map_keys_are_strings.rs:136-155, 184-228, 290-326, 376 | sha= | P54-F21: notes/P54-scan.md:364; ham önem Low
+BLG-0987 | P54-F22 | AÇIK | loc=xtask/gates/src/gates/semver.rs:201-204, 171 | sha= | P54-F22: notes/P54-scan.md:380; ham önem Info
+BLG-0988 | P54-F23 | AÇIK | loc=xtask/gates/src/gates/semver.rs:320-338 | sha= | P54-F23: notes/P54-scan.md:396; ham önem Info
+BLG-0990 | P55-F02 | AÇIK | loc=xtask/gates/src/gates/udeps.rs:48-72 | sha= | P55-F02: notes/P55-scan.md:56; ham önem Low
+BLG-0992 | P55-F04 | AÇIK | loc=xtask/gates/src/gates/suppressions_are_justified.rs:554-603, 708 | sha= | P55-F04: notes/P55-scan.md:76; ham önem Low
+BLG-0994 | P55-F06 | AÇIK | loc=xtask/gates/src/gates/slash_expression.rs:310, 346-347 | sha= | P55-F06: notes/P55-scan.md:96; ham önem Low
+BLG-0995 | P55-F07 | AÇIK | loc=xtask/gates/src/gates/threshold_rates.rs:83-96, 186-202 | sha= | P55-F07: notes/P55-scan.md:106; ham önem Medium
+BLG-0996 | P55-F08 | AÇIK | loc=storage_penalties.rs:347-349; uncheckable_proof.rs:29-31; threshold_rates.rs:206 | sha= | P55-F08: notes/P55-scan.md:116; ham önem Medium
+BLG-0997 | P55-F09 | AÇIK | loc=xtask/gates/src/gates/timing_safe.rs:39, 53-85, 99-102, 150-171 | sha= | P55-F09: notes/P55-scan.md:126; ham önem Medium
+BLG-0998 | P55-F10 | AÇIK | loc=xtask/gates/src/gates/storage_proof_boundary.rs:27-59 | sha= | P55-F10: notes/P55-scan.md:136; ham önem Low
+BLG-0999 | P55-F11 | AÇIK | loc=xtask/gates/src/gates/storage_penalties.rs:17-63, 113-117, 157, 293, 323-345 | sha= | P55-F11: notes/P55-scan.md:146; ham önem Low
+BLG-1000 | P55-F12 | AÇIK | loc=xtask/gates/src/gates/tee_trust_boundary_is_structural.rs:16-21, 302-312, 386-397, 160-224 | sha= | P55-F12: notes/P55-scan.md:156; ham önem Low
+BLG-1001 | P55-F13 | AÇIK | loc=xtask/gates/src/gates/transcript_mirrors.rs:53-103, 36-37 | sha= | P55-F13: notes/P55-scan.md:166; ham önem Low
+BLG-1002 | P55-F14 | AÇIK | loc=xtask/gates/src/gates/tree_pin.rs:75-80, 83 | sha= | P55-F14: notes/P55-scan.md:176; ham önem Low
+BLG-1003 | P55-F15 | AÇIK | loc=xtask/gates/src/gates/three_is_recipe_only.rs:28-62 | sha= | P55-F15: notes/P55-scan.md:187; ham önem Low
+BLG-1004 | P55-F16 | AÇIK | loc=xtask/gates/src/gates/uncheckable_proof.rs:45-55, 76-81, 98 | sha= | P55-F16: notes/P55-scan.md:197; ham önem Low
+BLG-1005 | P55-F17 | AÇIK | loc=xtask/gates/src/gates/the_image_builds_what_the_manifest_declares.rs:38-64, 71-103, 108-140 | sha= | P55-F17: notes/P55-scan.md:207; ham önem Low
+BLG-1006 | P55-F18 | AÇIK | loc=xtask/gates/src/gates/test_modules_can_see_what_they_test.rs:38-65, 77-140, 143-173, 233-254, 322-339 | sha= | P55-F18: notes/P55-scan.md:217; ham önem Low
+BLG-1007 | P55-F19 | AÇIK | loc=xtask/gates/src/gates/source_reading.rs:62-79, 82-101, 142-158 | sha= | P55-F19: notes/P55-scan.md:227; ham önem Low
+BLG-1008 | P55-F20 | AÇIK | loc=xtask/gates/src/gates/typos.rs:22, 69-74, 39 | sha= | P55-F20: notes/P55-scan.md:237; ham önem Low
+BLG-1009 | P55-F21 | AÇIK | loc=xtask/gates/src/gates/tree_is_english.rs:85-107, 120, 161-319, 438-447, 531-534 | sha= | P55-F21: notes/P55-scan.md:247; ham önem Low
+BLG-1010 | P55-F22 | AÇIK | loc=shard_placement.rs:315,327; storage_penalties.rs:416; threshold_rates.rs:147,211 | sha= | P55-F22: notes/P55-scan.md:257; ham önem Info
+BLG-1011 | P55-F23 | AÇIK | loc=xtask/gates/src/gates/suppressions_are_justified.rs:59-64 | sha= | P55-F23: notes/P55-scan.md:267; ham önem Info
+BLG-1013 | P56-F02 | AÇIK | loc=xtask/gates/src/gates/zero_tests_witness.rs:132, 97-101, 189-291 | sha= | P56-F02: notes/P56-scan.md:50; ham önem Medium
+BLG-1014 | P56-F03 | AÇIK | loc=xtask/gates/src/gates/zkvm_immune_regeneration.rs:227-248 | sha= | P56-F03: notes/P56-scan.md:67; ham önem Medium
+BLG-1015 | P56-F04 | AÇIK | loc=xtask/gates/src/gates/zkvm_immune_regeneration.rs:36-48, 83-109 | sha= | P56-F04: notes/P56-scan.md:84; ham önem Medium
+BLG-1016 | P56-F05 | AÇIK | loc=xtask/gates/src/gates/wire_fields_are_signed.rs:258-277, 404-440 | sha= | P56-F05: notes/P56-scan.md:100; ham önem Medium
+BLG-1017 | P56-F06 | AÇIK | loc=xtask/gates/src/gates/wire_fields_are_signed.rs:39, 148-168, 186-205, 337-358 | sha= | P56-F06: notes/P56-scan.md:111; ham önem Low
+BLG-1018 | P56-F07 | AÇIK | loc=xtask/gates/src/gates/untrusted_manifests.rs:292-323 | sha= | P56-F07: notes/P56-scan.md:127; ham önem Medium
+BLG-1019 | P56-F08 | AÇIK | loc=xtask/gates/src/gates/untrusted_manifests.rs:164-179, 265-289, 480-488, 558-635 | sha= | P56-F08: notes/P56-scan.md:143; ham önem Low
+BLG-1020 | P56-F09 | AÇIK | loc=xtask/gates/src/gates/value_transfers.rs:46-60, 192-209, 304-330 | sha= | P56-F09: notes/P56-scan.md:160; ham önem Low
+BLG-1022 | P56-F11 | AÇIK | loc=xtask/gates/src/gates/zero_storage_frozen.rs:23-41, 74-160 | sha= | P56-F11: notes/P56-scan.md:191; ham önem Low
+BLG-1023 | P56-F12 | AÇIK | loc=xtask/gates/src/gates/wallet_node_address_agree.rs:26-37, 96-137 | sha= | P56-F12: notes/P56-scan.md:206; ham önem Low
+BLG-1024 | P56-F13 | AÇIK | loc=xtask/gates/src/gates/workflows_produce_jobs.rs:113-133, 142-167, 198-206, 329-336 | sha= | P56-F13: notes/P56-scan.md:221; ham önem Low
+BLG-1025 | P56-F14 | AÇIK | loc=xtask/gates/src/gates/zizmor.rs:10-11, 40-45, 143-157, 163-221 | sha= | P56-F14: notes/P56-scan.md:236; ham önem Low
+BLG-1026 | P56-F15 | AÇIK | loc=xtask/gates/src/gates/zizmor.rs:83,85 | sha= | P56-F15: notes/P56-scan.md:251; ham önem Info
+BLG-1027 | P56-F16 | AÇIK | loc=xtask/gates/src/main.rs:1316-1334, 1361-1364 | sha= | P56-F16: notes/P56-scan.md:261; ham önem Info
+BLG-1032 | P57-F05 | AÇIK | loc=xtask/tools/src/backup_drill.rs:82-110, 168, 191-200 | sha= | P57-F05: notes/P57-scan.md:112; ham önem Medium
+BLG-1033 | P57-F06 | AÇIK | loc=xtask/tools/src/fsf_fit.rs:284-322 | sha= | P57-F06: notes/P57-scan.md:129; ham önem Low
+BLG-1034 | P57-F07 | AÇIK | loc=xtask/tools/src/audit_guard.rs:121-130, 218-228 | sha= | P57-F07: notes/P57-scan.md:145; ham önem Low
+BLG-1035 | P57-F08 | AÇIK | loc=xtask/tools/src/audit_guard.rs:133-238 | sha= | P57-F08: notes/P57-scan.md:160; ham önem Low
+BLG-1036 | P57-F09 | AÇIK | loc=xtask/tools/src/audit_guard.rs:134-137, 202-216, 230-237 | sha= | P57-F09: notes/P57-scan.md:170; ham önem Low
+BLG-1037 | P57-F10 | AÇIK | loc=xtask/tools/src/step_reachability.rs:186-222, 302-311 | sha= | P57-F10: notes/P57-scan.md:185; ham önem Low
+BLG-1038 | P57-F11 | AÇIK | loc=xtask/tools/src/step_reachability.rs:85-102, 132, 247-287, 374-388 | sha= | P57-F11: notes/P57-scan.md:201; ham önem Low
+BLG-1039 | P57-F12 | AÇIK | loc=xtask/tools/src/fsf_fit.rs:185-191, 228 | sha= | P57-F12: notes/P57-scan.md:216; ham önem Low
+BLG-1040 | P57-F13 | AÇIK | loc=xtask/tools/src/lib.rs:96-105 | sha= | P57-F13: notes/P57-scan.md:226; ham önem Low
+BLG-1042 | P57-F15 | AÇIK | loc=xtask/tools/src/seed_corpus.rs:31-63 | sha= | P57-F15: notes/P57-scan.md:259; ham önem Low
+BLG-1043 | P57-F16 | AÇIK | loc=xtask/tools/src/prepush.rs:39-50, 126-136 | sha= | P57-F16: notes/P57-scan.md:269; ham önem Low
+BLG-1044 | P57-F17 | AÇIK | loc=xtask/tools/src/rpc.rs:62-77, 86-94 | sha= | P57-F17: notes/P57-scan.md:285; ham önem Low
+BLG-1045 | P57-F18 | AÇIK | loc=xtask/tools/src/docker_smoke.rs:36, 177-193 | sha= | P57-F18: notes/P57-scan.md:302; ham önem Info
+BLG-1046 | P57-F19 | AÇIK | loc=xtask/tools/src/bin/budlum-tools.rs:25-27, 109-130 | sha= | P57-F19: notes/P57-scan.md:312; ham önem Info

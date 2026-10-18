@@ -1,0 +1,39 @@
+BLG-0640 | SKIP-KARAR | stub inflate_raw needs a new DEFLATE crate; rest (order, descriptor, widths, double body) already fixed in live code
+BLG-0642 | SKIP-KARAR | which commitment scheme is the content id (three schemes, node uses SHA-256) is a format decision
+BLG-0643 | KOD | fc8c511
+BLG-0644 | KOD | ce2465e
+BLG-0645 | SKIP-KARAR | unkeyed record hash needs signer, nonce and a producer link (new consensus format)
+BLG-0646 | KOD | 97ef060
+BLG-0647 | SKIP-KARAR | dedup ownership proof needs a challenge protocol and real encryption (new design)
+BLG-0651 | KOD | 946bb0c
+BLG-0652 | KOD | af70ff3
+BLG-0653 | KOD | d4a274d
+BLG-0654 | KOD | ce1d18a
+BLG-0655 | KOD | e91482d
+BLG-0656 | KOD | 9e6cf81
+BLG-0657 | SKIP-DOC | maintenance and dead-code note only; no behaviour defect a test can show (ceilings are P37-F20)
+BLG-0658 | KOD | 8427288
+BLG-0659 | KOD | eca2d27
+BLG-0661 | KOD | aea0354
+BLG-0660 | SKIP-KARAR | unwired modules: wiring or removing 19 modules is an architecture decision
+BLG-0662 | KOD | 8fc8bad
+BLG-0672 | SKIP-KARAR | fidelity core compares declared dimensions; parsing the bytes per format is a new design
+BLG-0673 | KOD | 7af250c
+BLG-0674 | KOD | 1aebc9f
+BLG-0675 | KOD | 4f65e2a
+BLG-0676 | KOD | 60a22bc
+BLG-0677 | KOD | 5f1dc91
+BLG-0678 | KOD | af73199
+BLG-0679 | KOD | 70868cc
+BLG-0680 | KOD | bbdcdde
+BLG-0681 | SKIP-KARAR | pipeline attests caller numbers; reading the codec bitstream or enforcing the plausibility gate changes the pipeline contract
+BLG-0682 | KOD | 72220c1
+BLG-0683 | KOD | fa917d6
+BLG-0684 | KOD | d7f92a7
+BLG-0685 | KOD | f1f6dfd
+BLG-0686 | KOD | f9e5b87
+BLG-0687 | KOD | 15e7e75
+BLG-0688 | SKIP-KARAR | moving the f64 energy and price metrics to fixed point changes a consensus metric format
+BLG-0689 | KOD | 4876900
+BLG-0690 | KOD | 6115017
+BLG-0691 | SKIP-KARAR | wiring bud-core to the node and merging the two MobileSelfProvider rules are architecture decisions

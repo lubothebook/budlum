@@ -1,0 +1,28 @@
+BLG-1050 | P58-F04 | AÇIK | loc=workflows/miri.yml:159, 219 | sha= | P58-F04: FINDINGS.md:984; ham önem Medium / BAĞIMLI: src/storage Miri uyumlu test yolu
+BLG-1055 | P58-F09 | AÇIK | loc=- | sha= | P58-F09: FINDINGS.md:989; ham önem Low
+BLG-1056 | P58-F10 | AÇIK | loc=- | sha= | P58-F10: FINDINGS.md:990; ham önem Low
+BLG-1057 | P58-F11 | AÇIK | loc=- | sha= | P58-F11: FINDINGS.md:991; ham önem Low
+BLG-1058 | P58-F12 | AÇIK | loc=- | sha= | P58-F12: FINDINGS.md:992; ham önem Info
+BLG-1059 | P59-F01 | KARAR BEKLİYOR | loc=workflows/provenance.yml:69-83 | sha= | P59-F01: FINDINGS.md:993; ham önem Medium / soru PR9 yorumunda
+BLG-1060 | P59-F02 | AÇIK | loc=budzero/deny.toml | sha=9b3123e | P59-F02: FINDINGS.md:994; ham önem Medium / kısmi: budzero/osv-scanner.toml:43,59 hâlâ 0118 ve 0119 içeriyor (BAĞIMLI) / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-1061 | P59-F03 | KARAR BEKLİYOR | loc=supply-chain/audits.toml: | sha= | P59-F03: FINDINGS.md:995; ham önem Medium / soru PR9 yorumunda
+BLG-1062 | P59-F04 | KARAR BEKLİYOR | loc=fuzz/Cargo.toml:21 | sha= | P59-F04: FINDINGS.md:996; ham önem Medium / soru PR9 yorumunda
+BLG-1063 | P59-F05 | AÇIK | loc=- | sha= | P59-F05: FINDINGS.md:997; ham önem Low / BAĞIMLI: ci.yml / xtask gate sahibi
+BLG-1064 | P59-F06 | KARAR BEKLİYOR | loc=.quality/deny.toml: | sha= | P59-F06: FINDINGS.md:998; ham önem Low / soru PR9 yorumunda
+BLG-1066 | P59-F08 | AÇIK | loc=crates/wallet-core/Cargo.toml:47 | sha= | P59-F08: FINDINGS.md:1000; ham önem Low / BAĞIMLI: ci.yml / xtask gate sahibi
+BLG-1067 | P59-F09 | AÇIK | loc=- | sha= | P59-F09: FINDINGS.md:1001; ham önem Info / BAĞIMLI: ci.yml / xtask gate sahibi
+BLG-1070 | P60-F03 | AÇIK | loc=- | sha=ff0096d | P60-F03: FINDINGS.md:672; ham önem Medium / gp/P60-A:d3af635 / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi
+BLG-1072 | P60-F05 | AÇIK | loc=- | sha= | P60-F05: FINDINGS.md:674; ham önem Medium / BAĞIMLI: evm_hybrid.rs (P06 sahibi); kodlama özeti /tmp/ledger/notes/BLG-1072.txt
+BLG-1073 | P60-F06 | AÇIK | loc=- | sha=65cce06 | P60-F06: FINDINGS.md:675; ham önem Medium / gp/P60-A:0821fb7 / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi
+BLG-1075 | P60-F08 | AÇIK | loc=- | sha=6bda4df | P60-F08: FINDINGS.md:677; ham önem Low / gp/P60-A:e0be240 / yerel dogrulama: test yok: solc CI da yok, sozlesme yerelde derlenmedi
+BLG-1081 | P61-F05 | AÇIK | loc=config/mainnet-genesis.json:5-6 | sha= | P61-F05: FINDINGS.md:1031; ham önem Medium
+BLG-1082 | P61-F06 | AÇIK | loc=- | sha= | P61-F06: FINDINGS.md:1032; ham önem Low
+BLG-1083 | P61-F07 | AÇIK | loc=config/mainnet.toml:23-26, 35-38 | sha= | P61-F07: FINDINGS.md:1032; ham önem Low
+BLG-1084 | P61-F08 | AÇIK | loc=- | sha= | P61-F08: FINDINGS.md:1032; ham önem Low
+BLG-1085 | P61-F09 | AÇIK | loc=- | sha= | P61-F09: FINDINGS.md:1032; ham önem Low
+BLG-1086 | P61-F10 | AÇIK | loc=- | sha= | P61-F10: FINDINGS.md:1032; ham önem Low
+BLG-1087 | P61-F11 | AÇIK | loc=- | sha= | P61-F11: FINDINGS.md:1032; ham önem Low
+BLG-1088 | P61-F12 | AÇIK | loc=- | sha= | P61-F12: FINDINGS.md:1032; ham önem Low
+BLG-1089 | P62-F01 | AÇIK | loc=.github/workflows/security-hardening.yml:334-377 | sha= | P62-F01: FINDINGS.md:185; ham önem Medium
+BLG-1090 | P62-F02 | AÇIK | loc=- | sha= | P62-F02: FINDINGS.md:186; ham önem Info
+BLG-1092 | P62-F04 | AÇIK | loc=crates/bpqs/src/tests.rs:103 | sha= | P62-F04: FINDINGS.md:188; ham önem Low

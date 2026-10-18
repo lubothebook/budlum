@@ -1,0 +1,36 @@
+BLG-0043 | P02-F07 | AÇIK | loc=src/crypto/primitives.rs:505-518, 677-689 | sha=68a679d,f10b9c6 | P02-F07: FINDINGS.md:101; ham önem Low; CONFIRMED / gp/P02-A:e7f02f6 kısmi: keygen create_new kısmı main.rs:341-362,452-459 BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0051 | P02-F15 | AÇIK | loc=- | sha= | P02-F15: FINDINGS.md:109; ham önem Low
+BLG-0147 | P07-F02 | KARAR BEKLİYOR | loc=src/cross_domain/external/intake.rs:64-131 | sha= | P07-F02: FINDINGS.md:443; ham önem High / KARAR VERİLDİ: sync-committee bağlama (light-client doğrulaması) = domain imza toplulaştırma katmanı yol haritası kalemi; mitigation: intake operatör-kapalı, mainnet'te red; kök neden P06-F01/F02 ile birlikte kapanacak
+BLG-0193 | P10-F03 | AÇIK | loc=- | sha= | P10-F03: FINDINGS.md:764; ham önem High / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs)
+BLG-0197 | P10-F07 | KARAR BEKLİYOR | loc=- | sha= | P10-F07: FINDINGS.md:768; ham önem Low / soru PR9 yorumunda
+BLG-0198 | P10-F08 | AÇIK | loc=- | sha=8cb6f78 | P10-F08: FINDINGS.md:769; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0290 | P18-F05 | KARAR BEKLİYOR | loc=- | sha= | P18-F05: FINDINGS.md:970; ham önem Medium / soru PR9 yorumunda
+BLG-0301 | P19-F02 | KARAR BEKLİYOR | loc=- | sha= | P19-F02: FINDINGS.md:1008; ham önem Medium / soru PR9 yorumunda
+BLG-0305 | P19-F06 | KARAR BEKLİYOR | loc=- | sha= | P19-F06: FINDINGS.md:1010; ham önem Low / soru PR9 yorumunda
+BLG-0309 | P19-F10 | KARAR BEKLİYOR | loc=- | sha= | P19-F10: FINDINGS.md:1010; ham önem Low / soru PR9 yorumunda
+BLG-0310 | P19-F11 | AÇIK | loc=- | sha= | P19-F11: FINDINGS.md:1010; ham önem Low / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, transaction.rs, plonky3_prover.rs, bud-cli, tx tipleri)
+BLG-0315 | P20-F05 | AÇIK | loc=- | sha=f2c128f | P20-F05: FINDINGS.md:1019; ham önem Medium / kısmi: MaxEmergencyHaltEpochs ve guardrail okuyucuları BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0319 | P20-F09 | AÇIK | loc=- | sha= | P20-F09: FINDINGS.md:1021; ham önem Low / BAĞIMLI: BlockHeader alanı (proto_conversions, light_client, pos.rs); account.rs ve executor.rs yazıcıları
+BLG-0329 | P21-F06 | KARAR BEKLİYOR | loc=- | sha= | P21-F06: FINDINGS.md:1052; ham önem Low / soru PR9 yorumunda
+BLG-0334 | P22-F03 | KARAR BEKLİYOR | loc=- | sha= | P22-F03: FINDINGS.md:1040; ham önem Medium / soru PR9 yorumunda
+BLG-0336 | P22-F05 | AÇIK | loc=rpc/server.rs:3273 | sha= | P22-F05: FINDINGS.md:1042; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs)
+BLG-0340 | P22-F09 | AÇIK | loc=- | sha= | P22-F09: FINDINGS.md:1042; ham önem Low
+BLG-0341 | P22-F10 | AÇIK | loc=- | sha= | P22-F10: FINDINGS.md:1042; ham önem Low
+BLG-0342 | P22-F11 | AÇIK | loc=- | sha= | P22-F11: FINDINGS.md:1042; ham önem Low
+BLG-0369 | P25-F02 | KARAR BEKLİYOR | loc=- | sha= | P25-F02: FINDINGS.md:1086; ham önem Medium / soru PR9 yorumunda
+BLG-0370 | P25-F03 | AÇIK | loc=- | sha=8049c98 | P25-F03: FINDINGS.md:1087; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0371 | P25-F04 | AÇIK | loc=rpc/server.rs:2568-2575 | sha= | P25-F04: FINDINGS.md:1088; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs)
+BLG-0372 | P25-F05 | KARAR BEKLİYOR | loc=- | sha= | P25-F05: FINDINGS.md:1089; ham önem Medium / soru PR9 yorumunda
+BLG-0373 | P25-F06 | AÇIK | loc=- | sha= | P25-F06: FINDINGS.md:1090; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs)
+BLG-0374 | P25-F07 | AÇIK | loc=- | sha=2943160 | P25-F07: FINDINGS.md:1091; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0376 | P25-F09 | AÇIK | loc=- | sha= | P25-F09: FINDINGS.md:1091; ham önem Low
+BLG-0378 | P25-F11 | AÇIK | loc=- | sha= | P25-F11: FINDINGS.md:1091; ham önem Low
+BLG-0558 | P36-F11 | AÇIK | loc=src/network/privacy.rs:211-213, 338 | sha= | P36-F11: notes/P36-scan.md:212; ham önem Low
+BLG-0559 | P36-F12 | AÇIK | loc=src/network/peer_manager.rs:622-649 | sha= | P36-F12: notes/P36-scan.md:226; ham önem Low
+BLG-0560 | P36-F13 | AÇIK | loc=src/network/protocol.rs:23-28 | sha= | P36-F13: notes/P36-scan.md:239; ham önem Low
+BLG-0561 | P36-F14 | AÇIK | loc=src/network/proto_conversions.rs:19 | sha= | P36-F14: notes/P36-scan.md:253; ham önem Info
+BLG-0562 | P36-F15 | AÇIK | loc=src/network/proto_conversions.rs:182, 190, 198, 355, 363, 371 | sha= | P36-F15: notes/P36-scan.md:266; ham önem Info
+BLG-0563 | P36-F16 | AÇIK | loc=src/network/mobile.rs:445-450 | sha= | P36-F16: notes/P36-scan.md:279; ham önem Low
+BLG-0564 | P36-F17 | AÇIK | loc=src/network/gossip_dedup.rs:150-161, 182-190, 357-359 | sha= | P36-F17: notes/P36-scan.md:295; ham önem Low
+BLG-0565 | P36-F18 | AÇIK | loc=src/network/gossip_dedup.rs:20-383 | sha= | P36-F18: notes/P36-scan.md:309; ham önem Info
+BLG-0566 | P36-F19 | AÇIK | loc=src/network/node.rs:2114 | sha= | P36-F19: notes/P36-scan.md:322; ham önem Medium

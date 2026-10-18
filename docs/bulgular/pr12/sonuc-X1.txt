@@ -1,0 +1,74 @@
+BLG-0873 | KOD | 667e88e
+BLG-0874 | KOD | 4395af5
+BLG-0875 | KOD | f1e50d0
+BLG-0876 | KOD | a045999
+BLG-0877 | SKIP-DOC | marker count cap is observation only (Info)
+BLG-0878 | KOD | 6e02a11
+BLG-0879 | KOD | f623a23
+BLG-0880 | KOD | b3c23be
+BLG-0881 | KOD | 6a5670e
+BLG-0882 | KOD | d622139
+BLG-0883 | KOD | 5e134c0
+BLG-0884 | KOD | 5284529
+BLG-0885 | SKIP-KARAR | needs src/bns/registry.rs character rule (consensus surface, outside X1)
+BLG-0886 | SKIP-KARAR | needs crates/budscan/src/name_rule.rs (rule copy must stay in parity)
+BLG-0887 | KOD | b9b6694
+BLG-0888 | KOD | 05f2d1d
+BLG-0889 | SKIP-YP | all three allows are listed with reasons in suppressions_are_justified.rs:480-487
+BLG-0890 | KOD | 9132138
+BLG-0891 | KOD | 58106d1
+BLG-0892 | KOD | 7e10b87
+BLG-0893 | KOD | 0be84e9
+BLG-0895 | KOD | de99f1e
+BLG-0897 | SKIP-KARAR | fix makes the dead-pub-api count rise and needs .github/dead-pub-api-baseline.txt regenerated (forbidden)
+BLG-0900 | KOD | b2dc80f
+BLG-0901 | KOD | 109fd31
+BLG-0902 | KOD | 2a0d69e
+BLG-0903 | KOD | 9f71a33 (marker only; floating stable needs rust.yml)
+BLG-0904 | SKIP-KARAR | any stricter counting changes findings vs .github/dead-pub-api-baseline.txt (regeneration forbidden)
+BLG-0905 | KOD | f1c2ce4
+BLG-0906 | KOD | d46d7b5
+BLG-0907 | KOD | e002847
+BLG-0908 | KOD | 037602e
+BLG-0909 | KOD | 59c536f
+BLG-0910 | KOD | ff85448
+BLG-0911 | KOD | 4e1fdd9
+BLG-0912 | KOD | 81319db
+BLG-0913 | KOD | 0f6fa40
+BLG-0914 | KOD | bf19cf2
+BLG-0915 | KOD | 4fff489
+BLG-0922 | SKIP-VAR | line_matches already requires 'test ' prefix, ' ... ok' suffix and exact path in main (named_tests.rs:17-30, commit 21e94b5)
+BLG-0919 | KOD | 497e938
+BLG-0920 | KOD | 497e938 (same commit as BLG-0919: tests.rs filter)
+BLG-0921 | KOD | 1a5afbb
+BLG-0923 | KOD | 1319e57
+BLG-0924 | KOD | 3660849
+BLG-0925 | KOD | dad8cb6
+BLG-0926 | KOD | c598c7b
+BLG-0927 | KOD | ab9200a
+BLG-0928 | KOD | 1a983b8
+BLG-0929 | KOD | a08bf2a
+BLG-0930 | KOD | 034c250
+BLG-0931 | KOD | 0499ef6
+BLG-0932 | KOD | 37bb271
+BLG-0933 | KOD | 52243ca
+BLG-0934 | KOD | a230217
+BLG-0935 | KOD | b343e7c
+BLG-0936 | KOD | 962114d
+BLG-0937 | KOD | c90f69c
+BLG-0938 | KOD | 6814224
+BLG-0941 | KOD | 755441d
+BLG-0942 | KOD | 1531cf2
+BLG-0943 | KOD | 2f181c5
+BLG-0944 | KOD | 7751678
+BLG-0945 | KOD | 1107d78
+BLG-0946 | KOD | ecebcc0
+BLG-0947 | SKIP-VAR | same line_matches fix already in main (named_tests.rs:17-30, commit 21e94b5); see BLG-0922
+BLG-0948 | SKIP-KARAR | adding the identity root as a sibling turns the gate red; fix needs src/registry/identity.rs merkle_root (outside X1)
+BLG-0949 | KOD | 06df873
+BLG-0951 | KOD | 89f2209
+BLG-0953 | KOD | 2ef88f0
+BLG-0954 | KOD | 3e7330c
+BLG-0955 | KOD | 1e44883
+BLG-0956 | KOD | ee528da
+BLG-0957 | KOD | 8013e1b

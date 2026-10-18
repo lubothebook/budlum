@@ -1,0 +1,36 @@
+BLG-0233 | SKIP-VAR | plonky3_prover.rs:11341 test rejects_expand_flag_on_non_inference_row has no 0x1F row
+BLG-0235 | SKIP-DOC | tests already log both outcomes; tighter assert cannot be checked without running; rest is comment-only
+BLG-0236 | SKIP-VAR | plonky3_prover.rs:7631 non_writing_rd_programs covers Jmp, Jnz, Assert
+BLG-0244 | SKIP-KARAR | VM compare/reduction semantics change is consensus visible; decision open
+BLG-0245 | SKIP-KARAR | needs a new hash round with capacity in the AIR (K9-C); gate stays off
+BLG-0247 | SKIP-KARAR | domain separation needs a capacity tag in the AIR (K9-C)
+BLG-0248 | SKIP-KARAR | trace memory cap is a resource parameter decision, open
+BLG-0249 | SKIP-KARAR | rejecting nonzero upper bits changes the consensus decode, decision open
+BLG-0250 | SKIP-KARAR | removing is_experimental/IsaProfile check needs compiler, node.rs and the idle-code baseline outside ownership
+BLG-0251 | SKIP-KARAR | evidence trust model for the unwired verifier path is an open decision
+BLG-0262 | KOD | 619269d
+BLG-0263 | SKIP-KARAR | slot encoding must match the AIR COL_IMM tie; AIR is frozen (K9-C)
+BLG-0264 | SKIP-VAR | registry.rs tests: unverified_report_not_actionable, liveness_fault_leaves_an_exit_for_the_remainder, upsert_zero_stake_keeps_the_bond_slashable, add_stake_refuses_non_active_and_overflow
+BLG-0265 | SKIP-DOC | test-only allow with a stated reason in trace_fixtures.rs:1-3; budget compare unchecked Info
+BLG-0266 | SKIP-DOC | include_str is a deliberate layering test (bud-isa must not depend on bud-vm); rest is stale comments
+BLG-0268 | SKIP-KARAR | registry authority model is an open decision; module unwired
+BLG-0269 | SKIP-KARAR | wiring kq_private into production and its preimage is an open decision
+BLG-0270 | SKIP-KARAR | TEE trust root and quote nonce format is an open decision
+BLG-0273 | SKIP-KARAR | recipient tag width is an open decision (K16 family)
+BLG-0274 | SKIP-KARAR | guardian vote domain tag shared with chain is a consensus format decision
+BLG-0277 | SKIP-KARAR | the only wiring site is settlement/pq_anchor.rs, outside ownership; wiring is an architecture decision
+BLG-0283 | KOD | 0f8abb0
+BLG-0285 | SKIP-YP | finding says public keys only and no secret compare; nothing to fix
+BLG-0271 | SKIP-KARAR | entropy, bits, seed_bytes, view_key already wiped; the public seed() getter is a wallet export API decision
+BLG-0534 | SKIP-KARAR | event name and arity framing changes the event stream format, decision open
+BLG-0535 | SKIP-KARAR | wiring or removing the BudIR module is an architecture decision
+BLG-0536 | SKIP-KARAR | IR lowering mismatch only matters once the IR is wired (F14 decision)
+BLG-0538 | KOD | 8d55c6e
+BLG-0537 | KOD | cdfae05
+BLG-0539 | SKIP-KARAR | checked u64 arithmetic is a language and VM semantics decision (documented design choice)
+BLG-0540 | SKIP-KARAR | a compile time gate check would flip the existing test expecting VerifyMerkle to compile under Production
+BLG-0541 | KOD | 5952a25
+BLG-0544 | KOD | e8682cf
+BLG-0545 | KOD | b812924
+BLG-0546 | SKIP-KARAR | bump heap bound, free or loop ban is a language memory model decision
+BLG-0547 | SKIP-DOC | documented 64-bit identity projection; widening is the Address width decision (K14 family)
