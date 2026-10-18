@@ -161,3 +161,11 @@ Bu bölüm ARENA-ORK-01 Bölüm 8 ve AGENT-TEAM.md ile birlikte okunur. Onları 
 - Karar gerektiren bulgu (konsensüs biçimi, ekonomi, mimari) tahmin edilmez. ENGELLİ yazılır.
 - Ajan worktree'sini PR dalından açar. Worktree yanlış tabandan açılırsa ajan ilk iş `git reset --hard <PR dalı>` çalıştırır.
 - Orkestratör sohbete ilerleme veya durum raporu yazmaz (Bölüm 9).
+
+### 11.4 CI doğrulaması ve CI takibi
+
+1. Alt ajan `cargo test`, `cargo clippy` ve CI'ın yaptığı diğer doğrulamaları çalıştırmaz. Bu doğrulamaları GitHub CI yapar. Alt ajan yalnızca `cargo fmt` ve gerekirse `cargo check` çalıştırır.
+2. Alt ajan CI sonucunu takip etmez. CI takibi alt ajanın görevi değildir. Alt ajan işi teslim eder ve durur.
+3. CI sonucu işlem devam ederken en son bakılır. Önce bütün teslimler alınır ve PR dalına işlenir. CI sonucu bunlardan sonra okunur.
+4. Görevi alan ajan (orkestratör), görev dağıtırken aynı anda CI durumunu da yürütür. CI kırmızıysa kırmızıyı düzeltmekle kendisi uğraşır. Düzeltme gerekirse yeni bir görev paketi olarak bir alt ajana verilir. Bu işlem diğer görevlerin dağıtımını bekletmez.
+5. Kırmızı CI düzeltmesi de Bölüm 11.1 ve 11.2'ye uyar: üçlü paket, her görev bitince teslim, orkestratör tarafından cherry-pick.
