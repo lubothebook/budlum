@@ -129,3 +129,35 @@ Sürekli çalışma, hız baskısı değildir. Şu kurallar her durumda geçerli
 - Main dalına doğrudan push YASAK.
 
 Kanıtı zayıflatan bir kısayol, durmaktan daha büyük bir hatadır.
+
+## 11. Alt ajan paketleme ve teslim kuralları (CC-ORK-02)
+
+Bu bölüm ARENA-ORK-01 Bölüm 8 ve AGENT-TEAM.md ile birlikte okunur. Onları gevşetmez; alt ajan maliyetini düşürür.
+
+### 11.1 Paketleme
+
+1. Her alt ajana tek komutla **üç görev** verilir. Üç görev tek paket sayılır.
+2. Görev başına yeni ajan açmak YASAK. Biten ajan, `SendMessage` ile yeni üçlü paketle sürdürülür. Böylece ajanın bağlamı korunur ve token harcaması düşer.
+3. Bir paketin üç görevi aynı dosya sahipliği alanından seçilir. İki ajan aynı dosyaya yazmaz (ARENA-ORK-01 Bölüm 6.7).
+4. Paket komutu şunları içerir: görev kimlikleri (P-F), dosya sahipliği, taban komutu (`git reset --hard <PR dalı>`), yasaklar, teslim biçimi.
+
+### 11.2 Teslim
+
+1. Ajan **her görev bittiğinde** kodu orkestratöre iletir. Üç görevin bitmesi beklenmez.
+2. Teslim: ajanın kendi worktree dalında tek commit (mesajda bulgu kimliği), commit SHA'sı ve değişen dosya listesi.
+3. Teslim bloğu:
+   ```
+   STATUS: DONE | BLOCKED | FAIL
+   OUTPUT: <dal, commit SHA>
+   EVIDENCE: <bulgu: düzeltildi | zaten düzeltilmiş | ENGELLİ + neden>
+   NEXT: <tek satır>
+   ```
+4. Orkestratör teslimi PR dalına `cherry-pick` ile alır, çakışmayı çözer ve push eder. Ajan PR dalına push etmez (tek yazar kuralı).
+5. ENGELLİ görev paketi durdurmaz. Kalan görevler sürer. ENGELLİ kayıt soru kuyruğuna yazılır.
+
+### 11.3 Yasaklar
+
+- Ajan `cargo test` ve `cargo clippy` çalıştırmaz. Doğrulayıcı CI'dır. Ajan yalnızca `cargo fmt` ve gerekirse `cargo check` çalıştırır.
+- Karar gerektiren bulgu (konsensüs biçimi, ekonomi, mimari) tahmin edilmez. ENGELLİ yazılır.
+- Ajan worktree'sini PR dalından açar. Worktree yanlış tabandan açılırsa ajan ilk iş `git reset --hard <PR dalı>` çalıştırır.
+- Orkestratör sohbete ilerleme veya durum raporu yazmaz (Bölüm 9).
