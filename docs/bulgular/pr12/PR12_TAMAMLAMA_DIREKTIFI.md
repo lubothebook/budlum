@@ -53,17 +53,24 @@ Dosyalar bu dizindedir. `paket-<ID>.txt`: satır başına `BLG | Pxx-Fyy | durum
 
 | Paket | Parçalar | Bulgu | Dosya sahipliği | Durum (2026-10-18) |
 |---|---|---|---|---|
-| X1 | P50-P53 | 84 | xtask/gates/** | çalışıyor |
+| X1 | P50-P53 | 84 | xtask/gates/** | durduruldu (kısmi), PR12'de; kalan KALANLAR.txt |
 | X2 | P54-P57 | 67 | xtask/gates/**, xtask/tools/** | başlamadı (X1 bitince) |
 | B1 | P37-P38 | 48 | bud/** | bitti, PR12'de |
 | B2 | P39-P40 | 39 | bud/** | bitti, PR12'de |
 | Z | P14, P16, P17, P35 | 36 | budzero/**, crates/wallet-core/**, crates/note-packing/**, src/account_abstraction/** | bitti, PR12'de |
 | ST | P23, P24, P26-P30 | 65 | src/** (kök crate) | bitti, PR12'de |
-| CR | P02, P07, P10, P18-P22, P25, P36 | 36 | src/** (src/account_abstraction ve src/tests hariç), crates/bpqs/** | çalışıyor |
+| CR | P02, P07, P10, P18-P22, P25, P36 | 36 | src/** (src/account_abstraction ve src/tests hariç), crates/bpqs/** | durduruldu (kısmi), PR12'de; kalan KALANLAR.txt |
 | AI | P31-P34 | 48 | src/ai/**, src/ai_inference/**, crates/ai-inference/** | başlamadı (kök crate, CR bitince) |
 | AP | P41-P43 | 51 | budzero/bud-node, budzero/bud-cli, src/bin, src/relayer, src/gateway, src/bns, src/socialfi, src/budlumxyz, src/deed, src/developer_os.rs, src/pollen, crates/budscan | başlamadı (kök crate) |
 | T | P44-P49 | 93 | src/tests/**, benches/**, fuzz/**, kani/**, bud/tests/**, bud/fuzz/**, bud/kani/** | başlamadı (kök crate) |
 | O | P58-P62 | 28 | .github/** (baseline dosyaları hariç), config/**, ops/**, contracts/**, proto/**, Cargo.toml dosyaları | başlamadı (en son, tek başına) |
+
+## Durum (2026-10-18, oturum kapanışı)
+- Oturum token bitimi nedeniyle durduruldu. PR12 ucu: `39b9617`.
+- 595 bulgudan 159 KOD (PR12'de), 140 SKIP (VAR, YP, DOC, KARAR, FAIL), 296 işlenmedi.
+- Kalan liste: `KALANLAR.txt` (satır başına `paket | BLG | durum`). `ISLENMEDI` satırları sıradaki iştir. SKIP-KARAR satırları karar bekler.
+- X1 ve CR durduruldu: işlenmemiş satırları aynı paket kimliğiyle sürdür. Commit edilmemiş iş atıldı.
+- PR12 CI son durumu okunmadı. Yeni oturum önce CI kırmızılarını düzeltir.
 
 ## Yeni oturum nasıl devam eder
 1. Bu dosyayı ve `AJAN_KURALLARI.md` dosyasını oku. Fark çıkarmayı tekrarlama.

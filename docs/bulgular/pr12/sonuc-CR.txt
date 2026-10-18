@@ -29,3 +29,7 @@ BLG-0558 | KOD | 60a5e13
 BLG-0559 | KOD | 440785e
 BLG-0560 | KOD | 491d2b1
 BLG-0561 | SKIP-YP | proto_conversions.rs:19 allow covers only the include! of prost generated code; hand written code is outside pb
+BLG-0562 | KOD | dd3f99d
+BLG-0563 | KOD | fbba84c
+BLG-0564 | KOD | c72abb2
+BLG-0565 | SKIP-KARAR | merging two peer scoring systems (f64 vs i32) is an architecture choice
