@@ -1,0 +1,39 @@
+BLG-0640 | P39-F07 | AÇIK | loc=bud/src/bud_format_office.rs:33-64, 71-78, 83-100, 104-198, 11-13, 230-232 | sha=0aa9b34 | P39-F07: notes/P39-scan.md:113; ham önem Medium / kısmi: DEFLATE çözücü yeni crate KARAR / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0642 | P39-F09 | AÇIK | loc=bud/src/bud_format_recipe_record.rs:74-96, 99-106 | sha= | P39-F09: notes/P39-scan.md:141; ham önem Medium
+BLG-0643 | P39-F10 | AÇIK | loc=bud/src/bud_format_recipe_record.rs:44-49, 65-70, 115-126 | sha= | P39-F10: notes/P39-scan.md:155; ham önem Medium
+BLG-0644 | P39-F11 | AÇIK | loc=bud/src/bud_format_ratioconsensus.rs:44-52, 71-135, 157-180, 208-243 | sha= | P39-F11: notes/P39-scan.md:170; ham önem Medium
+BLG-0645 | P39-F12 | AÇIK | loc=bud/src/bud_format_regeneration.rs:62-186 | sha= | P39-F12: notes/P39-scan.md:183; ham önem Medium
+BLG-0646 | P39-F13 | AÇIK | loc=bud/src/bud_format_registry.rs:56-100, 126-151, 154-184, 46-53 | sha= | P39-F13: notes/P39-scan.md:196; ham önem Medium
+BLG-0647 | P39-F14 | AÇIK | loc=bud/src/bud_format_securededup.rs:19-36, 42-75, 79-85 | sha= | P39-F14: notes/P39-scan.md:212; ham önem Medium
+BLG-0651 | P39-F18 | AÇIK | loc=bud/src/bud_format_pgm.rs:112-124, 63-77, 33-35 | sha= | P39-F18: notes/P39-scan.md:263; ham önem Low
+BLG-0652 | P39-F19 | AÇIK | loc=bud/src/bud_format_pointcloud.rs:27-62, 64-83, 85-94, 52-60 | sha= | P39-F19: notes/P39-scan.md:275; ham önem Low
+BLG-0653 | P39-F20 | AÇIK | loc=bud/src/bud_format_optical.rs:51-76, 29-34, 1-5 | sha= | P39-F20: notes/P39-scan.md:287; ham önem Low
+BLG-0654 | P39-F21 | AÇIK | loc=bud/src/bud_format_pact.rs:148-159, 201-242, 101-114 | sha= | P39-F21: notes/P39-scan.md:299; ham önem Low
+BLG-0655 | P39-F22 | AÇIK | loc=bud/src/bud_format_repairband.rs:27-50, 53-64 | sha= | P39-F22: notes/P39-scan.md:311; ham önem Low
+BLG-0656 | P39-F23 | AÇIK | loc=bud/src/bud_format_prodcost.rs:111-117 | sha= | P39-F23: notes/P39-scan.md:323; ham önem Low
+BLG-0657 | P39-F24 | AÇIK | loc=bud/src/bud_format_pipe.rs:38-47, 141-161 | sha= | P39-F24: notes/P39-scan.md:333; ham önem Low
+BLG-0658 | P39-F25 | AÇIK | loc=bud/src/bud_format_qrvideo.rs:66-103, 267-288, 169-203, 43-53 | sha= | P39-F25: notes/P39-scan.md:344; ham önem Low
+BLG-0659 | P39-F26 | AÇIK | loc=bud/src/bud_format_nvc.rs:35-54, 56-68, 70-79 | sha= | P39-F26: notes/P39-scan.md:355; ham önem Low
+BLG-0660 | P39-F27 | AÇIK | loc=bud/src/lib.rs | sha= | P39-F27: notes/P39-scan.md:368; ham önem Low
+BLG-0661 | P39-F28 | AÇIK | loc=bud_format_pcap.rs:371; bud_format_recipe_record.rs:226-233; bud_format_servicec | sha= | P39-F28: notes/P39-scan.md:377; ham önem Low
+BLG-0662 | P39-F29 | AÇIK | loc=bud/src/bud_format_revolutionary.rs:496 | sha= | P39-F29: notes/P39-scan.md:389; ham önem Info
+BLG-0672 | P40-F10 | AÇIK | loc=bud/src/fidelity.rs:83-131 | sha= | P40-F10: notes/P40-scan.md:204; ham önem Low
+BLG-0673 | P40-F11 | AÇIK | loc=bud/src/churn.rs:127-172, 130-134 | sha= | P40-F11: notes/P40-scan.md:213; ham önem Low
+BLG-0674 | P40-F12 | AÇIK | loc=bud/src/churn.rs:33-44 | sha= | P40-F12: notes/P40-scan.md:222; ham önem Low
+BLG-0675 | P40-F13 | AÇIK | loc=bud/src/bud_format_telemetry.rs:54-68 | sha= | P40-F13: notes/P40-scan.md:231; ham önem Low
+BLG-0676 | P40-F14 | AÇIK | loc=bud/src/bud_format_social2.rs:117-128 | sha= | P40-F14: notes/P40-scan.md:240; ham önem Low
+BLG-0677 | P40-F15 | AÇIK | loc=bud/src/bud_format_social.rs:102-127 | sha= | P40-F15: notes/P40-scan.md:249; ham önem Low
+BLG-0678 | P40-F16 | AÇIK | loc=bud/src/bud_format_shamir.rs:118-167 | sha= | P40-F16: notes/P40-scan.md:258; ham önem Low
+BLG-0679 | P40-F17 | AÇIK | loc=bud/src/bud_format_wal.rs:25-40, 63-107 | sha= | P40-F17: notes/P40-scan.md:267; ham önem Low
+BLG-0680 | P40-F18 | AÇIK | loc=bud/src/bud_format_timeseries.rs:122, 177-178, 236-270 | sha= | P40-F18: notes/P40-scan.md:276; ham önem Low
+BLG-0681 | P40-F19 | AÇIK | loc=bud/src/bud_format_videopipe.rs:40-85 | sha= | P40-F19: notes/P40-scan.md:285; ham önem Low
+BLG-0682 | P40-F20 | AÇIK | loc=bud/src/bud_format_video.rs:106-146 | sha= | P40-F20: notes/P40-scan.md:294; ham önem Low
+BLG-0683 | P40-F21 | AÇIK | loc=bud/src/bud_format_ux.rs:22-29, 75-111 | sha= | P40-F21: notes/P40-scan.md:303; ham önem Low
+BLG-0684 | P40-F22 | AÇIK | loc=bud/src/bud_format_view.rs:51-115, 222-228 | sha= | P40-F22: notes/P40-scan.md:312; ham önem Low
+BLG-0685 | P40-F23 | AÇIK | loc=bud/src/quantum_chain.rs:111-115 | sha= | P40-F23: notes/P40-scan.md:321; ham önem Low
+BLG-0686 | P40-F24 | AÇIK | loc=bud/src/bud_format_spec.rs:28-35, 55-79, 89-104 | sha= | P40-F24: notes/P40-scan.md:330; ham önem Low
+BLG-0687 | P40-F25 | AÇIK | loc=bud/src/bud_format_transpile.rs:18-39, 47-57, 64-82 | sha= | P40-F25: notes/P40-scan.md:339; ham önem Low
+BLG-0688 | P40-F26 | AÇIK | loc=bud/src/bud_format_tricore.rs:1-110 | sha= | P40-F26: notes/P40-scan.md:348; ham önem Low
+BLG-0689 | P40-F27 | AÇIK | loc=bud/src/quantum.rs:5-76 | sha= | P40-F27: notes/P40-scan.md:357; ham önem Info
+BLG-0690 | P40-F28 | AÇIK | loc=bud/src/bud_format_zkproof.rs:88-95, 140-178 | sha= | P40-F28: notes/P40-scan.md:366; ham önem Info
+BLG-0691 | P40-F29 | AÇIK | loc=bud/src/lib.rs:1-225 | sha= | P40-F29: notes/P40-scan.md:375; ham önem Info

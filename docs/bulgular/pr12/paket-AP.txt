@@ -1,0 +1,51 @@
+BLG-0695 | P41-F04 | AÇIK | loc=src/bin/budlum-relayer.rs:600-603, 606-617, 638-652 | sha=e71ae67 | P41-F04: notes/P41-scan.md:93; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0698 | P41-F07 | AÇIK | loc=src/bin/bud.rs:243-265, 287-288 | sha=2b170e5 | P41-F07: notes/P41-scan.md:142; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0699 | P41-F08 | AÇIK | loc=budzero/bud-node/src/store.rs:106-136, 154-162 | sha=ad92c01 | P41-F08: notes/P41-scan.md:157; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0703 | P41-F12 | AÇIK | loc=budzero/bud-cli/src/main.rs:12-30, 995-1021 | sha=a21282b | P41-F12: notes/P41-scan.md:219; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0704 | P41-F13 | AÇIK | loc=budzero/bud-cli/src/main.rs:533-593, 649-678 | sha= | P41-F13: notes/P41-scan.md:234; ham önem Low
+BLG-0706 | P41-F15 | AÇIK | loc=src/bin/budlum-light.rs:80-96 | sha= | P41-F15: notes/P41-scan.md:265; ham önem Low
+BLG-0707 | P41-F16 | AÇIK | loc=src/bin/budlum-relayer.rs:127-131, 225-229, 154-157, 254-257, 297-299 | sha= | P41-F16: notes/P41-scan.md:280; ham önem Low
+BLG-0708 | P41-F17 | AÇIK | loc=src/bin/budlum-relayer.rs:1, 807-813 | sha= | P41-F17: notes/P41-scan.md:295; ham önem Low
+BLG-0709 | P41-F18 | AÇIK | loc=budzero/bud-cli/tests/toolchain_end_to_end.rs:182-212, 254-277 | sha= | P41-F18: notes/P41-scan.md:310; ham önem Low
+BLG-0710 | P41-F19 | AÇIK | loc=budzero/bud-node/src/sharding.rs:415-433, 445-449 | sha= | P41-F19: notes/P41-scan.md:325; ham önem Info
+BLG-0711 | P41-F20 | AÇIK | loc=examples/print_genesis_hash.rs:1-20 | sha= | P41-F20: notes/P41-scan.md:340; ham önem Info
+BLG-0714 | P42-F03 | AÇIK | loc=src/relayer/worker.rs:687-689, 993-1004 | sha= | P42-F03: notes/P42-scan.md:75; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (ai-ops/main.rs, evm adapter, executor.rs, transaction.rs)
+BLG-0715 | P42-F04 | KARAR BEKLİYOR | loc=src/relayer/worker.rs:675-680 | sha= | P42-F04: notes/P42-scan.md:93; ham önem Medium / soru PR9 yorumunda
+BLG-0717 | P42-F06 | AÇIK | loc=src/main.rs:1502-1517 | sha= | P42-F06: notes/P42-scan.md:126; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (ai-ops/main.rs, evm adapter, executor.rs, transaction.rs)
+BLG-0718 | P42-F07 | KARAR BEKLİYOR | loc=src/relayer/policy.rs:1-48, 345-439 | sha= | P42-F07: notes/P42-scan.md:141; ham önem Medium / soru PR9 yorumunda
+BLG-0720 | P42-F09 | AÇIK | loc=src/execution/executor.rs:999-1006 | sha= | P42-F09: notes/P42-scan.md:171; ham önem Medium
+BLG-0722 | P42-F11 | AÇIK | loc=src/bns/registry.rs:110-182 | sha= | P42-F11: notes/P42-scan.md:202; ham önem Low
+BLG-0723 | P42-F12 | AÇIK | loc=src/bns/registry.rs:184-204, 220-232 | sha= | P42-F12: notes/P42-scan.md:217; ham önem Low
+BLG-0724 | P42-F13 | AÇIK | loc=src/bns/registry.rs:7-32, 297-299 | sha= | P42-F13: notes/P42-scan.md:232; ham önem Low
+BLG-0725 | P42-F14 | AÇIK | loc=src/bns/registry.rs:105, 92-104 | sha= | P42-F14: notes/P42-scan.md:248; ham önem Low
+BLG-0726 | P42-F15 | AÇIK | loc=src/relayer/policy.rs:155-174, 527-551 | sha= | P42-F15: notes/P42-scan.md:263; ham önem Low
+BLG-0727 | P42-F16 | AÇIK | loc=src/socialfi/vault.rs:93-95, 225-230 | sha= | P42-F16: notes/P42-scan.md:277; ham önem Low
+BLG-0728 | P42-F17 | AÇIK | loc=src/socialfi/mod.rs:48-78 | sha= | P42-F17: notes/P42-scan.md:292; ham önem Low
+BLG-0729 | P42-F18 | AÇIK | loc=src/budlumxyz/mod.rs:75-93 | sha= | P42-F18: notes/P42-scan.md:306; ham önem Low
+BLG-0730 | P42-F19 | AÇIK | loc=src/budlumxyz/mod.rs:36-73 | sha= | P42-F19: notes/P42-scan.md:321; ham önem Low
+BLG-0731 | P42-F20 | AÇIK | loc=src/execution/executor.rs:648-690 | sha= | P42-F20: notes/P42-scan.md:335; ham önem Low
+BLG-0732 | P42-F21 | AÇIK | loc=src/deed/mod.rs:1-106 | sha= | P42-F21: notes/P42-scan.md:349; ham önem Low
+BLG-0733 | P42-F22 | AÇIK | loc=src/gateway/atlas.rs:141-463 | sha= | P42-F22: notes/P42-scan.md:364; ham önem Low
+BLG-0734 | P42-F23 | AÇIK | loc=src/rpc/server.rs:5429, 5466 | sha= | P42-F23: notes/P42-scan.md:379; ham önem Low
+BLG-0735 | P42-F24 | AÇIK | loc=src/gateway/service.rs:10, 116, 143-166, 230-234, 263-274 | sha= | P42-F24: notes/P42-scan.md:393; ham önem Low
+BLG-0736 | P42-F25 | AÇIK | loc=src/relayer/worker.rs:359-410, 833-850 | sha= | P42-F25: notes/P42-scan.md:408; ham önem Low
+BLG-0737 | P42-F26 | AÇIK | loc=src/relayer/policy.rs:191 | sha= | P42-F26: notes/P42-scan.md:422; ham önem Info
+BLG-0739 | P43-F02 | AÇIK | loc=src/pollen/offers.rs:693-720, 734-780 | sha= | P43-F02: notes/P43-scan.md:77; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (ai-ops/main.rs, evm adapter, executor.rs, transaction.rs)
+BLG-0740 | P43-F03 | AÇIK | loc=src/pollen/offers.rs:505-636 | sha= | P43-F03: notes/P43-scan.md:94; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (ai-ops/main.rs, evm adapter, executor.rs, transaction.rs)
+BLG-0741 | P43-F04 | KARAR BEKLİYOR | loc=src/pollen/offers.rs:327-335, 693-720 | sha= | P43-F04: notes/P43-scan.md:113; ham önem Medium / soru PR9 yorumunda
+BLG-0744 | P43-F07 | AÇIK | loc=crates/budscan/browser/patches/bud-protocol-handler.patch:36-37 (USE_LIBS), 261- | sha=68c7d37 | P43-F07: notes/P43-scan.md:160; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0746 | P43-F09 | AÇIK | loc=crates/budscan/src/resolve.rs:251-254 | sha= | P43-F09: notes/P43-scan.md:191; ham önem Low
+BLG-0747 | P43-F10 | AÇIK | loc=src/pollen/offers.rs:418-432 | sha= | P43-F10: notes/P43-scan.md:207; ham önem Low
+BLG-0748 | P43-F11 | AÇIK | loc=src/pollen/offers.rs:353-391 | sha= | P43-F11: notes/P43-scan.md:221; ham önem Low
+BLG-0749 | P43-F12 | AÇIK | loc=src/pollen/data_rights.rs:196-210, 466-482 | sha= | P43-F12: notes/P43-scan.md:235; ham önem Low
+BLG-0750 | P43-F13 | AÇIK | loc=src/pollen/offers.rs:815-858 | sha= | P43-F13: notes/P43-scan.md:250; ham önem Low
+BLG-0751 | P43-F14 | AÇIK | loc=src/rpc/server.rs:5249-5262 | sha= | P43-F14: notes/P43-scan.md:264; ham önem Low
+BLG-0752 | P43-F15 | AÇIK | loc=src/pollen/offers.rs:693-720, 734-780, 793-797 | sha= | P43-F15: notes/P43-scan.md:278; ham önem Low
+BLG-0753 | P43-F16 | AÇIK | loc=crates/budscan/src/patchset.rs:210-226, 321-328 | sha= | P43-F16: notes/P43-scan.md:293; ham önem Low
+BLG-0754 | P43-F17 | AÇIK | loc=crates/budscan/src/patchset.rs:210-226, 240-285 | sha= | P43-F17: notes/P43-scan.md:307; ham önem Low
+BLG-0755 | P43-F18 | AÇIK | loc=crates/budscan/src/evm_audit.rs:162-197 | sha= | P43-F18: notes/P43-scan.md:321; ham önem Low
+BLG-0756 | P43-F19 | AÇIK | loc=crates/budscan/src/name_rule.rs:219-240 | sha= | P43-F19: notes/P43-scan.md:337; ham önem Low
+BLG-0757 | P43-F20 | AÇIK | loc=crates/budscan/src/fetch.rs:72, 110-118 | sha= | P43-F20: notes/P43-scan.md:351; ham önem Low
+BLG-0758 | P43-F21 | AÇIK | loc=crates/budscan/src/light_client.rs:124-156 | sha= | P43-F21: notes/P43-scan.md:367; ham önem Low
+BLG-0759 | P43-F22 | AÇIK | loc=crates/budscan/src/name_rule.rs:51-54 | sha= | P43-F22: notes/P43-scan.md:381; ham önem Info
+BLG-0760 | P43-F23 | AÇIK | loc=src/pollen/data_rights.rs:142, 400, 440 | sha= | P43-F23: notes/P43-scan.md:398; ham önem Info

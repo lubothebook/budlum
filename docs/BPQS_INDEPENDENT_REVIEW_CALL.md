@@ -33,8 +33,8 @@ ceremony lane and the KAT writer). Rust toolchain is pinned at 1.97.1.
 1. Few-time bound (the open core): SECURITY-ARGUMENT.md section 6 prices
    the domination hunt first-order (message digits independent across
    chains) and, since 2026-09-22, carries an EXACT checksum-side
-   enumeration pinned to a stdlib-only script
-   (tools/bpqs_checksum_domination_exact.py: exact digit marginals,
+   enumeration pinned to a std-only Rust example
+   (crates/bpqs/examples/checksum_domination_exact.rs: exact digit marginals,
    exact joint domination over the three checksum ranks with pool
    minima, pool saturation at q ~ 4-8). Tighten or refute what remains:
    (a) the message-into-checksum cross-correlation, stated at the end

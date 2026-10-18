@@ -1,0 +1,36 @@
+BLG-0233 | P14-F03 | AÇIK | loc=- | sha= | P14-F03: FINDINGS.md:864; ham önem Low
+BLG-0235 | P14-F05 | AÇIK | loc=bud_stark/prover.rs:44-47 | sha= | P14-F05: FINDINGS.md:866; ham önem Low
+BLG-0236 | P14-F06 | AÇIK | loc=- | sha= | P14-F06: FINDINGS.md:867; ham önem Low
+BLG-0244 | P16-F01 | KARAR BEKLİYOR | loc=bud-vm/src/lib.rs:538-547, 363-367, 453-487 | sha= | P16-F01: FINDINGS.md:891; ham önem Medium / soru PR9 yorumunda
+BLG-0245 | P16-F02 | AÇIK | loc=bud-vm/src/lib.rs:1034-1046, 581-615 | sha=bdc83be | P16-F02: FINDINGS.md:892; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0247 | P16-F04 | AÇIK | loc=- | sha=a4cc5d0 | P16-F04: FINDINGS.md:894; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0248 | P16-F05 | KARAR BEKLİYOR | loc=- | sha= | P16-F05: FINDINGS.md:895; ham önem Low / soru PR9 yorumunda
+BLG-0249 | P16-F06 | KARAR BEKLİYOR | loc=bud-isa/src/lib.rs:215-268 | sha= | P16-F06: FINDINGS.md:896; ham önem Info / soru PR9 yorumunda
+BLG-0250 | P16-F07 | AÇIK | loc=bud-isa/src/lib.rs:59-61, 271-309 | sha= | P16-F07: FINDINGS.md:897; ham önem Low / BAĞIMLI: sahip olunmayan dosya (node.rs, blockchain.rs, evidence.rs, zkvm.rs, server.rs, permissionless.rs, account.rs)
+BLG-0251 | P16-F08 | KARAR BEKLİYOR | loc=verifier-registry/src/evidence.rs:140-216, 64-71 | sha= | P16-F08: FINDINGS.md:898; ham önem Medium / soru PR9 yorumunda
+BLG-0262 | P16-F19 | AÇIK | loc=- | sha= | P16-F19: FINDINGS.md:909; ham önem Low
+BLG-0263 | P16-F20 | AÇIK | loc=- | sha= | P16-F20: FINDINGS.md:910; ham önem Low
+BLG-0264 | P16-F21 | AÇIK | loc=- | sha= | P16-F21: FINDINGS.md:911; ham önem Low
+BLG-0265 | P16-F22 | AÇIK | loc=- | sha= | P16-F22: FINDINGS.md:912; ham önem Info
+BLG-0266 | P16-F23 | AÇIK | loc=bud-isa/src/lib.rs:595-616 | sha= | P16-F23: FINDINGS.md:913; ham önem Info
+BLG-0268 | P17-F02 | KARAR BEKLİYOR | loc=account_abstraction/registry.rs:128-149, 225-261 | sha= | P17-F02: FINDINGS.md:950; ham önem Medium / soru PR9 yorumunda
+BLG-0269 | P17-F03 | KARAR BEKLİYOR | loc=- | sha= | P17-F03: FINDINGS.md:951; ham önem Medium / soru PR9 yorumunda
+BLG-0270 | P17-F04 | KARAR BEKLİYOR | loc=- | sha= | P17-F04: FINDINGS.md:952; ham önem Medium / soru PR9 yorumunda
+BLG-0271 | P17-F05 | AÇIK | loc=- | sha=acc751c,b44daaf,338233b | P17-F05: FINDINGS.md:953; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0273 | P17-F07 | KARAR BEKLİYOR | loc=- | sha= | P17-F07: FINDINGS.md:955; ham önem Medium / soru PR9 yorumunda
+BLG-0274 | P17-F08 | KARAR BEKLİYOR | loc=- | sha= | P17-F08: FINDINGS.md:956; ham önem Medium / soru PR9 yorumunda
+BLG-0277 | P17-F11 | AÇIK | loc=settlement/pq_anchor.rs:14 | sha= | P17-F11: FINDINGS.md:959; ham önem Medium
+BLG-0283 | P17-F17 | AÇIK | loc=- | sha= | P17-F17: FINDINGS.md:960; ham önem Low
+BLG-0285 | P17-F19 | AÇIK | loc=- | sha= | P17-F19: FINDINGS.md:960; ham önem Low
+BLG-0534 | P35-F13 | AÇIK | loc=budzero/bud-compiler/src/codegen.rs:510-516 | sha= | P35-F13: notes/P35-scan.md:243; ham önem Medium
+BLG-0535 | P35-F14 | AÇIK | loc=budzero/bud-compiler/src/ir/mod.rs:1-10 | sha= | P35-F14: notes/P35-scan.md:258; ham önem Medium
+BLG-0536 | P35-F15 | AÇIK | loc=budzero/bud-compiler/src/ir/lower.rs:213-215, 269-306, 344-359 | sha= | P35-F15: notes/P35-scan.md:274; ham önem Low
+BLG-0537 | P35-F16 | AÇIK | loc=budzero/bud-compiler/src/sema.rs:412-431 | sha= | P35-F16: notes/P35-scan.md:288; ham önem Low
+BLG-0538 | P35-F17 | AÇIK | loc=budzero/bud-compiler/src/sema.rs:480-498 | sha= | P35-F17: notes/P35-scan.md:303; ham önem Low
+BLG-0539 | P35-F18 | AÇIK | loc=budzero/bud-compiler/src/sema.rs:41-47, 691-785 | sha= | P35-F18: notes/P35-scan.md:316; ham önem Low
+BLG-0540 | P35-F19 | AÇIK | loc=budzero/bud-compiler/src/codegen.rs:883-916 | sha= | P35-F19: notes/P35-scan.md:330; ham önem Low
+BLG-0541 | P35-F20 | AÇIK | loc=budzero/bud-compiler/src/codegen.rs:25 | sha= | P35-F20: notes/P35-scan.md:344; ham önem Low
+BLG-0544 | P35-F23 | AÇIK | loc=budzero/bud-compiler/src/sema.rs:465-467, 505-506, 529-533, 579 | sha= | P35-F23: notes/P35-scan.md:385; ham önem Low
+BLG-0545 | P35-F24 | AÇIK | loc=budzero/bud-compiler/src/sema.rs:317, 628-635 | sha= | P35-F24: notes/P35-scan.md:399; ham önem Info
+BLG-0546 | P35-F25 | AÇIK | loc=budzero/bud-compiler/src/codegen.rs:746-758 | sha= | P35-F25: notes/P35-scan.md:413; ham önem Info
+BLG-0547 | P35-F26 | AÇIK | loc=budzero/bud-compiler/src/sema.rs:19-27, 303-308 | sha= | P35-F26: notes/P35-scan.md:426; ham önem Info

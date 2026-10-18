@@ -151,7 +151,7 @@ The economic link: the $0.016/TB/month commitment is bound to the REAL ratio in 
 proof; if the ratio is insufficient the price is revised (an honest contract). The current honest
 price: 0.23342 x 1.143 / 8.53 = about $0.031/TB/month (Exact columnar, a single file).
 
-## 7. Measurements (2026-08-16 - REPRODUCIBLE with scripts/measure_ratios.py --seed 7)
+## 7. Measurements (2026-08-16 - REPRODUCIBLE with `cargo run --release --bin measure_ratios -- --seed 7`)
 
 A deterministic corpus: 50k JSON records / 60k CSV lines / 80k LOG lines (seed=7).
 These values are identical to the runner's inline measurement (verified). The old table's

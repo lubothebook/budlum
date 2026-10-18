@@ -1,0 +1,65 @@
+BLG-0344 | P23-F02 | AÇIK | loc=- | sha=f72517b | P23-F02: FINDINGS.md:1059; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0346 | P23-F04 | KARAR BEKLİYOR | loc=- | sha= | P23-F04: FINDINGS.md:1061; ham önem Medium / soru PR9 yorumunda
+BLG-0347 | P23-F05 | KARAR BEKLİYOR | loc=- | sha= | P23-F05: FINDINGS.md:1062; ham önem Medium / soru PR9 yorumunda
+BLG-0348 | P23-F06 | KARAR BEKLİYOR | loc=- | sha= | P23-F06: FINDINGS.md:1063; ham önem Medium / soru PR9 yorumunda
+BLG-0352 | P23-F10 | AÇIK | loc=- | sha=80b9618,79c9950 | P23-F10: FINDINGS.md:1067; ham önem Medium / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0353 | P23-F11 | AÇIK | loc=- | sha= | P23-F11: FINDINGS.md:1068; ham önem Low
+BLG-0354 | P23-F12 | AÇIK | loc=- | sha= | P23-F12: FINDINGS.md:1068; ham önem Low
+BLG-0355 | P23-F13 | AÇIK | loc=- | sha= | P23-F13: FINDINGS.md:1068; ham önem Low
+BLG-0356 | P23-F14 | AÇIK | loc=storage/db.rs:1136 | sha= | P23-F14: FINDINGS.md:1068; ham önem Low
+BLG-0357 | P23-F15 | AÇIK | loc=- | sha= | P23-F15: FINDINGS.md:1068; ham önem Low
+BLG-0358 | P23-F16 | AÇIK | loc=- | sha= | P23-F16: FINDINGS.md:1068; ham önem Low
+BLG-0359 | P23-F17 | AÇIK | loc=- | sha= | P23-F17: FINDINGS.md:1068; ham önem Low
+BLG-0362 | P24-F03 | AÇIK | loc=domain/mod.rs:32 | sha= | P24-F03: FINDINGS.md:1076; ham önem Medium
+BLG-0363 | P24-F04 | AÇIK | loc=- | sha= | P24-F04: FINDINGS.md:1077; ham önem Medium
+BLG-0364 | P24-F05 | AÇIK | loc=core/account.rs:2462 | sha= | P24-F05: FINDINGS.md:1078; ham önem Medium
+BLG-0367 | P24-F08 | AÇIK | loc=- | sha= | P24-F08: FINDINGS.md:1079; ham önem Low
+BLG-0379 | P26-F01 | AÇIK | loc=- | sha= | P26-F01: FINDINGS.md:1097; ham önem Medium
+BLG-0380 | P26-F02 | AÇIK | loc=- | sha= | P26-F02: FINDINGS.md:1098; ham önem Medium
+BLG-0381 | P26-F03 | AÇIK | loc=- | sha= | P26-F03: FINDINGS.md:1099; ham önem Medium
+BLG-0382 | P26-F04 | AÇIK | loc=- | sha= | P26-F04: FINDINGS.md:1100; ham önem Medium
+BLG-0383 | P26-F05 | AÇIK | loc=- | sha= | P26-F05: FINDINGS.md:1101; ham önem Medium
+BLG-0384 | P26-F06 | AÇIK | loc=- | sha= | P26-F06: FINDINGS.md:1102; ham önem Low
+BLG-0385 | P26-F07 | AÇIK | loc=- | sha= | P26-F07: FINDINGS.md:1102; ham önem Low
+BLG-0394 | P27-F03 | AÇIK | loc=src/storage/dictionary.rs:242-271, 348-394 | sha= | P27-F03: notes/P27-scan.md:70; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (bud.rs, storage_deal.rs, registry.rs, bud-vm)
+BLG-0395 | P27-F04 | AÇIK | loc=src/storage/erasure.rs:783-866 | sha= | P27-F04: notes/P27-scan.md:87; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (bud.rs, storage_deal.rs, registry.rs, bud-vm)
+BLG-0396 | P27-F05 | AÇIK | loc=src/storage/lrc.rs | sha= | P27-F05: notes/P27-scan.md:100; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (bud.rs, storage_deal.rs, registry.rs, bud-vm)
+BLG-0399 | P27-F08 | AÇIK | loc=src/storage/payload_crypt.rs:40-48, 146-167 | sha=0c31d97 | P27-F08: notes/P27-scan.md:149; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0400 | P27-F09 | AÇIK | loc=src/storage/pact_binding.rs:38, 85, 107 | sha= | P27-F09: notes/P27-scan.md:164; ham önem Low
+BLG-0401 | P27-F10 | AÇIK | loc=src/storage/pact_binding.rs:20-30, 115-118 | sha= | P27-F10: notes/P27-scan.md:179; ham önem Low
+BLG-0402 | P27-F11 | AÇIK | loc=src/storage/dictionary.rs:217-221, 242-271, 364-394 | sha= | P27-F11: notes/P27-scan.md:189; ham önem Low
+BLG-0403 | P27-F12 | AÇIK | loc=src/storage/mobile_self.rs:59-76, 158-181, 275-283, 335-381 | sha= | P27-F12: notes/P27-scan.md:203; ham önem Low
+BLG-0404 | P27-F13 | AÇIK | loc=src/storage/server_admission.rs:58-75 | sha= | P27-F13: notes/P27-scan.md:220; ham önem Low
+BLG-0405 | P27-F14 | AÇIK | loc=src/domain/storage_deal.rs:2101-2108 | sha= | P27-F14: notes/P27-scan.md:234; ham önem Low
+BLG-0406 | P27-F15 | AÇIK | loc=src/storage/msr.rs:50-56, 71-101, 112-131 | sha= | P27-F15: notes/P27-scan.md:249; ham önem Info
+BLG-0407 | P27-F16 | AÇIK | loc=src/storage/erasure.rs:683-696, 744-769 | sha= | P27-F16: notes/P27-scan.md:264; ham önem Info
+BLG-0408 | P28-F01 | AÇIK | loc=src/storage/emit.rs:1395-1429 | sha= | P28-F01: notes/P28-scan.md:32; ham önem Medium
+BLG-0412 | P28-F05 | AÇIK | loc=src/storage/emit.rs:96-110 | sha= | P28-F05: notes/P28-scan.md:88; ham önem Low
+BLG-0413 | P28-F06 | AÇIK | loc=src/storage/emit.rs:1417-1424 | sha= | P28-F06: notes/P28-scan.md:100; ham önem Low
+BLG-0414 | P28-F07 | AÇIK | loc=src/storage/emit.rs:819, 1343 | sha= | P28-F07: notes/P28-scan.md:112; ham önem Low
+BLG-0416 | P28-F09 | AÇIK | loc=src/storage/derived.rs:130-132, 633-810 | sha= | P28-F09: notes/P28-scan.md:133; ham önem Medium
+BLG-0420 | P28-F13 | AÇIK | loc=src/storage/render.rs:296-337, 351-359, 388-394 | sha= | P28-F13: notes/P28-scan.md:183; ham önem Low
+BLG-0422 | P28-F15 | AÇIK | loc=src/chain/chain_actor.rs:4289-4330 | sha= | P28-F15: notes/P28-scan.md:203; ham önem Medium
+BLG-0424 | P28-F17 | AÇIK | loc=src/storage/view_grant.rs:404-412, 444-472 | sha= | P28-F17: notes/P28-scan.md:224; ham önem Low
+BLG-0425 | P28-F18 | AÇIK | loc=src/storage/view_grant.rs:477-495, 578-601 | sha= | P28-F18: notes/P28-scan.md:234; ham önem Low
+BLG-0426 | P28-F19 | AÇIK | loc=src/storage/view_grant.rs:324-347, 686-702, 962-974 | sha= | P28-F19: notes/P28-scan.md:244; ham önem Info
+BLG-0431 | P29-F05 | AÇIK | loc=src/storage/qr_video.rs:179-197, 201-203 | sha= | P29-F05: notes/P29-scan.md:117; ham önem Low
+BLG-0432 | P29-F06 | AÇIK | loc=src/storage/qr_carousel.rs:244-308, 558-610 | sha= | P29-F06: notes/P29-scan.md:136; ham önem Low
+BLG-0433 | P29-F07 | AÇIK | loc=src/storage/qr_encode.rs:577-592, 679-694 | sha= | P29-F07: notes/P29-scan.md:153; ham önem Low
+BLG-0434 | P29-F08 | AÇIK | loc=src/storage/qr_reemit.rs:170-185 | sha= | P29-F08: notes/P29-scan.md:171; ham önem Low
+BLG-0435 | P29-F09 | AÇIK | loc=src/storage/qr_recipe.rs:16-43, 108-129, 164-166 | sha= | P29-F09: notes/P29-scan.md:188; ham önem Low
+BLG-0436 | P29-F10 | AÇIK | loc=src/storage/qr_reemit.rs:149-168 | sha= | P29-F10: notes/P29-scan.md:206; ham önem Low
+BLG-0437 | P29-F11 | AÇIK | loc=src/storage/qr_codec.rs:26-53, 128-184 | sha= | P29-F11: notes/P29-scan.md:224; ham önem Low
+BLG-0438 | P29-F12 | AÇIK | loc=src/storage/qr_carousel.rs:10-16, 896-897, 655-661 | sha= | P29-F12: notes/P29-scan.md:240; ham önem Info
+BLG-0439 | P29-F13 | AÇIK | loc=src/storage/qr_*.rs (all 13 files) | sha= | P29-F13: notes/P29-scan.md:258; ham önem Info
+BLG-0441 | P30-F02 | KARAR BEKLİYOR | loc=src/storage/three_recipe.rs:219-241, 245-254 | sha= | P30-F02: notes/P30-scan.md:66; ham önem Medium / soru PR9 yorumunda
+BLG-0442 | P30-F03 | AÇIK | loc=src/rpc/server.rs:3600-3664 | sha= | P30-F03: notes/P30-scan.md:84; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs)
+BLG-0443 | P30-F04 | AÇIK | loc=src/rpc/server.rs:3665-3691 | sha= | P30-F04: notes/P30-scan.md:101; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs)
+BLG-0445 | P30-F06 | AÇIK | loc=src/storage/reveal_gateway.rs:290-327 | sha= | P30-F06: notes/P30-scan.md:134; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs)
+BLG-0446 | P30-F07 | AÇIK | loc=src/storage/emit.rs:1247-1256, 1283-1284 | sha= | P30-F07: notes/P30-scan.md:149; ham önem Low / BAĞIMLI: sahip olunmayan dosya (blockchain.rs, chain_actor.rs, rpc/server.rs, domain_bridge.rs, emit.rs)
+BLG-0448 | P30-F09 | AÇIK | loc=src/storage/three_gate.rs:41-58, 77-86 | sha= | P30-F09: notes/P30-scan.md:181; ham önem Low
+BLG-0449 | P30-F10 | AÇIK | loc=src/storage/three_recipe.rs:221, 250 | sha= | P30-F10: notes/P30-scan.md:197; ham önem Low
+BLG-0450 | P30-F11 | AÇIK | loc=src/storage/three_pipe.rs:297-302 | sha= | P30-F11: notes/P30-scan.md:212; ham önem Low
+BLG-0451 | P30-F12 | AÇIK | loc=src/storage/three_gate.rs:121-157 | sha= | P30-F12: notes/P30-scan.md:229; ham önem Low
+BLG-0452 | P30-F13 | AÇIK | loc=src/storage/emit.rs:1409-1424 | sha= | P30-F13: notes/P30-scan.md:245; ham önem Low
+BLG-0453 | P30-F14 | AÇIK | loc=src/storage/three_reveal.rs:76-78 | sha= | P30-F14: notes/P30-scan.md:259; ham önem Info

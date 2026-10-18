@@ -190,10 +190,19 @@ mod integration_tests {
 
         let mut block = Block::new(1, "0".repeat(64), vec![]);
         block.producer = Some(validator_pubkey);
+        // Slot and epoch match the index, so the block cannot fail on them.
+        block.epoch = 0;
+        block.slot = 1;
         block.hash = block.calculate_hash();
 
-        let result = engine.validate_block(&block, &[], &state);
-        assert!(result.is_err(), "PoS should reject unsigned blocks");
+        let error = engine
+            .validate_block(&block, &[], &state)
+            .expect_err("PoS should reject unsigned blocks");
+        assert!(
+            error.0.contains("Invalid block signature"),
+            "rejected for the wrong reason: {}",
+            error.0
+        );
     }
 
     #[test]

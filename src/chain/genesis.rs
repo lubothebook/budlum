@@ -369,6 +369,21 @@ impl GenesisConfig {
             if params.epochs_per_year == 0 {
                 return Err("Genesis bud_tokenomics epochs_per_year must be non-zero".into());
             }
+            // A burn ratio above 100% burns more than the fee or the reserve.
+            // The executor then refuses every block that carries a fee.
+            let scale = crate::core::chain_config::FIXED_POINT_SCALE;
+            if params.tx_fee_burn_ratio_fixed > scale {
+                return Err(format!(
+                    "Genesis bud_tokenomics tx_fee_burn_ratio_fixed {} is above the scale {scale}",
+                    params.tx_fee_burn_ratio_fixed
+                ));
+            }
+            if params.annual_burn_ratio_fixed > scale {
+                return Err(format!(
+                    "Genesis bud_tokenomics annual_burn_ratio_fixed {} is above the scale {scale}",
+                    params.annual_burn_ratio_fixed
+                ));
+            }
         }
         Ok(())
     }
@@ -936,6 +951,32 @@ mod tests {
         assert!(config.validate_tokenomics_supply().is_ok());
     }
 
+    /// BLG-0077: a burn ratio above the fixed-point scale burns more than the
+    /// fee. The executor then refuses every block that has a transaction.
+    #[test]
+    fn burn_ratio_above_the_scale_is_refused_at_genesis() {
+        use crate::core::chain_config::FIXED_POINT_SCALE;
+        let mut config = mainnet_genesis();
+        config.tokenomics_addresses = Some(ceremony_tokenomics_addresses());
+        let params = config.bud_tokenomics.expect("tokenomics");
+
+        let mut fee_ratio = params;
+        fee_ratio.tx_fee_burn_ratio_fixed = FIXED_POINT_SCALE + 1;
+        config.bud_tokenomics = Some(fee_ratio);
+        let error = config
+            .validate_tokenomics_supply()
+            .expect_err("a fee burn ratio above 100% must be refused");
+        assert!(error.contains("tx_fee_burn_ratio_fixed"), "{error}");
+
+        let mut annual_ratio = params;
+        annual_ratio.annual_burn_ratio_fixed = FIXED_POINT_SCALE + 1;
+        config.bud_tokenomics = Some(annual_ratio);
+        let error = config
+            .validate_tokenomics_supply()
+            .expect_err("an annual burn ratio above 100% must be refused");
+        assert!(error.contains("annual_burn_ratio_fixed"), "{error}");
+    }
+
     /// Zero `epochs_per_year` cannot reach the burn or reward math: the
     /// ceremony refuses it at the genesis boundary.
     #[test]
@@ -1050,10 +1091,10 @@ mod tests {
         assert_eq!(genesis1.timestamp, GENESIS_TIMESTAMP);
     }
 
-    /// `ops/scripts/docker-smoke-mainnet.sh` pins the devnet genesis hash and
+    /// The `docker-smoke-mainnet` tool (`xtask/tools`) pins the devnet genesis hash and
     /// refuses to boot when the image disagrees with it. The pin has to move
     /// with `devnet_genesis()`: when this test fails, update
-    /// `DEVNET_GENESIS_HASH` in that script in the same change. The pinned
+    /// `DEVNET_GENESIS_HASH` in `xtask/tools/src/docker_smoke.rs` in the same change. The pinned
     /// value is the hash the docker-smoke job itself printed at head
     /// `25f0583` (run 34156887325).
     #[test]
@@ -1061,7 +1102,7 @@ mod tests {
         let block = devnet_genesis().build_genesis_block();
         assert_eq!(
             block.hash, "87d93624975213bbdf7879ba8af973935e21f52d3436cc736b8df586774879ba",
-            "the docker-smoke-mainnet.sh pin must move with devnet_genesis()"
+            "the pin in xtask/tools/src/docker_smoke.rs must move with devnet_genesis()"
         );
     }
 

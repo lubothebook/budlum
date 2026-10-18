@@ -1,0 +1,48 @@
+BLG-0456 | P31-F03 | KARAR BEKLİYOR | loc=src/ai/types.rs:661-673 | sha= | P31-F03: notes/P31-scan.md:77; ham önem Low / soru PR9 yorumunda
+BLG-0457 | P31-F04 | KARAR BEKLİYOR | loc=src/ai/types.rs:944-951, 982-995 | sha= | P31-F04: notes/P31-scan.md:94; ham önem Low / soru PR9 yorumunda
+BLG-0458 | P31-F05 | AÇIK | loc=src/ai/types.rs:202-251 | sha=b0347aa | P31-F05: notes/P31-scan.md:111; ham önem Low / kısmi: kalan parça KARAR/BAĞIMLI / yerel dogrulama: kismi: kalan parca KARAR/BAGIMLI, test yesil ama bulgu tam kapali degil
+BLG-0462 | P31-F09 | AÇIK | loc=src/ai/types.rs:357-385, 433-443 | sha= | P31-F09: notes/P31-scan.md:166; ham önem Info
+BLG-0463 | P31-F10 | AÇIK | loc=src/ai/types.rs:1119-1175 | sha= | P31-F10: notes/P31-scan.md:176; ham önem Low
+BLG-0464 | P31-F11 | AÇIK | loc=src/ai/types.rs:74-84 | sha= | P31-F11: notes/P31-scan.md:186; ham önem Low
+BLG-0465 | P31-F12 | AÇIK | loc=src/ai/mod.rs:3007-3018, 3508-3526, 4249-4263, 4675-4696 | sha= | P31-F12: notes/P31-scan.md:196; ham önem Low
+BLG-0466 | P31-F13 | AÇIK | loc=src/ai/mod.rs:3589-3603 | sha= | P31-F13: notes/P31-scan.md:210; ham önem Info
+BLG-0470 | P32-F04 | AÇIK | loc=src/network/proto_conversions.rs:202-222, 1046-1088 | sha= | P32-F04: notes/P32-scan.md:106; ham önem Medium
+BLG-0471 | P32-F05 | AÇIK | loc=src/execution/executor.rs:2371 | sha= | P32-F05: notes/P32-scan.md:124; ham önem Medium
+BLG-0472 | P32-F06 | AÇIK | loc=src/ai/types.rs:253-282 | sha= | P32-F06: notes/P32-scan.md:140; ham önem Medium
+BLG-0473 | P32-F07 | AÇIK | loc=src/ai_inference/mod.rs:113-159 | sha= | P32-F07: notes/P32-scan.md:158; ham önem Medium
+BLG-0474 | P32-F08 | AÇIK | loc=src/ai/registry.rs:490-496, 1440-1443 | sha= | P32-F08: notes/P32-scan.md:175; ham önem Medium
+BLG-0475 | P32-F09 | AÇIK | loc=src/ai/registry.rs:1101-1161 | sha= | P32-F09: notes/P32-scan.md:191; ham önem Medium
+BLG-0476 | P32-F10 | AÇIK | loc=src/execution/executor.rs:347-349 | sha= | P32-F10: notes/P32-scan.md:207; ham önem Low
+BLG-0477 | P32-F11 | AÇIK | loc=src/ai/registry.rs:406, 415-429, 434-448 | sha= | P32-F11: notes/P32-scan.md:223; ham önem Low
+BLG-0478 | P32-F12 | AÇIK | loc=src/ai/execution/guest.rs:1108-1130 | sha= | P32-F12: notes/P32-scan.md:240; ham önem Low
+BLG-0479 | P32-F13 | AÇIK | loc=src/ai/execution/guest.rs:508 | sha= | P32-F13: notes/P32-scan.md:256; ham önem Low
+BLG-0480 | P32-F14 | AÇIK | loc=src/ai/registry.rs:807-811, 957-1003, 1905-2035 | sha= | P32-F14: notes/P32-scan.md:274; ham önem Low
+BLG-0481 | P32-F15 | AÇIK | loc=src/ai/registry.rs:1983-1993, 1953-1957 | sha= | P32-F15: notes/P32-scan.md:290; ham önem Low
+BLG-0482 | P32-F16 | AÇIK | loc=src/ai/types.rs:206 | sha= | P32-F16: notes/P32-scan.md:305; ham önem Low
+BLG-0483 | P32-F17 | AÇIK | loc=src/ai_inference/i18n.rs | sha= | P32-F17: notes/P32-scan.md:320; ham önem Low
+BLG-0484 | P32-F18 | AÇIK | loc=src/ai/registry.rs:1492-1500, 1885-1897 | sha= | P32-F18: notes/P32-scan.md:334; ham önem Info
+BLG-0487 | P33-F03 | KARAR BEKLİYOR | loc=crates/ai-inference/crates/ai-serve/src/bridge.rs:103-171 | sha= | P33-F03: notes/P33-scan.md:75; ham önem Medium / soru PR9 yorumunda
+BLG-0489 | P33-F05 | KARAR BEKLİYOR | loc=crates/ai-inference/crates/ai-serve/src/config.rs:72-99, 191-213, 503-510 | sha= | P33-F05: notes/P33-scan.md:109; ham önem Medium / soru PR9 yorumunda
+BLG-0490 | P33-F06 | KARAR BEKLİYOR | loc=crates/ai-inference/crates/ai-serve/src/bridge.rs:12-19, 137-172 | sha= | P33-F06: notes/P33-scan.md:123; ham önem Low / soru PR9 yorumunda
+BLG-0493 | P33-F09 | AÇIK | loc=crates/ai-inference/crates/ai-serve/src/residency.rs:291-329, 438-453 | sha= | P33-F09: notes/P33-scan.md:159; ham önem Low
+BLG-0494 | P33-F10 | AÇIK | loc=crates/ai-inference/crates/ai-serve/src/bridge.rs:152-154 | sha= | P33-F10: notes/P33-scan.md:169; ham önem Low
+BLG-0495 | P33-F11 | AÇIK | loc=crates/ai-inference/crates/ai-integrations/src/rest.rs:38-88 | sha= | P33-F11: notes/P33-scan.md:181; ham önem Low
+BLG-0496 | P33-F12 | AÇIK | loc=crates/ai-inference/crates/ai-integrations/src/ws.rs:79-103 | sha= | P33-F12: notes/P33-scan.md:195; ham önem Medium
+BLG-0497 | P33-F13 | AÇIK | loc=crates/ai-inference/crates/ai-integrations/src/lib.rs:23-29, 49-68 | sha= | P33-F13: notes/P33-scan.md:212; ham önem Low
+BLG-0498 | P33-F14 | AÇIK | loc=crates/ai-inference/crates/ai-integrations/src/ws.rs:24-33 | sha= | P33-F14: notes/P33-scan.md:224; ham önem Low
+BLG-0499 | P33-F15 | AÇIK | loc=crates/ai-inference/crates/ai-serve/src/cost_forecast.rs:53-58, 144-162, 188-191 | sha= | P33-F15: notes/P33-scan.md:234; ham önem Low
+BLG-0500 | P33-F16 | AÇIK | loc=crates/ai-inference/crates/ai-serve/src/staging.rs:33-40, 94-160, 162-185 | sha= | P33-F16: notes/P33-scan.md:246; ham önem Low
+BLG-0501 | P33-F17 | AÇIK | loc=crates/ai-inference/crates/ai-serve/src/config.rs:215-241, 294-324 | sha= | P33-F17: notes/P33-scan.md:256; ham önem Info
+BLG-0502 | P33-F18 | AÇIK | loc=crates/ai-inference/crates/ai-serve/src/*.rs (tests), crates/ai-inference/crates | sha= | P33-F18: notes/P33-scan.md:270; ham önem Low
+BLG-0503 | P33-F19 | AÇIK | loc=crates/ai-inference/crates/ai-serve/src/residency.rs:165-183 | sha= | P33-F19: notes/P33-scan.md:280; ham önem Low
+BLG-0508 | P34-F05 | KARAR BEKLİYOR | loc=crates/ai-inference/Cargo.toml:7 | sha= | P34-F05: notes/P34-scan.md:115; ham önem Medium / soru PR9 yorumunda
+BLG-0512 | P34-F09 | AÇIK | loc=crates/ai-inference/crates/ai-ops/src/main.rs:133-145 | sha= | P34-F09: notes/P34-scan.md:188; ham önem Medium
+BLG-0513 | P34-F10 | AÇIK | loc=crates/ai-inference/crates/ai-data/src/source.rs:30-66 | sha= | P34-F10: notes/P34-scan.md:207; ham önem Low
+BLG-0514 | P34-F11 | AÇIK | loc=crates/ai-inference/crates/ai-knowledge/src/memory.rs:136-142 | sha= | P34-F11: notes/P34-scan.md:217; ham önem Medium
+BLG-0515 | P34-F12 | AÇIK | loc=crates/ai-inference/crates/ai-knowledge/src/cache.rs:36-120 | sha= | P34-F12: notes/P34-scan.md:234; ham önem Low
+BLG-0516 | P34-F13 | AÇIK | loc=crates/ai-inference/crates/ai-knowledge/src/embed.rs:64-71 | sha= | P34-F13: notes/P34-scan.md:250; ham önem Low
+BLG-0517 | P34-F14 | AÇIK | loc=crates/ai-inference/crates/ai-ops/src/logparse.rs:19 | sha= | P34-F14: notes/P34-scan.md:266; ham önem Low
+BLG-0518 | P34-F15 | AÇIK | loc=crates/ai-inference/crates/ai-ops/src/main.rs:26-45, 110-146, 208-213, 228 | sha= | P34-F15: notes/P34-scan.md:281; ham önem Low
+BLG-0519 | P34-F16 | AÇIK | loc=crates/ai-inference/crates/ai-knowledge/src/redact.rs:12-25, 106-118 | sha= | P34-F16: notes/P34-scan.md:297; ham önem Low
+BLG-0520 | P34-F17 | AÇIK | loc=crates/ai-inference/crates/ai-ops/src/main.rs:86-92 | sha= | P34-F17: notes/P34-scan.md:307; ham önem Info
+BLG-0521 | P34-F18 | AÇIK | loc=crates/ai-inference/crates/ai-core/src/system_prompt.rs:317-357 | sha= | P34-F18: notes/P34-scan.md:321; ham önem Low

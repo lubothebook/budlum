@@ -1,0 +1,48 @@
+BLG-0567 | P37-F01 | KARAR BEKLİYOR | loc=bud/Cargo.toml:1-3 | sha= | P37-F01: notes/P37-scan.md:49; ham önem Medium / soru PR9 yorumunda
+BLG-0571 | P37-F05 | KARAR BEKLİYOR | loc=bud/src/bud_format.rs:302-326, 360-365 | sha= | P37-F05: notes/P37-scan.md:104; ham önem Low / soru PR9 yorumunda
+BLG-0572 | P37-F06 | AÇIK | loc=bud/src/bin/bud.rs:819-826 | sha= | P37-F06: notes/P37-scan.md:114; ham önem Medium / BAĞIMLI: sahip olunmayan dosya (bud.rs, storage_deal.rs, registry.rs, bud-vm)
+BLG-0575 | P37-F09 | AÇIK | loc=bud/src/bud_format.rs:834-841 | sha= | P37-F09: notes/P37-scan.md:154; ham önem Low
+BLG-0576 | P37-F10 | AÇIK | loc=bud/src/bud_fixed_point.rs:26-31 | sha= | P37-F10: notes/P37-scan.md:171; ham önem Low
+BLG-0577 | P37-F11 | AÇIK | loc=bud/src/bud_fixed_point.rs:116-119 | sha= | P37-F11: notes/P37-scan.md:187; ham önem Low
+BLG-0578 | P37-F12 | AÇIK | loc=bud/src/bud_format_bft.rs:84-92, 130-183 | sha= | P37-F12: notes/P37-scan.md:197; ham önem Medium
+BLG-0579 | P37-F13 | AÇIK | loc=bud/src/bud_format_bft.rs:130-183, 198-244 | sha= | P37-F13: notes/P37-scan.md:212; ham önem Low
+BLG-0580 | P37-F14 | AÇIK | loc=bud/src/bud_format_block.rs:98-106, 129-131, 157-227 | sha= | P37-F14: notes/P37-scan.md:222; ham önem Medium
+BLG-0582 | P37-F16 | AÇIK | loc=bud/src/bud_format_columnar.rs:112-120, 153-199, 475-482, 236-238 | sha= | P37-F16: notes/P37-scan.md:248; ham önem Low
+BLG-0583 | P37-F17 | AÇIK | loc=bud/src/bud_format_catalog.rs:31-311, 314-363 | sha= | P37-F17: notes/P37-scan.md:258; ham önem Low
+BLG-0584 | P37-F18 | AÇIK | loc=bud/src/bud_format_checkpoint.rs:1-107 | sha= | P37-F18: notes/P37-scan.md:268; ham önem Low
+BLG-0585 | P37-F19 | AÇIK | loc=bud/src/bud_format_container.rs:246-264, 417-427, 505-547 | sha= | P37-F19: notes/P37-scan.md:278; ham önem Medium
+BLG-0587 | P37-F21 | AÇIK | loc=bud/src/bud_format_container.rs:246-264, 391-415 | sha= | P37-F21: notes/P37-scan.md:304; ham önem Low
+BLG-0590 | P37-F24 | AÇIK | loc=bud/src/bud_format_das.rs:209-254 | sha= | P37-F24: notes/P37-scan.md:334; ham önem Medium
+BLG-0591 | P37-F25 | AÇIK | loc=bud/src/bud_format_dedup.rs:53-107 | sha= | P37-F25: notes/P37-scan.md:344; ham önem Medium
+BLG-0592 | P37-F26 | AÇIK | loc=bud/src/bud_format_economics.rs:271-307 | sha= | P37-F26: notes/P37-scan.md:359; ham önem Medium
+BLG-0593 | P37-F27 | AÇIK | loc=bud/src/bud_format_economics.rs:233-269 | sha= | P37-F27: notes/P37-scan.md:374; ham önem Medium
+BLG-0594 | P37-F28 | AÇIK | loc=bud/src/bud_format_bloom.rs:20-62, 84-114 | sha= | P37-F28: notes/P37-scan.md:384; ham önem Low
+BLG-0595 | P37-F29 | AÇIK | loc=bud/src/bud_format_economics.rs:20-41, 75-97, 66-69 | sha= | P37-F29: notes/P37-scan.md:394; ham önem Low
+BLG-0596 | P37-F30 | AÇIK | loc=bud/src/bud_format_edge.rs:35-61 | sha= | P37-F30: notes/P37-scan.md:404; ham önem Low
+BLG-0597 | P37-F31 | AÇIK | loc=bud/src/bud_format_crop.rs:32-64, 97-138 | sha= | P37-F31: notes/P37-scan.md:414; ham önem Low
+BLG-0598 | P37-F32 | AÇIK | loc=bud/src/bud_format_culling.rs:88-119, 187-236 | sha= | P37-F32: notes/P37-scan.md:424; ham önem Low
+BLG-0599 | P37-F33 | AÇIK | loc=bud/src/bud_format_dictionary.rs:57-74, 84-94 | sha= | P37-F33: notes/P37-scan.md:434; ham önem Low
+BLG-0600 | P37-F34 | AÇIK | loc=bud/src/bud3_live_test.rs:26-52, 54-99 | sha= | P37-F34: notes/P37-scan.md:444; ham önem Low
+BLG-0601 | P37-F35 | AÇIK | loc=bud/src/bud_format_autozstd.rs | sha= | P37-F35: notes/P37-scan.md:454; ham önem Info
+BLG-0602 | P37-F36 | AÇIK | loc=bud/src/bud_format_autozstd.rs:27-59 | sha= | P37-F36: notes/P37-scan.md:464; ham önem Info
+BLG-0604 | P38-F02 | KARAR BEKLİYOR | loc=bud/src/lib.rs:24-47, 127-149 | sha= | P38-F02: notes/P38-scan.md:63; ham önem Medium / soru PR9 yorumunda
+BLG-0613 | P38-F11 | AÇIK | loc=bud/src/bud_format_media.rs:72-81 | sha= | P38-F11: notes/P38-scan.md:170; ham önem Low
+BLG-0614 | P38-F12 | AÇIK | loc=bud/src/bud_format_msr.rs:126-142 | sha= | P38-F12: notes/P38-scan.md:181; ham önem Low
+BLG-0616 | P38-F14 | AÇIK | loc=bud/src/bud_format_fountain.rs:25-35, 49-67 | sha= | P38-F14: notes/P38-scan.md:209; ham önem Low
+BLG-0617 | P38-F15 | AÇIK | loc=bud/src/bud_format_lrc.rs:47-57, 66-78, 108-117 | sha= | P38-F15: notes/P38-scan.md:216; ham önem Low
+BLG-0618 | P38-F16 | AÇIK | loc=bud/src/bud_format_lazyrepair.rs:18-64 | sha= | P38-F16: notes/P38-scan.md:226; ham önem Low
+BLG-0619 | P38-F17 | AÇIK | loc=bud/src/bud_format_engine.rs:305-321 | sha= | P38-F17: notes/P38-scan.md:237; ham önem Low
+BLG-0620 | P38-F18 | AÇIK | loc=bud/src/bud_format_engine.rs:371-372 | sha= | P38-F18: notes/P38-scan.md:251; ham önem Low
+BLG-0621 | P38-F19 | AÇIK | loc=bud/src/bud_format_engine.rs:131-143, 252-280, 468-501, 733-745 | sha= | P38-F19: notes/P38-scan.md:262; ham önem Low
+BLG-0622 | P38-F20 | AÇIK | loc=bud/src/bud_format_erasure.rs:145-179, 85-93 | sha= | P38-F20: notes/P38-scan.md:273; ham önem Low
+BLG-0623 | P38-F21 | AÇIK | loc=bud/src/bud_format_lowrank.rs:51-130, 11-17, 105-109 | sha= | P38-F21: notes/P38-scan.md:287; ham önem Low
+BLG-0624 | P38-F22 | AÇIK | loc=bud/src/bud_format_model.rs:60-120, 169-221 | sha= | P38-F22: notes/P38-scan.md:299; ham önem Low
+BLG-0625 | P38-F23 | AÇIK | loc=bud/src/bud_format_multifile.rs:67-90, 124-190, 193-286, 487-495 | sha= | P38-F23: notes/P38-scan.md:310; ham önem Low
+BLG-0626 | P38-F24 | AÇIK | loc=bud/src/bud_format_edition.rs:22-30, 147-154, 119-135 | sha= | P38-F24: notes/P38-scan.md:324; ham önem Low
+BLG-0627 | P38-F25 | AÇIK | loc=bud/src/bud_format_guardian.rs:68-87, 93-96, 129-137 | sha= | P38-F25: notes/P38-scan.md:336; ham önem Low
+BLG-0628 | P38-F26 | AÇIK | loc=bud/src/bud_format_governance.rs:56-62, 120-130 | sha= | P38-F26: notes/P38-scan.md:347; ham önem Low
+BLG-0629 | P38-F27 | AÇIK | loc=bud/src/bud_format_jpegre.rs:113-132, 134-183 | sha= | P38-F27: notes/P38-scan.md:358; ham önem Low
+BLG-0630 | P38-F28 | AÇIK | loc=bud/src/bud_format_fastcdc.rs:26-155, 169-226, 198-202 | sha= | P38-F28: notes/P38-scan.md:369; ham önem Low
+BLG-0631 | P38-F29 | AÇIK | loc=bud/src/bud_format_exepdf.rs:7-13, 66-103, 128-148 | sha= | P38-F29: notes/P38-scan.md:376; ham önem Info
+BLG-0632 | P38-F30 | AÇIK | loc=18 files: matrix (12 hits), lowrank (20), hardening (9), guardian (5), fidelityg | sha= | P38-F30: notes/P38-scan.md:383; ham önem Info
+BLG-0633 | P38-F31 | AÇIK | loc=bud/src/bud_format_genomic.rs:42-99 | sha= | P38-F31: notes/P38-scan.md:390; ham önem Info

@@ -1,0 +1,93 @@
+BLG-0766 | P44-F06 | KARAR BEKLİYOR | loc=kani/src/lib.rs:20-28,41-80,132-238 | sha=11d24a7 | P44-F06: notes/P44-scan.md:146; ham önem Medium / kısmi: gerçek düzeltme KARAR (kani/Cargo bağımlılığı, sınırlı yeniden ifade)
+BLG-0768 | P44-F08 | KARAR BEKLİYOR | loc=kani/src/lib.rs:341-434 | sha=295db29 | P44-F08: notes/P44-scan.md:179; ham önem Low / kısmi: gerçek düzeltme KARAR (kani/Cargo bağımlılığı, sınırlı yeniden ifade)
+BLG-0769 | P44-F09 | AÇIK | loc=benches/domain_throughput.rs:557-604,497-517 | sha= | P44-F09: notes/P44-scan.md:194; ham önem Low
+BLG-0770 | P44-F10 | AÇIK | loc=benches/micro/timing_safe.rs:51-62,442-481 | sha= | P44-F10: notes/P44-scan.md:212; ham önem Low
+BLG-0771 | P44-F11 | AÇIK | loc=crates/bpqs/examples/dudect_poseidon2.rs:73-80,370-393,535-560,626-643 | sha= | P44-F11: notes/P44-scan.md:229; ham önem Medium
+BLG-0772 | P44-F12 | AÇIK | loc=bud/kani/kani_bud_format.rs:1-53 | sha= | P44-F12: notes/P44-scan.md:245; ham önem Medium
+BLG-0773 | P44-F13 | AÇIK | loc=bud/tests/test_integration.rs:288-336,338-383,385-433 | sha= | P44-F13: notes/P44-scan.md:262; ham önem Low
+BLG-0774 | P44-F14 | AÇIK | loc=fuzz/README.md:4-9,22-45,69-85 | sha= | P44-F14: notes/P44-scan.md:278; ham önem Low
+BLG-0775 | P44-F15 | AÇIK | loc=fuzz/fuzz_targets/bpqs_wots_reject.rs:33,57-67 | sha= | P44-F15: notes/P44-scan.md:294; ham önem Low
+BLG-0776 | P44-F16 | AÇIK | loc=crates/bpqs/examples/checksum_domination_exact.rs:353-360 | sha= | P44-F16: notes/P44-scan.md:311; ham önem Info
+BLG-0777 | P44-F17 | AÇIK | loc=fuzz/fuzz_targets/relayer_escrow.rs:3-6,122-127,187-191 | sha= | P44-F17: notes/P44-scan.md:326; ham önem Low
+BLG-0778 | P44-F18 | AÇIK | loc=benches/single_node/internal_pipeline_tps.rs:86-125,135-141 | sha= | P44-F18: notes/P44-scan.md:342; ham önem Info
+BLG-0779 | P44-F19 | AÇIK | loc=fuzz/fuzz_targets/consensus_state_transition.rs:6 | sha= | P44-F19: notes/P44-scan.md:358; ham önem Info
+BLG-0780 | P44-F20 | AÇIK | loc=budzero/bud-proof/src/plonky3_prover.rs:1903 | sha= | P44-F20: notes/P44-scan.md:372; ham önem Info
+BLG-0781 | P45-F01 | AÇIK | loc=src/tests/advisory_reachability.rs:459-522 | sha= | P45-F01: notes/P45-scan.md:41; ham önem Medium
+BLG-0782 | P45-F02 | AÇIK | loc=src/tests/byzantine_settlement.rs:163-171 | sha= | P45-F02: notes/P45-scan.md:57; ham önem Medium
+BLG-0783 | P45-F03 | AÇIK | loc=src/tests/byzantine_settlement.rs | sha= | P45-F03: notes/P45-scan.md:71; ham önem Medium
+BLG-0785 | P45-F05 | AÇIK | loc=src/tests/byzantine_settlement.rs:286-348, 393-487, 763-824, 910-984 | sha= | P45-F05: notes/P45-scan.md:101; ham önem Medium
+BLG-0786 | P45-F06 | AÇIK | loc=src/tests/bridge_negatives.rs:144-236 | sha= | P45-F06: notes/P45-scan.md:114; ham önem Medium
+BLG-0787 | P45-F07 | AÇIK | loc=src/tests/bridge_lifecycle.rs:1-5, 79-169, 171-249 | sha= | P45-F07: notes/P45-scan.md:124; ham önem Medium
+BLG-0788 | P45-F08 | AÇIK | loc=src/tests/adversarial_p2p.rs:11-30, 33-43, 60-113 | sha= | P45-F08: notes/P45-scan.md:135; ham önem Medium
+BLG-0789 | P45-F09 | AÇIK | loc=src/tests/bud_e2e.rs:64-77, 153-166, 228-312, 534-594 | sha= | P45-F09: notes/P45-scan.md:148; ham önem Low
+BLG-0790 | P45-F10 | AÇIK | loc=src/tests/audit_findings_locks.rs:93-131, 205-237 | sha= | P45-F10: notes/P45-scan.md:158; ham önem Low
+BLG-0791 | P45-F11 | AÇIK | loc=src/tests/bench_performance.rs:13-14, 160 | sha= | P45-F11: notes/P45-scan.md:168; ham önem Low
+BLG-0792 | P45-F12 | AÇIK | loc=src/tests/advisory_reachability.rs:310-363, 420-456 | sha= | P45-F12: notes/P45-scan.md:178; ham önem Low
+BLG-0793 | P45-F13 | AÇIK | loc=src/tests/chain_id_registry_locks.rs:220-224, 248-286 | sha= | P45-F13: notes/P45-scan.md:188; ham önem Low
+BLG-0794 | P45-F14 | AÇIK | loc=src/tests/blockchair_fixture_locks.rs:782-847, 172-214 | sha= | P45-F14: notes/P45-scan.md:198; ham önem Low
+BLG-0795 | P45-F15 | AÇIK | loc=src/tests/ai_inference_runtime.rs:55-86, 319-394, 592-613 | sha= | P45-F15: notes/P45-scan.md:208; ham önem Low
+BLG-0796 | P45-F16 | AÇIK | loc=src/tests/chaos.rs:938, 965, 1002, 1029 | sha= | P45-F16: notes/P45-scan.md:218; ham önem Info
+BLG-0797 | P45-F17 | AÇIK | loc=src/tests/bns.rs:7 | sha= | P45-F17: notes/P45-scan.md:228; ham önem Info
+BLG-0801 | P46-F04 | AÇIK | loc=src/tests/domain_edge_cases.rs:25-41, 73-89, 194-216 | sha= | P46-F04: notes/P46-scan.md:97; ham önem Low
+BLG-0802 | P46-F05 | AÇIK | loc=src/tests/disaster_recovery.rs:307-347, 381-392 | sha= | P46-F05: notes/P46-scan.md:114; ham önem Low
+BLG-0803 | P46-F06 | AÇIK | loc=src/tests/hardening.rs:340-360 | sha= | P46-F06: notes/P46-scan.md:133; ham önem Low
+BLG-0804 | P46-F07 | AÇIK | loc=src/tests/hardening_h5_h7_locks.rs:141-150, 215-227 | sha= | P46-F07: notes/P46-scan.md:150; ham önem Low
+BLG-0805 | P46-F08 | AÇIK | loc=src/tests/consensus_lock_order_loom.rs:47-239, 251-286 | sha= | P46-F08: notes/P46-scan.md:165; ham önem Low
+BLG-0806 | P46-F09 | AÇIK | loc=src/tests/finality_adversarial.rs:24 | sha= | P46-F09: notes/P46-scan.md:181; ham önem Low
+BLG-0807 | P46-F10 | AÇIK | loc=src/tests/hash_input_serialize_locks.rs:30-60 | sha= | P46-F10: notes/P46-scan.md:196; ham önem Low
+BLG-0808 | P46-F11 | AÇIK | loc=src/tests/distributed_settlement.rs:87-145, 270-318, 320-392 | sha= | P46-F11: notes/P46-scan.md:213; ham önem Low
+BLG-0809 | P46-F12 | AÇIK | loc=src/tests/fork_choice_locks.rs:40-232 | sha= | P46-F12: notes/P46-scan.md:230; ham önem Info
+BLG-0810 | P46-F13 | AÇIK | loc=src/tests/finality_live_path.rs:131-156 | sha= | P46-F13: notes/P46-scan.md:246; ham önem Low
+BLG-0811 | P46-F14 | AÇIK | loc=src/tests/identity_tx_door.rs:209-213 | sha= | P46-F14: notes/P46-scan.md:261; ham önem Info
+BLG-0812 | P46-F15 | AÇIK | loc=src/tests/finality_adversarial.rs:548, 743 | sha= | P46-F15: notes/P46-scan.md:277; ham önem Info
+BLG-0814 | P47-F02 | AÇIK | loc=src/tests/manifest_commitment_locks.rs:1056-1081 | sha= | P47-F02: notes/P47-scan.md:55; ham önem Medium
+BLG-0815 | P47-F03 | AÇIK | loc=src/tests/multi_consensus_locks.rs:284-303 | sha= | P47-F03: notes/P47-scan.md:74; ham önem Medium
+BLG-0816 | P47-F04 | AÇIK | loc=src/tests/permissionless.rs:967-984 | sha= | P47-F04: notes/P47-scan.md:92; ham önem Medium
+BLG-0817 | P47-F05 | AÇIK | loc=src/tests/permissionless.rs:1008-1015 | sha= | P47-F05: notes/P47-scan.md:110; ham önem Low
+BLG-0818 | P47-F06 | AÇIK | loc=src/tests/operator_kill_chaos.rs:246-252 | sha= | P47-F06: notes/P47-scan.md:125; ham önem Low
+BLG-0819 | P47-F07 | AÇIK | loc=src/tests/integration.rs:322-369 | sha= | P47-F07: notes/P47-scan.md:140; ham önem Low
+BLG-0820 | P47-F08 | AÇIK | loc=src/tests/integration.rs:256-277 | sha= | P47-F08: notes/P47-scan.md:157; ham önem Low
+BLG-0821 | P47-F09 | AÇIK | loc=src/tests/network_hardening_locks.rs:253-266, 200-203 | sha= | P47-F09: notes/P47-scan.md:173; ham önem Low
+BLG-0822 | P47-F10 | AÇIK | loc=src/tests/integration.rs:474-490 | sha= | P47-F10: notes/P47-scan.md:188; ham önem Low
+BLG-0823 | P47-F11 | AÇIK | loc=src/tests/liveness_consensus.rs:353-383, 400-449 | sha= | P47-F11: notes/P47-scan.md:205; ham önem Low
+BLG-0824 | P47-F12 | AÇIK | loc=src/tests/integration.rs:627-734 | sha= | P47-F12: notes/P47-scan.md:221; ham önem Info
+BLG-0825 | P47-F13 | AÇIK | loc=src/tests/operator_kill_chaos.rs:1-19, 351-370 | sha= | P47-F13: notes/P47-scan.md:231; ham önem Info
+BLG-0826 | P47-F14 | AÇIK | loc=src/tests/integration.rs:1573-1584, 1673, 1256-1266, 1866-1884 | sha= | P47-F14: notes/P47-scan.md:241; ham önem Info
+BLG-0827 | P47-F15 | AÇIK | loc=src/tests/load_test.rs:163-248 | sha= | P47-F15: notes/P47-scan.md:251; ham önem Low
+BLG-0828 | P47-F16 | AÇIK | loc=src/tests/integration.rs:1344-1362 | sha= | P47-F16: notes/P47-scan.md:261; ham önem Low
+BLG-0829 | P47-F17 | AÇIK | loc=src/tests/integration.rs:1319-1342 | sha= | P47-F17: notes/P47-scan.md:271; ham önem Low
+BLG-0830 | P47-F18 | AÇIK | loc=src/tests/manifest_commitment_locks.rs:50-63 | sha= | P47-F18: notes/P47-scan.md:282; ham önem Info
+BLG-0831 | P47-F19 | AÇIK | loc=src/tests/mempool_dos_locks.rs:165-183 | sha= | P47-F19: notes/P47-scan.md:292; ham önem Low
+BLG-0832 | P47-F20 | AÇIK | loc=src/tests/permissionless_e2e.rs:50-59 | sha= | P47-F20: notes/P47-scan.md:302; ham önem Info
+BLG-0833 | P48-F01 | AÇIK | loc=src/tests/qcblob_quorum.rs:157-201 | sha= | P48-F01: notes/P48-scan.md:43; ham önem Medium
+BLG-0834 | P48-F02 | AÇIK | loc=src/tests/relayer_gates.rs:170-183 | sha= | P48-F02: notes/P48-scan.md:56; ham önem Low
+BLG-0835 | P48-F03 | AÇIK | loc=src/tests/privacy_ai_execution.rs:28-141 | sha= | P48-F03: notes/P48-scan.md:68; ham önem Medium
+BLG-0836 | P48-F04 | AÇIK | loc=src/tests/relayer_liveness.rs:151-170, 215-312, 453-467, 471-529 | sha= | P48-F04: notes/P48-scan.md:80; ham önem Medium
+BLG-0837 | P48-F05 | AÇIK | loc=src/tests/poa_isolation.rs:24-286 | sha= | P48-F05: notes/P48-scan.md:93; ham önem Medium
+BLG-0838 | P48-F06 | AÇIK | loc=src/tests/prover.rs:683-709 | sha= | P48-F06: notes/P48-scan.md:111; ham önem Low
+BLG-0839 | P48-F07 | AÇIK | loc=src/tests/prover.rs:1-9, 119-168, 249-280 | sha= | P48-F07: notes/P48-scan.md:127; ham önem Info
+BLG-0840 | P48-F08 | AÇIK | loc=src/tests/relayer_e2e.rs:74-98, 219-236, 238-272, 379-443 | sha= | P48-F08: notes/P48-scan.md:139; ham önem Low
+BLG-0841 | P48-F09 | AÇIK | loc=src/tests/relayer_e2e.rs:294-301, 347-358, 373-376 | sha= | P48-F09: notes/P48-scan.md:154; ham önem Info
+BLG-0842 | P48-F10 | AÇIK | loc=src/tests/real_chain_fixtures.rs:84-112, 150-166, 232-255, 257-295 | sha= | P48-F10: notes/P48-scan.md:166; ham önem Low
+BLG-0843 | P48-F11 | AÇIK | loc=src/tests/persistence.rs:35-40, 313-336 | sha= | P48-F11: notes/P48-scan.md:178; ham önem Low
+BLG-0844 | P48-F12 | AÇIK | loc=src/tests/proptest_core.rs:21-38 | sha= | P48-F12: notes/P48-scan.md:190; ham önem Low
+BLG-0845 | P48-F13 | AÇIK | loc=src/tests/regeneration_recovery.rs:25-36, 108, 178 | sha= | P48-F13: notes/P48-scan.md:203; ham önem Low
+BLG-0846 | P48-F14 | AÇIK | loc=src/tests/regression_lock.rs:330-356, 366-441, 595-643, 7-22 | sha= | P48-F14: notes/P48-scan.md:219; ham önem Low
+BLG-0847 | P48-F15 | AÇIK | loc=src/tests/pollen_ai_data_rights.rs:114-320 | sha= | P48-F15: notes/P48-scan.md:233; ham önem Low
+BLG-0848 | P48-F16 | AÇIK | loc=src/tests/privacy_ai_execution.rs:143-218 | sha= | P48-F16: notes/P48-scan.md:247; ham önem Info
+BLG-0849 | P48-F17 | AÇIK | loc=src/tests/private_transfer_fee_market.rs:17-61 | sha= | P48-F17: notes/P48-scan.md:259; ham önem Info
+BLG-0850 | P48-F18 | AÇIK | loc=src/tests/poa_onboarding_matrix.rs:163-190, 240-245 | sha= | P48-F18: notes/P48-scan.md:270; ham önem Info
+BLG-0851 | P48-F19 | AÇIK | loc=src/tests/poisoned_lock_locks.rs:66-88, 96-109, 227-244 | sha= | P48-F19: notes/P48-scan.md:281; ham önem Low
+BLG-0852 | P48-F20 | AÇIK | loc=src/tests/relayer_gates.rs:1-9 | sha= | P48-F20: notes/P48-scan.md:293; ham önem Info
+BLG-0855 | P49-F03 | AÇIK | loc=src/tests/tokenomics_proptest.rs:74-92, 100-122 | sha= | P49-F03: notes/P49-scan.md:73; ham önem Low
+BLG-0857 | P49-F05 | AÇIK | loc=src/tests/storage_tx_door.rs:429-446 | sha= | P49-F05: notes/P49-scan.md:107; ham önem Medium
+BLG-0859 | P49-F07 | AÇIK | loc=src/tests/snapshot_chaos.rs:108-134, 224-243 | sha= | P49-F07: notes/P49-scan.md:144; ham önem Medium
+BLG-0861 | P49-F09 | AÇIK | loc=src/tests/wall_clock_locks.rs:50-125 | sha= | P49-F09: notes/P49-scan.md:180; ham önem Low
+BLG-0862 | P49-F10 | AÇIK | loc=src/tests/relayer_worker_locks.rs:1001-1013, 553-571, 641-698 | sha= | P49-F10: notes/P49-scan.md:193; ham önem Low
+BLG-0863 | P49-F11 | AÇIK | loc=src/tests/v95_v98_canaries.rs:9-22 | sha= | P49-F11: notes/P49-scan.md:208; ham önem Low
+BLG-0864 | P49-F12 | AÇIK | loc=src/tests/target_700.rs:88-102 | sha= | P49-F12: notes/P49-scan.md:223; ham önem Low
+BLG-0865 | P49-F13 | AÇIK | loc=src/tests/storage_tx_door.rs:481-865 | sha= | P49-F13: notes/P49-scan.md:235; ham önem Info
+BLG-0866 | P49-F14 | AÇIK | loc=src/tests/sharding_e2e.rs:113-157, 32-111 | sha= | P49-F14: notes/P49-scan.md:248; ham önem Low
+BLG-0867 | P49-F15 | AÇIK | loc=src/tests/tokenomics.rs:293-295, 7-12 | sha= | P49-F15: notes/P49-scan.md:264; ham önem Info
+BLG-0868 | P49-F16 | AÇIK | loc=src/tests/zkvm.rs:56-68, 189-216 | sha= | P49-F16: notes/P49-scan.md:276; ham önem Info
+BLG-0869 | P49-F17 | AÇIK | loc=docs/audit/FINDINGS.md:226 | sha= | P49-F17: notes/P49-scan.md:288; ham önem Info

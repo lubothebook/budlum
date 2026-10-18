@@ -99,6 +99,15 @@ pub trait ConsensusEngine: Send + Sync {
         Ok(())
     }
 
+    /// Look at a block received from the network, before the chain accepts or
+    /// rejects it, for proof of producer misbehaviour. It must not change
+    /// chain state and must not write checkpoints: the block may never
+    /// commit. The default is a no-op; `PoSEngine` turns a signed rival block
+    /// into double-sign evidence (BLG-0011).
+    fn observe_received_block(&self, _block: &Block) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
     /// (security audit §3) chain-aware variant of `record_block`.
     /// Called from `blockchain.rs` AFTER a block has been durably
     /// Committed and the chain is in its post-commit state. The

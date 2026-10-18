@@ -49,7 +49,7 @@ bud bft-vote --pipe-id 3 --ratio 17.19 --validator v   # BFT finality, more than
 ## Honesty (K19/K38)
 
 - Measured ratios live in `RealBench::measured_ratios()`, `FORMAT-V2.md`
-  section 7, and `scripts/measure_ratios.py --seed 7`, which is REPRODUCIBLE:
+  section 7, and `cargo run --release --bin measure_ratios -- --seed 7`, which is REPRODUCIBLE:
   JSON zstd19 at 7.83x, CSV at 3.55x, LOG at 6.17x, and the zstd container at
   roughly 6.55x. No invented numbers (EK13).
 - The `17.19x JSON` claim DOES NOT HOLD against the real measurement, which is

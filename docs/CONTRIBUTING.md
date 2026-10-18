@@ -89,14 +89,14 @@ cargo test --lib --verbose                      # CI: Test (root lib tests)
 ```
 
 The pedantic/nursery surface is a ratchet, not a wall: it is measured by
-`ops/scripts/clippy-extra-report.py` against `.github/clippy-extra-baseline.txt` and
+`xtask/tools/src/clippy_extra_report.rs` (`budlum-tools clippy-extra-report`) against `.github/clippy-extra-baseline.txt` and
 only refuses growth.
 
 A workflow edit cannot be tried locally, so it is checked two other ways. Step bodies
 are extracted and executed (see the third rule below), and the reachability of every step
-is computed by `python3 ops/scripts/check-step-reachability.py`: it reports a guard that
+is computed by `cargo run -q --release --manifest-path xtask/tools/Cargo.toml -- step-reachability`: it reports a guard that
 references a `steps.<id>` no step declares, or declares later, and
-`--fail 'budlum:Test'` prints which steps still run when that step is red. Run it after
+`step-reachability --fail 'budlum:Test'` prints which steps still run when that step is red. Run it after
 touching any job's `if:` lines - a mistyped id skips every step behind it and leaves the
 job looking green.
 

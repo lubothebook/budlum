@@ -1,0 +1,65 @@
+BLG-0344 | SKIP-KARAR | rest is deals_by_shard/open-challenge row removal; changes registry root, needs owner decision (read log, policy, dictionary already cleared in f72517b, open challenges refuse prune in 43fc866)
+BLG-0346 | SKIP-KARAR | KARAR BEKLIYOR (P23-F04 proof check hard false, mainnet blocker)
+BLG-0347 | SKIP-KARAR | KARAR BEKLIYOR (P23-F05 coding audit data source)
+BLG-0348 | SKIP-KARAR | KARAR BEKLIYOR (P23-F06 needs new StorageTx variants)
+BLG-0352 | SKIP-KARAR | rest is storage_root/proof envelope binding (Z1 devnet gate, needs proof format decision); replica bound and duplicate guard fixed in 80b9618
+BLG-0353 | SKIP-YP | current_unix_secs reads the chain tip timestamp (blockchain.rs:1050), not host clock; both paths are chain derived, only one block apart
+BLG-0354 | SKIP-YP | no no-op commitment check remains; SealedGenerated arm checks shape, zero commitment, bounds (storage_deal.rs:1571-1594), seed is off chain
+BLG-0355 | SKIP-KARAR | Mismatched path slash/ticket/cooldown shape depends on P23-F04 proof decision (unreachable while proofs are not checkable)
+BLG-0356 | SKIP-KARAR | registry positional bincode with no version tag; a version/migration is a new storage format (fails closed today)
+BLG-0357 | KOD | 1c7a903
+BLG-0358 | SKIP-KARAR | renew_deal fee is an economic parameter (no caller either)
+BLG-0359 | SKIP-KARAR | sweeping deals/challenges/results/manifest fee changes state root and economics
+BLG-0362 | SKIP-KARAR | regeneration/repair triggers do not exist; wiring them is a new consensus flow (needs StorageTx variants)
+BLG-0363 | SKIP-KARAR | same as P23-F04 (proof verifier decision)
+BLG-0364 | SKIP-KARAR | moving maintenance and prune into block application is an architecture change (STATUS 18/55, gated off on mainnet)
+BLG-0367 | SKIP-KARAR | version fields are a new storage format; unwired audit callers are P23-F06; rest is test wording
+BLG-0379 | SKIP-VAR | RequestPrune uses pm.latest_snapshot_height() and retention (chain_actor.rs:4090-4112), from PR9 port 5402df3
+BLG-0380 | SKIP-VAR | delete_block removes TX_IDX rows (db.rs:741-766); check_integrity accepts pruned prefix; load_chain reports dangling parent; tests in db.rs:2622-2652 (5402df3)
+BLG-0381 | SKIP-VAR | proof trie is cached by account contents (chain_actor.rs:2940-3010); first build per change stays on the actor, rate limiting is a design choice
+BLG-0382 | SKIP-VAR | cache is keyed by leaf contents not chain.len() (chain_actor.rs:2984-2992); trie root in no header would be a new consensus format
+BLG-0383 | SKIP-VAR | newer schema refused, corrupt version errors (db.rs:205-260, tests 2728-2771); per row versions would be a new format
+BLG-0384 | SKIP-VAR | check_walk_step checks hash equals key and height drops by one, so no cycle (db.rs:1397-1416, used by load_chain and repair_index)
+BLG-0385 | SKIP-VAR | needs_progress_marker skips the marker when HEIGHT already holds a block (db.rs:575-596)
+BLG-0394 | SKIP-KARAR | dictionary registration/release/root wiring is a new consensus flow (idle-code baseline lists it)
+BLG-0395 | SKIP-KARAR | wiring reconstruct_object into a node repair path is an architecture change
+BLG-0396 | SKIP-KARAR | LRC/MSR/one-share/custody/admission wiring is an architecture change
+BLG-0399 | SKIP-KARAR | open cap fixed in 0c31d97; AAD binding is a wire format change and key zeroize needs the zeroize crate
+BLG-0400 | SKIP-KARAR | the three allows are deliberate (stable clippy vs nightly E0658, c72b911); lint policy decision
+BLG-0401 | KOD | 705476a (mode/residual tie only; duplicate id and cap on add_pact need an API change in test files outside the part)
+BLG-0402 | KOD | c08372c (load validation only; unreferenced-entry cap is wiring/economics)
+BLG-0403 | KOD | 5ad0e09 (capacity total only; other parts are unwired API/float shape)
+BLG-0404 | SKIP-KARAR | admission evidence must be signed or on-chain, a new format; module unwired
+BLG-0405 | SKIP-VAR | delete digest binds chain id and counter (44e9c6e); hook sink is installed at the gateway boundary by design (storage_deal.rs:2160-2180)
+BLG-0406 | SKIP-DOC | msr error doc mismatch is comment only; lrc add overflows only by struct literal in an unwired module
+BLG-0407 | KOD | e9da7fb
+BLG-0408 | SKIP-KARAR | stable burst frames need a deterministic nonce (Q4 B keeps random nonces) or a cached stream; API/architecture choice
+BLG-0412 | KOD | 4fe4778
+BLG-0413 | SKIP-YP | open with literal true is documented for a public feed (emit.rs:1491-1496); the view-grant layer is a separate path by design
+BLG-0414 | SKIP-DOC | transform_shrank is false for default options by design; the rest is a stale module doc
+BLG-0416 | SKIP-KARAR | MasterRegistry/Derived wiring is a new consensus flow (idle-code baseline)
+BLG-0420 | SKIP-KARAR | rendering RGB-sized recipes changes rendered bytes and QR stream ids of existing recipes; needs a versioned render decision
+BLG-0422 | SKIP-KARAR | view grant commands write root-bearing state outside blocks; moving them into a StorageTx is an architecture change (same class as P24-F05)
+BLG-0424 | KOD | fa58962 (load validation and checked next_id; caps and version tag are format/economics)
+BLG-0425 | KOD | 2f8f78a (revoke vs open order; comparison with the chain epoch needs the RPC layer)
+BLG-0426 | KOD | 7cfcd5e
+BLG-0431 | KOD | cc5d0e5 (BDLV trailing bytes; other layers stop at completion by design)
+BLG-0432 | KOD | 7c7b3a1 (body length only; a k check would break the existing hostile total_len test and verdict parity needs a new cross test)
+BLG-0433 | SKIP-KARAR | mask choice depends on the rqrr decoder; a deterministic mask rule changes committed video bytes (needs owner decision)
+BLG-0434 | SKIP-KARAR | optional stream pin is documented (verify_stream_id doc); making it mandatory is a recipe policy change
+BLG-0435 | KOD | 1c559ae (decode validation; stale comment is doc only)
+BLG-0436 | KOD | 7232bb0 (count cap; open-time full pass cost is design)
+BLG-0437 | SKIP-KARAR | removing or wiring the unused codec variants and gate changes idle-code baselines; owner decision
+BLG-0438 | SKIP-DOC | stale module spec, advisory wire degree and CRC table are doc or performance notes, unreachable casts
+BLG-0439 | SKIP-YP | finding states Z3/Z7/Z8/Z9 hold for all qr_*.rs files; nothing to fix
+BLG-0441 | SKIP-KARAR | KARAR BEKLIYOR; a salted recipe commitment is a new commitment format
+BLG-0442 | SKIP-KARAR | needs a rule tying content_id to the packed body (manifest lookup in rpc/server.rs, not an owned file); design decision
+BLG-0443 | KOD | e833587 (pass built in spawn_blocking before the lock; revoke generation re-checked; needs rpc/server.rs and storage/mod.rs)
+BLG-0445 | SKIP-KARAR | a per-viewer quota is bypassed by a fresh key (viewer is key-derived, server.rs:3705); needs a rate limit or admission policy
+BLG-0446 | SKIP-KARAR | a production-reproducible sealed recipe needs a recipe over the ciphertext or a new recipe format
+BLG-0448 | SKIP-KARAR | content-based derivative detection beyond the magic prefix is a policy and format decision
+BLG-0449 | SKIP-YP | content is capped at MAX_CAROUSEL_BYTES before a recipe exists, so u32 never wraps; the usize in the commitment hash is a commitment format matter
+BLG-0450 | SKIP-KARAR | dead decode path and unreachable Restricted visibility need a wiring decision
+BLG-0451 | SKIP-KARAR | a tighter loss test needs a measured margin; outcome cannot be verified without running tests (local test runs are barred)
+BLG-0452 | SKIP-KARAR | same root as P28-F01 (per-call full encode in the burst path); needs a cached stream or API change
+BLG-0453 | KOD | 339c520

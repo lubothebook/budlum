@@ -81,7 +81,7 @@ exactly that agreement.
 
 ## Related
 
-- `ops/scripts/audit-deps.sh`: the dependency audit report.
-- `ops/scripts/generate-sbom.sh`: CycloneDX SBOM generation.
+- `xtask/tools` `audit-deps`: the dependency audit report.
+- `xtask/tools` `generate-sbom`: CycloneDX SBOM generation.
 - `target/audit/DEPENDENCY_AUDIT.md`: the latest dependency audit status.
 - `target/audit/SBOM.md`: the SBOM generation procedure.

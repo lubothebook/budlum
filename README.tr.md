@@ -13,7 +13,7 @@ hangi konsensüsün ürettiğini sormaz, yalnızca o olgunun kesinlik kanıtın�
 olmadığını sorar. Böylece değer, bir aracıya güvenmeden alanlar arasında hareket eder.
 
 [![CI](https://github.com/budlum-xyz/budlum/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/budlum-xyz/budlum/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
-[![Tests](https://img.shields.io/badge/tests-3229%20lib-blue)](https://github.com/budlum-xyz/budlum/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
+[![Tests](https://img.shields.io/badge/tests-3388%20lib-blue)](https://github.com/budlum-xyz/budlum/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
 [![Rust](https://img.shields.io/badge/rust-1.97.1-orange?logo=rust)](rust-toolchain.toml)
 [![License](https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-blue)](LICENSE.md)
 
@@ -283,7 +283,7 @@ cargo run --release -- --network devnet
 
 ```bash
 docker compose -f ops/docker-compose.yml up   # bkz. ops/docker-compose.yml
-bash ops/scripts/devnet-multinode-smoke.sh
+cargo run --release --manifest-path xtask/tools/Cargo.toml -- devnet-multinode-smoke
 ```
 
 ### Profilden çalıştırma

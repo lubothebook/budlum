@@ -1,0 +1,35 @@
+BLG-0043 | SKIP-VAR | temp+rename in primitives.rs:21-50 and create_new claim main.rs:38 already in head
+BLG-0051 | SKIP-VAR | epoch.rs:26-31 uses u32::try_from, refuses overflow
+BLG-0147 | SKIP-VAR | admission closed until sync committee pinned (intake.rs:287,377); full light-client binding is roadmap
+BLG-0193 | SKIP-VAR | chain_actor.rs:4090-4113 passes real latest_snapshot_height; startup restore redesign is architecture
+BLG-0197 | SKIP-KARAR | quorum is a consensus parameter (devnet 1/2 vs fixed 2/3), owner choice
+BLG-0198 | KOD | 48542b8
+BLG-0290 | SKIP-KARAR | prove failure vs block validity is an open owner choice
+BLG-0301 | SKIP-KARAR | adding poa_onboarding to state root changes the consensus format
+BLG-0305 | SKIP-KARAR | adding roles to validator leaf hash changes the consensus format
+BLG-0309 | SKIP-KARAR | txid preimage change is a consensus/wire format change
+BLG-0310 | SKIP-KARAR | which variant trips large_enum_variant cannot be measured without clippy; boxing touches every matcher across crates
+BLG-0315 | SKIP-KARAR | remaining halt limit has no halt feature to consume it; guardrail consumers are new architecture
+BLG-0319 | SKIP-KARAR | unifying the two writers changes block validity semantics (warn vs reject); consensus choice
+BLG-0329 | SKIP-KARAR | adding chain_id/expiry to signed storage authorizations changes the signed wire format
+BLG-0334 | SKIP-KARAR | PKCS#11 VRF backend is a new feature and an open owner choice
+BLG-0336 | SKIP-VAR | storage_register_manifest, bridge asset/mint/burn all call require_operator (server.rs:3331,2718,2749,2772); ai_register_model only builds an unsigned template
+BLG-0340 | KOD | 78e94d6
+BLG-0342 | KOD | 70fb145
+BLG-0341 | KOD | bbbcc21
+BLG-0369 | SKIP-KARAR | domain leaf hash change alters the registry root (consensus format)
+BLG-0370 | SKIP-KARAR | remaining (a) irreversibility input and (d) enum merge need a design for the unwired module
+BLG-0371 | SKIP-KARAR | putting the sovereign registry into blocks/header root/storage is an architecture and consensus change
+BLG-0372 | SKIP-KARAR | meaning of a zero validator set hash on non-bridge domains is an open owner choice
+BLG-0373 | SKIP-KARAR | matching plugin_code_hash needs a plugin byte loader (new architecture, see blockchain.rs:1374)
+BLG-0374 | KOD | 9f5b13f
+BLG-0378 | SKIP-VAR | pow_min_difficulty_bits is gone and the unwrap_or([0;4]) arm no longer exists in finality_adapter.rs
+BLG-0376 | SKIP-KARAR | gating set_status to cfg(test) makes idle-code-baseline.txt:1472 stale; needs .github baseline edit (forbidden)
+BLG-0558 | KOD | 60a5e13
+BLG-0559 | KOD | 440785e
+BLG-0560 | KOD | 491d2b1
+BLG-0561 | SKIP-YP | proto_conversions.rs:19 allow covers only the include! of prost generated code; hand written code is outside pb
+BLG-0562 | KOD | dd3f99d
+BLG-0563 | KOD | fbba84c
+BLG-0564 | KOD | c72abb2
+BLG-0565 | SKIP-KARAR | merging two peer scoring systems (f64 vs i32) is an architecture choice
