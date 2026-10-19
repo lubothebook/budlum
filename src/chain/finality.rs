@@ -141,6 +141,14 @@ pub struct Prevote {
     pub checkpoint_hash: String,
     pub voter_id: Address,
     pub sig_bls: Vec<u8>,
+    /// BLG-0083 (P04-F01): an authentication signature over
+    /// [`Prevote::auth_signing_message`] under the voter's registered key.
+    /// A vote without a valid `auth_sig` is dropped WITHOUT counting an
+    /// invalid-vote tick against anyone: garbage cannot be attributed to a
+    /// keyholder. `#[serde(default)]` so old wire shapes deserialize; they
+    /// simply fail the auth gate.
+    #[serde(default)]
+    pub auth_sig: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +158,10 @@ pub struct Precommit {
     pub checkpoint_hash: String,
     pub voter_id: Address,
     pub sig_bls: Vec<u8>,
+    /// BLG-0083 (P04-F01): the vote-authentication signature; see
+    /// [`Prevote::auth_sig`].
+    #[serde(default)]
+    pub auth_sig: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,11 +199,40 @@ impl Prevote {
         msg.extend_from_slice(self.checkpoint_hash.as_bytes());
         msg
     }
+
+    /// BLG-0083 (P04-F01): the message the voter authenticates with their
+    /// registered key. Domain-separated from the vote message so one
+    /// signature cannot serve as the other.
+    ///
+    /// BLG-0300 (P10-F12): V2 also covers `sig_bls`. V1 bound only
+    /// (epoch, height, hash), so a captured auth from an honest vote could be
+    /// paired with ANY garbage vote-signature on the same tuple - and every
+    /// pairing is a fresh "invalid signature" attributed to the key holder.
+    /// That is griefing, not self-incrimination. Binding the vote-signature
+    /// means an auth can only ever vouch for the exact signature its signer
+    /// produced.
+    pub fn auth_signing_message(&self) -> Vec<u8> {
+        let mut msg = Vec::new();
+        msg.extend_from_slice(b"BUDLUM_VOTE_AUTH_V2");
+        msg.extend_from_slice(&self.signing_message());
+        msg.extend_from_slice(&self.sig_bls);
+        msg
+    }
 }
 
 impl Precommit {
     pub fn signing_message(&self) -> Vec<u8> {
         checkpoint_signing_message(self.epoch, self.checkpoint_height, &self.checkpoint_hash)
+    }
+
+    /// BLG-0083 (P04-F01): the vote-authentication message; see
+    /// [`Prevote::auth_signing_message`] (V2 binds `sig_bls`, BLG-0300).
+    pub fn auth_signing_message(&self) -> Vec<u8> {
+        let mut msg = Vec::new();
+        msg.extend_from_slice(b"BUDLUM_VOTE_AUTH_V2");
+        msg.extend_from_slice(&self.signing_message());
+        msg.extend_from_slice(&self.sig_bls);
+        msg
     }
 }
 
@@ -629,10 +670,10 @@ impl FinalityAggregator {
             Some((prev_hash, prev_sig)) if prev_hash != &vote.checkpoint_hash => {
                 self.record_equivocation(
                     vote.voter_id,
-                    prev_hash.clone(),
-                    prev_sig.clone(),
-                    vote.checkpoint_hash.clone(),
-                    vote.sig_bls.clone(),
+                    (prev_hash.clone(), prev_sig.clone()),
+                    (vote.checkpoint_hash.clone(), vote.sig_bls.clone()),
+                    crate::registry::evidence::DoubleSignKind::Prevote,
+                    vote.epoch,
                 );
             }
             Some(_) => { /* same hash: not equivocation (duplicate handled later) */ }
@@ -651,10 +692,10 @@ impl FinalityAggregator {
             Some((prev_hash, prev_sig)) if prev_hash != &vote.checkpoint_hash => {
                 self.record_equivocation(
                     vote.voter_id,
-                    prev_hash.clone(),
-                    prev_sig.clone(),
-                    vote.checkpoint_hash.clone(),
-                    vote.sig_bls.clone(),
+                    (prev_hash.clone(), prev_sig.clone()),
+                    (vote.checkpoint_hash.clone(), vote.sig_bls.clone()),
+                    crate::registry::evidence::DoubleSignKind::Precommit,
+                    vote.epoch,
                 );
             }
             Some(_) => {}
@@ -678,21 +719,29 @@ impl FinalityAggregator {
     fn record_equivocation(
         &mut self,
         voter: Address,
-        hash_1: String,
-        sig_1: Vec<u8>,
-        hash_2: String,
-        sig_2: Vec<u8>,
+        (hash_1, sig_1): (String, Vec<u8>),
+        (hash_2, sig_2): (String, Vec<u8>),
+        kind: crate::registry::evidence::DoubleSignKind,
+        epoch: u64,
     ) {
         if !self.flagged_equivocators.insert(voter) {
             return;
         }
         let report = SlashingReport::consensus_double_sign(
             voter,
-            self.checkpoint_height,
-            hash_1,
-            hash_2,
-            sig_1,
-            sig_2,
+            crate::registry::evidence::SlashingProof::DoubleSign {
+                height: self.checkpoint_height,
+                // BLG-0196 (P10-F06): the kind and the epoch travel with the
+                // evidence so any third party can rebuild the signed root and
+                // re-open both signatures; a report that stands only on the
+                // local ConsensusVerified label is not a proof.
+                kind,
+                epoch: Some(epoch),
+                block_hash_1: hash_1,
+                block_hash_2: hash_2,
+                signature_1: sig_1,
+                signature_2: sig_2,
+            },
             None,
         );
         self.detected_equivocations.push(report);
@@ -1058,6 +1107,7 @@ mod tests {
             checkpoint_hash: hash.to_string(),
             voter_id: snap.validators[i].address,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         v.sig_bls = sign_msg(sks[i], &v.signing_message());
         v
@@ -1141,6 +1191,7 @@ mod tests {
             checkpoint_hash: "abc".into(),
             voter_id: Address::zero(),
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         let msg = vote.signing_message();
         assert!(msg.starts_with(b"BUDLUM_PREVOTE"));
@@ -1191,6 +1242,7 @@ mod tests {
             checkpoint_hash: "cp_hash".into(),
             voter_id: snap.validators[0].address,
             sig_bls: vec![0u8; 48], // not a valid BLS signature
+            auth_sig: Vec::new(),
         };
         let err = agg
             .add_prevote(vote)
@@ -1211,6 +1263,7 @@ mod tests {
             checkpoint_hash: "cp_hash".into(),
             voter_id: snap.validators[0].address,
             sig_bls: sign_msg(sks[0], &checkpoint_signing_message(1, 10, "cp_hash")),
+            auth_sig: Vec::new(),
         };
         assert!(agg.add_precommit(pc).is_err());
     }
@@ -1234,6 +1287,7 @@ mod tests {
                 checkpoint_hash: "cp_hash".into(),
                 voter_id: snap.validators[i].address,
                 sig_bls: vec![],
+                auth_sig: Vec::new(),
             };
 
             let sig_bytes = sign_msg(*sk, &pc.signing_message());
@@ -1328,6 +1382,7 @@ mod tests {
             checkpoint_hash: "cp_hash".into(),
             voter_id: snap.validators[0].address,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         let sig_bytes = sign_msg(sks[0], &pc.signing_message());
 
@@ -1342,6 +1397,66 @@ mod tests {
         let result = cert.verify(&snap);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Insufficient quorum"));
+    }
+
+    /// The bounded harness in `kani/src/lib.rs` proves facts about
+    /// `bitmap_voted_stake`, a copy of the walk in `FinalityCert::verify`.
+    /// This test holds the copy and production in step: for every bitmap over
+    /// a four validator set it compares the copy's sum with the stake that
+    /// `verify` reports, including stakes that overflow a `u64` when added.
+    #[test]
+    fn bitmap_stake_accounting_matches_the_kani_mirror() {
+        // Mirrors `kani/src/lib.rs::bitmap_voted_stake`, kept literal on purpose.
+        fn kani_mirror(stakes: &[u64; 4], n: usize, bitmap: &[u8; 1]) -> u128 {
+            let mut voted_stake: u128 = 0;
+            let mut idx = 0;
+            while idx < n {
+                let byte_idx = idx / 8;
+                let bit_idx = idx % 8;
+                if byte_idx < bitmap.len() && (bitmap[byte_idx] & (1 << bit_idx)) != 0 {
+                    voted_stake += u128::from(stakes[idx]);
+                }
+                idx += 1;
+            }
+            voted_stake
+        }
+
+        let stakes = [u64::MAX, u64::MAX - 7, 5, 1];
+        let (base, _) = make_snapshot_with_keys(4, 1);
+        let validators: Vec<ValidatorEntry> = base
+            .validators
+            .iter()
+            .zip(stakes)
+            .map(|(v, stake)| ValidatorEntry { stake, ..v.clone() })
+            .collect();
+        let snap = ValidatorSetSnapshot::new(1, validators);
+        let quorum = snap.quorum_stake();
+
+        for bits in 1u8..16 {
+            let cert = FinalityCert {
+                epoch: 1,
+                checkpoint_height: 10,
+                checkpoint_hash: "cp_hash".into(),
+                agg_sig_bls: vec![0u8; 48],
+                bitmap: vec![bits],
+                set_hash: snap.set_hash.clone(),
+            };
+            let mirrored = kani_mirror(&stakes, 4, &[bits]);
+            let err = cert
+                .verify(&snap)
+                .expect_err("an unsigned certificate never verifies");
+            if mirrored < quorum {
+                assert!(
+                    err.starts_with(&format!("Insufficient quorum: {mirrored} <")),
+                    "bitmap {bits:#06b}: verify reported {err}, the mirror sums {mirrored}"
+                );
+            } else {
+                assert!(
+                    !err.starts_with("Insufficient quorum"),
+                    "bitmap {bits:#06b}: the mirror reaches quorum but verify said {err}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1381,6 +1496,7 @@ mod tests {
             checkpoint_hash: "cp_hash".into(),
             voter_id: snap.validators[0].address,
             sig_bls: vec![],
+            auth_sig: Vec::new(),
         };
         let sig_bytes = sign_msg(sks[0], &pc.signing_message());
         let cert = FinalityCert {
@@ -1415,6 +1531,29 @@ mod tests {
         let result = cert.verify(&snap);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("set hash mismatch"));
+    }
+
+    /// A genuine on-curve small-subgroup G2 encoding (BLG-0200 / P10-F10).
+    ///
+    /// Perturbs the payload bytes of the canonical generator encoding until
+    /// one decodes to a curve point that is NOT in the prime-order subgroup.
+    /// That point is the actual attack object: it survives the decoder, so
+    /// only the torsion gate can stop it. All-zero or non-decodable blobs -
+    /// what the older test fed in - merely exercise the decoder.
+    fn small_subgroup_g2_encoding() -> [u8; 96] {
+        let base = G2Affine::generator().to_compressed();
+        for i in 1..96usize {
+            for delta in 1u8..=12u8 {
+                let mut cand = base;
+                cand[i] = cand[i].wrapping_add(delta);
+                if let Some(p) = G2Affine::from_compressed(&cand).into_option() {
+                    if !bool::from(p.is_identity()) && !bool::from(p.is_torsion_free()) {
+                        return cand;
+                    }
+                }
+            }
+        }
+        panic!("payload perturbations produced no on-curve non-torsion-free G2 point")
     }
 
     /// (security audit §5) `verify_bls_sig` must reject
@@ -1457,6 +1596,17 @@ mod tests {
             verify_bls_sig(&pk2, msg2, &sig2).is_ok(),
             "valid pubkey+sig must pass the new subgroup check"
         );
+
+        // BLG-0200 (P10-F10): the case the check exists for - a small-subgroup
+        // point that DECODES. A pairing with it collapses to a subgroup that
+        // verifies against any message, so the gate must reject it by name.
+        let attack_pk = small_subgroup_g2_encoding();
+        let err = verify_bls_sig(&attack_pk, msg2, &sig2)
+            .expect_err("on-curve small-subgroup key must be rejected");
+        assert!(
+            err.contains("subgroup"),
+            "small-subgroup key must fail with the subgroup rejection, got: {err}"
+        );
     }
 
     /// (security audit §5) `verify_pop` must reject PoP
@@ -1495,19 +1645,29 @@ mod tests {
             "verify_pop must reject identity key/signature encodings"
         );
 
-        // An entry whose public key decodes to a valid G2 point but
-        // Is NOT in the prime-order subgroup must be rejected. We
-        // Build one by encoding a random-looking low-order point
-        // (a non-trivial BLS12-381 cofactor-element). The simplest
-        // Approach is to take the identity encoding (which IS a
-        // Small-subgroup point): BLS12-381 reserves the
-        // "compression flag with infinity bit set" encoding for
-        // The identity. Hand-constructing one is non-trivial
-        // Without a known non-torsion-free generator, so we instead
-        // Exercise the `is_none` rejection (covered above) and the
-        // Happy path (covered by `test_verify_pop`). The critical
-        // Guarantee - that a non-decodable public key is rejected
-        // By `verify_pop` - is what the test above pins.
+        // BLG-0200 (P10-F10): the case the gate exists for. Both encodings
+        // below decode to valid points, so a rejection can only come from the
+        // torsion check - exactly the branch that stops a validator from
+        // registering a small-subgroup key and farming trivially-passing
+        // aggregates.
+        let attack_pk = small_subgroup_g2_encoding();
+        let attack_entry = ValidatorEntry {
+            address: Address::from([3u8; 32]),
+            stake: 1000,
+            bls_public_key: attack_pk.to_vec(),
+            pop_signature: G1Affine::generator().to_compressed().to_vec(),
+            pq_public_key: Vec::new(),
+        };
+        assert!(
+            G2Affine::from_compressed(&attack_pk)
+                .into_option()
+                .is_some(),
+            "the attack key must survive decoding, or the test proves nothing"
+        );
+        assert!(
+            !verify_pop(&attack_entry, crate::core::transaction::DEFAULT_CHAIN_ID),
+            "verify_pop must reject an on-curve key outside the prime-order subgroup"
+        );
     }
 
     /// A checkpoint signature must not verify on another network.

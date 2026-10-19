@@ -29,7 +29,8 @@ async fn main() {
     let validator_keys = ValidatorKeys::generate().unwrap();
     let consensus = Arc::new(PoSEngine::new(pos_config, Some(validator_keys.clone())));
 
-    let blockchain = Blockchain::new(consensus, None, 1337, None);
+    let chain_id = 1337;
+    let blockchain = Blockchain::new(consensus, None, chain_id, None);
     let (chain_actor, chain) = ChainActor::new(blockchain);
 
     tokio::spawn(async move {
@@ -62,6 +63,7 @@ async fn main() {
                 (i / sender_count) as u64,
                 vec![],
             );
+            tx.chain_id = chain_id;
             tx.sign(&keypairs[sender_idx]);
             tx
         })
@@ -85,10 +87,16 @@ async fn main() {
 
     let mut ingested = 0;
     let mut ingest_failed = 0;
+    let mut first_refusal = String::new();
     while let Some(res) = futures.next().await {
         match res {
             Ok(_) => ingested += 1,
-            Err(_) => ingest_failed += 1,
+            Err(e) => {
+                ingest_failed += 1;
+                if first_refusal.is_empty() {
+                    first_refusal = e;
+                }
+            }
         }
 
         if let Some(tx) = tx_iter.next() {
@@ -97,6 +105,10 @@ async fn main() {
         }
     }
     let ingest_duration = start_ingest.elapsed();
+    assert!(
+        ingested > 0,
+        "no transaction was ingested ({ingest_failed} refused, first reason: {first_refusal}); the numbers would mean nothing"
+    );
     let ingest_tps = ingested as f64 / ingest_duration.as_secs_f64();
 
     // 4. Measure EXECUTION/COMMIT TPS
@@ -121,6 +133,9 @@ async fn main() {
     }
     println!("\nExecution completed.");
     let exec_duration = start_exec.elapsed();
+    if processed < ingested {
+        eprintln!("WARNING: only {processed} of {ingested} ingested transactions were produced");
+    }
     let exec_tps = processed as f64 / exec_duration.as_secs_f64();
 
     // 5. Results

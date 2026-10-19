@@ -24,6 +24,12 @@ pub const GENESIS_TIMESTAMP: u128 = 0;
 /// and `Blockchain::new_with_genesis` refuses to start a binary built for any
 /// other scheme. Custom chains (`GenesisConfig::new`) still record the scheme
 /// of the build that created them.
+/// Minimum per-header difficulty (leading zero bits) of a mainnet
+/// bridge-enabled PoW domain (P25-F01). 2^64 hashes per header is out of reach
+/// for a self-mined forgery; the cumulative minimum scales with the
+/// confirmation depth.
+pub const MAINNET_BRIDGE_POW_MIN_DIFFICULTY_BITS: u32 = 64;
+
 const LAUNCHED_PQ_SCHEME: &str = "ml-dsa-65";
 
 /// The domain configuration bootstrapped at genesis.
@@ -149,6 +155,19 @@ pub struct GenesisConfig {
     #[serde(default)]
     pub tokenomics_addresses: Option<crate::tokenomics::TokenomicsAddresses>,
 
+    /// Address-only PoA authorities (P01-F09).
+    ///
+    /// A PoA authority signs with an ordinary Ed25519 key and has no VRF, BLS
+    /// or PQ registration, so a plain entry in `validators` lands inactive and
+    /// `validate_candidate_chain` replays against an empty authority set and
+    /// fails with "No active PoA authorities". Listing the addresses here
+    /// seeds them as active stake-1 authorities in `build_state`, so the
+    /// genesis state the candidate replay starts from holds the same set the
+    /// live node was started with. Ignored on chains that require consensus
+    /// keys; ceremony files for PoS chains must keep this empty.
+    #[serde(default)]
+    pub poa_authorities: Vec<Address>,
+
     /// Post-quantum signature scheme this chain was launched with.
     ///
     /// The PQ backend is a compile-time feature, but the public key it emits is
@@ -188,6 +207,7 @@ impl Default for GenesisConfig {
             tokenomics_addresses: None,
             pq_scheme: Some(crate::crypto::primitives::PQ_SCHEME_ID.to_string()),
             bootstrap_domains: vec![],
+            poa_authorities: Vec::new(),
         }
     }
 }
@@ -270,6 +290,18 @@ impl GenesisConfig {
                 );
                 domain.bridge_enabled = cfg.bridge_enabled;
 
+                // P25-F01: the default PoW floor (8 bits, about 1.5k hashes
+                // for six headers) lets anyone mine a "finalized" header
+                // chain for a bridge-enabled domain. On mainnet the floor is
+                // raised to a work level that is not self-mineable.
+                if domain.bridge_enabled && self.chain_id == Network::Mainnet.chain_id().value() {
+                    if let Some(params) = domain.pow_parameters.as_mut() {
+                        params.min_difficulty_bits = MAINNET_BRIDGE_POW_MIN_DIFFICULTY_BITS;
+                        params.min_cumulative_work = u128::from(cfg.min_confirmations.max(1))
+                            .saturating_mul(1u128 << MAINNET_BRIDGE_POW_MIN_DIFFICULTY_BITS);
+                    }
+                }
+
                 if matches!(domain.kind, crate::domain::ConsensusKind::PoA)
                     && !cfg.poa_authorities.is_empty()
                 {
@@ -328,6 +360,32 @@ impl GenesisConfig {
         Ok(())
     }
 
+    /// Everything `build_state` credits to balances at genesis - the plain
+    /// allocations and the tokenomics distribution - stays within the fixed
+    /// supply (P08-F01). Validator stake is a bond, not a balance credit.
+    ///
+    /// Each part was checked alone, so a ceremony could pass every check and
+    /// still seed more than `BUD_TOTAL_SUPPLY`.
+    ///
+    /// # Errors
+    ///
+    /// Names the total that would be minted and the supply it exceeds.
+    pub fn validate_total_issuance(&self) -> Result<(), String> {
+        let allocations: u128 = self.allocations.iter().map(|(_, a)| u128::from(*a)).sum();
+        let distribution = self
+            .bud_tokenomics
+            .as_ref()
+            .map_or(0, |params| u128::from(params.total()));
+        let total = allocations + distribution;
+        if total > u128::from(crate::tokenomics::BUD_TOTAL_SUPPLY) {
+            return Err(format!(
+                "Genesis mints {total} base units, above the fixed supply of {}",
+                crate::tokenomics::BUD_TOTAL_SUPPLY
+            ));
+        }
+        Ok(())
+    }
+
     /// The `bud_tokenomics` distribution, if present, sums to the fixed
     /// supply, and its team vesting is at least as long as its cliff.
     ///
@@ -369,6 +427,30 @@ impl GenesisConfig {
             if params.epochs_per_year == 0 {
                 return Err("Genesis bud_tokenomics epochs_per_year must be non-zero".into());
             }
+            // A burn ratio above 100% burns more than the fee or the reserve.
+            // The executor then refuses every block that carries a fee.
+            let scale = crate::core::chain_config::FIXED_POINT_SCALE;
+            if params.tx_fee_burn_ratio_fixed > scale {
+                return Err(format!(
+                    "Genesis bud_tokenomics tx_fee_burn_ratio_fixed {} is above the scale {scale}",
+                    params.tx_fee_burn_ratio_fixed
+                ));
+            }
+            if params.annual_burn_ratio_fixed > scale {
+                return Err(format!(
+                    "Genesis bud_tokenomics annual_burn_ratio_fixed {} is above the scale {scale}",
+                    params.annual_burn_ratio_fixed
+                ));
+            }
+            // BLG-0077 (P03-F20): the third ratio too. A yield above 100%
+            // per year can never be paid from the schedule and was not
+            // checked here at all.
+            if params.validator_annual_yield_ratio_fixed > scale {
+                return Err(format!(
+                    "Genesis bud_tokenomics validator_annual_yield_ratio_fixed {} is above the scale {scale}",
+                    params.validator_annual_yield_ratio_fixed
+                ));
+            }
         }
         Ok(())
     }
@@ -392,6 +474,7 @@ impl GenesisConfig {
             }
         }
         self.validate_tokenomics_supply()?;
+        self.validate_total_issuance()?;
         let validator_set = self
             .validators
             .iter()
@@ -606,6 +689,51 @@ impl GenesisConfig {
             }
         }
 
+        // Address-only PoA authorities (P01-F09): active stake-1 entries with
+        // no consensus keys, matching what start-up code used to add after the
+        // chain was built - which left `validate_candidate_chain` replaying
+        // against an empty authority set and failing every reorg and full
+        // sync on a PoA chain.
+        for authority in &self.poa_authorities {
+            state.ensure_validator(*authority, 1);
+            if let Some(entry) = state.get_validator_mut(authority) {
+                entry.active = true;
+                entry.slashed = false;
+            }
+        }
+        // P01-F07 (BLG-0012): a PoA domain was permissioned only once it had an
+        // admin, and nothing in production ever gave it one - so any funded
+        // account could stake its way into the leader set. A genesis that
+        // lists authorities now declares the gate: the first one is the
+        // domain's admin (the trust root, as governance would appoint) and
+        // every listed authority is admitted for the longest KYC horizon, so
+        // the set the chain starts from is the set it keeps admitting.
+        if let Some((admin, rest)) = self.poa_authorities.split_first() {
+            const GENESIS_POA_DOMAIN: crate::domain::types::DomainId = 0;
+            const GENESIS_KYC_COMMITMENT: [u8; 32] = [0x01; 32];
+            state.poa_onboarding.add_admin(GENESIS_POA_DOMAIN, *admin);
+            for authority in std::iter::once(admin).chain(rest.iter()) {
+                // Both steps cannot refuse on a fresh registry (a distinct
+                // address, a non-zero commitment, a horizon at the ceiling);
+                // a refusal here would leave the authority un-admitted and
+                // the chain would fail closed at its first block.
+                let _ = state.poa_onboarding.submit_application(
+                    GENESIS_POA_DOMAIN,
+                    *authority,
+                    GENESIS_KYC_COMMITMENT,
+                    0,
+                );
+                let _ = state.poa_onboarding.approve(
+                    GENESIS_POA_DOMAIN,
+                    *admin,
+                    *authority,
+                    0,
+                    crate::registry::poa_onboarding::MAX_KYC_VALIDITY_HORIZON,
+                );
+            }
+            state.refresh_poa_admissions(0);
+        }
+
         // $BUD tokenomics: seed the distribution accounts and configure
         // The on-chain burn-reserve address + team vesting so the timed burn and
         // Vesting enforcement operate on the real chain state.
@@ -740,6 +868,7 @@ pub fn mainnet_genesis() -> GenesisConfig {
         // real addresses).
         pq_scheme: Some(LAUNCHED_PQ_SCHEME.to_string()),
         bootstrap_domains: BootstrapDomainConfig::mainnet_defaults(),
+        poa_authorities: Vec::new(),
     }
 }
 
@@ -760,6 +889,7 @@ pub fn testnet_genesis() -> GenesisConfig {
         tokenomics_addresses: None,
         pq_scheme: Some(LAUNCHED_PQ_SCHEME.to_string()),
         bootstrap_domains: vec![],
+        poa_authorities: Vec::new(),
     }
 }
 
@@ -777,6 +907,7 @@ pub fn devnet_genesis() -> GenesisConfig {
         tokenomics_addresses: None,
         pq_scheme: Some(LAUNCHED_PQ_SCHEME.to_string()),
         bootstrap_domains: vec![],
+        poa_authorities: Vec::new(),
     }
 }
 
@@ -912,6 +1043,23 @@ mod tests {
         assert_eq!(config.build_state().burn_reserve_address, None);
     }
 
+    /// P08-F01: a ceremony whose plain allocations come on top of a balanced
+    /// distribution mints more than the fixed supply and is refused.
+    #[test]
+    fn a_genesis_minting_above_the_fixed_supply_is_refused() {
+        let mut config = mainnet_genesis();
+        config.tokenomics_addresses = Some(ceremony_tokenomics_addresses());
+        assert!(config.validate_total_issuance().is_ok());
+        config.allocations.push((address(0x77), 1));
+        let error = config
+            .validate_total_issuance()
+            .expect_err("an over-supply genesis must be refused");
+        assert!(error.contains("above the fixed supply"), "{error}");
+        assert!(config
+            .validate_consensus_ceremony(Network::Mainnet)
+            .is_err());
+    }
+
     /// A team vesting shorter than its cliff is a cliff without a schedule:
     /// the ceremony refuses it instead of unlocking the allocation at once.
     #[test]
@@ -934,6 +1082,32 @@ mod tests {
         params.team_vesting_epochs = 0;
         config.bud_tokenomics = Some(params);
         assert!(config.validate_tokenomics_supply().is_ok());
+    }
+
+    /// BLG-0077: a burn ratio above the fixed-point scale burns more than the
+    /// fee. The executor then refuses every block that has a transaction.
+    #[test]
+    fn burn_ratio_above_the_scale_is_refused_at_genesis() {
+        use crate::core::chain_config::FIXED_POINT_SCALE;
+        let mut config = mainnet_genesis();
+        config.tokenomics_addresses = Some(ceremony_tokenomics_addresses());
+        let params = config.bud_tokenomics.expect("tokenomics");
+
+        let mut fee_ratio = params;
+        fee_ratio.tx_fee_burn_ratio_fixed = FIXED_POINT_SCALE + 1;
+        config.bud_tokenomics = Some(fee_ratio);
+        let error = config
+            .validate_tokenomics_supply()
+            .expect_err("a fee burn ratio above 100% must be refused");
+        assert!(error.contains("tx_fee_burn_ratio_fixed"), "{error}");
+
+        let mut annual_ratio = params;
+        annual_ratio.annual_burn_ratio_fixed = FIXED_POINT_SCALE + 1;
+        config.bud_tokenomics = Some(annual_ratio);
+        let error = config
+            .validate_tokenomics_supply()
+            .expect_err("an annual burn ratio above 100% must be refused");
+        assert!(error.contains("annual_burn_ratio_fixed"), "{error}");
     }
 
     /// Zero `epochs_per_year` cannot reach the burn or reward math: the
@@ -1050,10 +1224,10 @@ mod tests {
         assert_eq!(genesis1.timestamp, GENESIS_TIMESTAMP);
     }
 
-    /// `ops/scripts/docker-smoke-mainnet.sh` pins the devnet genesis hash and
+    /// The `docker-smoke-mainnet` tool (`xtask/tools`) pins the devnet genesis hash and
     /// refuses to boot when the image disagrees with it. The pin has to move
     /// with `devnet_genesis()`: when this test fails, update
-    /// `DEVNET_GENESIS_HASH` in that script in the same change. The pinned
+    /// `DEVNET_GENESIS_HASH` in `xtask/tools/src/docker_smoke.rs` in the same change. The pinned
     /// value is the hash the docker-smoke job itself printed at head
     /// `25f0583` (run 34156887325).
     #[test]
@@ -1061,8 +1235,28 @@ mod tests {
         let block = devnet_genesis().build_genesis_block();
         assert_eq!(
             block.hash, "87d93624975213bbdf7879ba8af973935e21f52d3436cc736b8df586774879ba",
-            "the docker-smoke-mainnet.sh pin must move with devnet_genesis()"
+            "the pin in xtask/tools/src/docker_smoke.rs must move with devnet_genesis()"
         );
+    }
+
+    /// P01-F07 (BLG-0012): a genesis that lists PoA authorities declares the
+    /// admission gate; an outsider with stake is not in the admitted set.
+    #[test]
+    fn genesis_poa_authorities_open_the_admission_gate() {
+        let a = Address::from_hex(&"a1".repeat(32)).unwrap();
+        let b = Address::from_hex(&"b2".repeat(32)).unwrap();
+        let outsider = Address::from_hex(&"c3".repeat(32)).unwrap();
+        let mut config = GenesisConfig::new(4242);
+        config.poa_authorities = vec![a, b];
+        let state = config.build_state();
+        assert!(state.poa_is_permissioned(0), "the gate must be declared");
+        let admitted = state.poa_admitted_addresses(0);
+        assert!(admitted.contains(&a) && admitted.contains(&b));
+        assert!(!admitted.contains(&outsider));
+        // No authorities listed: the chain stays ungated, as before.
+        assert!(!GenesisConfig::new(4242)
+            .build_state()
+            .poa_is_permissioned(0));
     }
 
     #[test]
@@ -1154,6 +1348,25 @@ mod tests {
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
         serde_json::from_str(&data)
             .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()))
+    }
+
+    /// P25-F01: the mainnet bridge-enabled PoW domain must not keep the
+    /// 8-bit default floor.
+    #[test]
+    fn mainnet_bridge_pow_domain_has_a_non_trivial_difficulty_floor() {
+        let config = mainnet_genesis();
+        let domains = config.bootstrap_consensus_domains().unwrap();
+        let pow = domains
+            .iter()
+            .find(|d| d.bridge_enabled && d.pow_parameters.is_some())
+            .expect("mainnet has a bridge-enabled PoW domain");
+        let params = pow.pow_parameters.as_ref().unwrap();
+        assert_eq!(
+            params.min_difficulty_bits,
+            MAINNET_BRIDGE_POW_MIN_DIFFICULTY_BITS
+        );
+        assert!(params.min_cumulative_work >= 6u128 << 64);
+        assert!(params.validate(pow.min_confirmations).is_ok());
     }
 
     #[test]

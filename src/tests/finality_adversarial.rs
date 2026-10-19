@@ -19,10 +19,6 @@
 //!   bad actor cannot stall the round (see
 //!   `finality_recovers_honest_subset_after_invalid_signature`).
 
-// These tests pair the parallel arrays `sks[i]` and `snap.validators[i]` by the SAME index;
-// an index-based loop reads better here than `enumerate`.
-#![allow(clippy::needless_range_loop)]
-
 use crate::chain::blockchain::Blockchain;
 use crate::chain::finality::{
     checkpoint_signing_message, pop_signing_message, sign_bls, sign_bls_pop, FinalityAggregator,
@@ -111,6 +107,7 @@ fn signed_prevote(sk: &Scalar, epoch: u64, height: u64, hash: &str, voter: Addre
         checkpoint_hash: hash.to_string(),
         voter_id: voter,
         sig_bls: vec![],
+        auth_sig: Vec::new(),
     };
     v.sig_bls = sign_bls(sk, &v.signing_message());
     v
@@ -125,6 +122,7 @@ fn signed_precommit(sk: &Scalar, epoch: u64, height: u64, hash: &str, voter: Add
         checkpoint_hash: hash.to_string(),
         voter_id: voter,
         sig_bls: sign_bls(sk, &msg),
+        auth_sig: Vec::new(),
     }
 }
 
@@ -138,8 +136,8 @@ fn drive_prevote_quorum(
     height: u64,
     hash: &str,
 ) {
-    for i in 0..count {
-        let pv = signed_prevote(&sks[i], epoch, height, hash, snap.validators[i].address);
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).take(count) {
+        let pv = signed_prevote(sk, epoch, height, hash, v.address);
         agg.add_prevote(pv).expect("prevote must be accepted");
     }
 }
@@ -250,6 +248,7 @@ fn finality_recovers_honest_subset_after_invalid_signature() {
         checkpoint_hash: hash.to_string(),
         voter_id: snap.validators[3].address,
         sig_bls: sign_bls(&sks[3], &wrong_msg),
+        auth_sig: Vec::new(),
     };
     // REFUSED at ingest, never enters the aggregate.
     let err = agg
@@ -258,8 +257,8 @@ fn finality_recovers_honest_subset_after_invalid_signature() {
     assert!(err.contains("Invalid precommit signature"));
 
     // Honest 3/4 precommits -> quorum met.
-    for i in 0..3 {
-        let pc = signed_precommit(&sks[i], epoch, height, hash, snap.validators[i].address);
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).take(3) {
+        let pc = signed_precommit(sk, epoch, height, hash, v.address);
         agg.add_precommit(pc).expect("honest precommit accepted");
     }
     assert!(
@@ -290,8 +289,8 @@ fn finality_valid_quorum_produces_verifiable_cert() {
     let mut agg = FinalityAggregator::new(epoch, height, hash.into(), snap.clone());
 
     drive_prevote_quorum(&mut agg, &snap, &sks, 3, epoch, height, hash);
-    for i in 0..3 {
-        let pc = signed_precommit(&sks[i], epoch, height, hash, snap.validators[i].address);
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).take(3) {
+        let pc = signed_precommit(sk, epoch, height, hash, v.address);
         agg.add_precommit(pc).expect("precommit accepted");
     }
     let cert = agg.try_produce_cert().expect("cert produced");
@@ -312,15 +311,15 @@ fn finality_prevents_split_brain_on_partition() {
 
     // Grup A: validator 0,1 -> HASH_A
     let mut agg_a = FinalityAggregator::new(epoch, height, "HASH_A".into(), snap.clone());
-    for i in 0..2 {
-        let pv = signed_prevote(&sks[i], epoch, height, "HASH_A", snap.validators[i].address);
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).take(2) {
+        let pv = signed_prevote(sk, epoch, height, "HASH_A", v.address);
         agg_a.add_prevote(pv).expect("group A prevote");
     }
 
     // Grup B: validator 2,3 -> HASH_B
     let mut agg_b = FinalityAggregator::new(epoch, height, "HASH_B".into(), snap.clone());
-    for i in 2..4 {
-        let pv = signed_prevote(&sks[i], epoch, height, "HASH_B", snap.validators[i].address);
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).skip(2).take(2) {
+        let pv = signed_prevote(sk, epoch, height, "HASH_B", v.address);
         agg_b.add_prevote(pv).expect("group B prevote");
     }
 
@@ -351,8 +350,8 @@ fn finality_ignores_late_votes_after_cert() {
     let mut agg = FinalityAggregator::new(epoch, height, hash.into(), snap.clone());
 
     drive_prevote_quorum(&mut agg, &snap, &sks, 3, epoch, height, hash);
-    for i in 0..3 {
-        let pc = signed_precommit(&sks[i], epoch, height, hash, snap.validators[i].address);
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).take(3) {
+        let pc = signed_precommit(sk, epoch, height, hash, v.address);
         agg.add_precommit(pc).expect("precommit accepted");
     }
     let cert = agg.try_produce_cert().expect("cert produced");
@@ -399,8 +398,8 @@ fn finality_honest_quorum_survives_byzantine_noise() {
     let mut agg = FinalityAggregator::new(epoch, height, honest_hash.into(), snap.clone());
 
     // Let the byzantine noise arrive FIRST (conflicting hash) -> must be refused.
-    for i in 5..7 {
-        let noise = signed_prevote(&sks[i], epoch, height, byz_hash, snap.validators[i].address);
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).skip(5).take(2) {
+        let noise = signed_prevote(sk, epoch, height, byz_hash, v.address);
         assert!(
             agg.add_prevote(noise).is_err(),
             "byzantine (conflicting-hash) noise must be refused"
@@ -415,16 +414,14 @@ fn finality_honest_quorum_survives_byzantine_noise() {
     );
 
     // Let the byzantine noise try again in the precommit phase -> refused again.
-    for i in 5..7 {
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).skip(5).take(2) {
         let noise = Precommit {
             epoch,
             checkpoint_height: height,
             checkpoint_hash: byz_hash.to_string(),
-            voter_id: snap.validators[i].address,
-            sig_bls: sign_bls(
-                &sks[i],
-                &checkpoint_signing_message(epoch, height, byz_hash),
-            ),
+            voter_id: v.address,
+            sig_bls: sign_bls(sk, &checkpoint_signing_message(epoch, height, byz_hash)),
+            auth_sig: Vec::new(),
         };
         assert!(
             agg.add_precommit(noise).is_err(),
@@ -433,14 +430,8 @@ fn finality_honest_quorum_survives_byzantine_noise() {
     }
 
     // 5 honest precommits -> quorum, the cert is produced and VERIFIES.
-    for i in 0..5 {
-        let pc = signed_precommit(
-            &sks[i],
-            epoch,
-            height,
-            honest_hash,
-            snap.validators[i].address,
-        );
+    for (sk, v) in sks.iter().zip(snap.validators.iter()).take(5) {
+        let pc = signed_precommit(sk, epoch, height, honest_hash, v.address);
         agg.add_precommit(pc).expect("honest precommit accepted");
     }
     assert!(agg.precommit_quorum_reached);
@@ -517,8 +508,10 @@ fn equivocation_generates_slashing_evidence() {
         checkpoint_hash: block.hash.clone(),
         voter_id: equivocator,
         sig_bls: vec![],
+        auth_sig: Vec::new(),
     };
     pv1.sig_bls = sign_bls(&equiv_bls, &pv1.signing_message());
+    pv1.auth_sig = sign_bls(&equiv_bls, &pv1.auth_signing_message());
     bc.handle_prevote(pv1).expect("canonical prevote accepted");
 
     let mut pv2 = Prevote {
@@ -527,8 +520,10 @@ fn equivocation_generates_slashing_evidence() {
         checkpoint_hash: "CONFLICTING_HASH".to_string(),
         voter_id: equivocator,
         sig_bls: vec![],
+        auth_sig: Vec::new(),
     };
     pv2.sig_bls = sign_bls(&equiv_bls, &pv2.signing_message());
+    pv2.auth_sig = sign_bls(&equiv_bls, &pv2.auth_signing_message());
     // The conflicting vote does not count (hash mismatch) but produces evidence and triggers a slash.
     let _ = bc.handle_prevote(pv2);
 
@@ -545,7 +540,7 @@ fn equivocation_generates_slashing_evidence() {
     );
     assert_eq!(
         after.stake, 5_000,
-        "double-sign %50 kesmeli (10000 -> 5000)"
+        "double-sign must slash 50 percent (10000 -> 5000)"
     );
     // The honest validator is unaffected.
     let honest_reg = bc.state.registry.get(&honest, roles::VALIDATOR).unwrap();
@@ -598,8 +593,10 @@ fn equivocation_slashing_record_survives_snapshot_roundtrip() {
         checkpoint_hash: block.hash.clone(),
         voter_id: equivocator,
         sig_bls: vec![],
+        auth_sig: Vec::new(),
     };
     pv1.sig_bls = sign_bls(&equiv_bls, &pv1.signing_message());
+    pv1.auth_sig = sign_bls(&equiv_bls, &pv1.auth_signing_message());
     bc.handle_prevote(pv1).expect("canonical prevote accepted");
 
     let mut pv2 = Prevote {
@@ -608,8 +605,10 @@ fn equivocation_slashing_record_survives_snapshot_roundtrip() {
         checkpoint_hash: "CONFLICTING_HASH".to_string(),
         voter_id: equivocator,
         sig_bls: vec![],
+        auth_sig: Vec::new(),
     };
     pv2.sig_bls = sign_bls(&equiv_bls, &pv2.signing_message());
+    pv2.auth_sig = sign_bls(&equiv_bls, &pv2.auth_signing_message());
     let _ = bc.handle_prevote(pv2);
 
     // The slash was applied AND written to the persistent history.
@@ -703,15 +702,19 @@ fn repeated_invalid_signatures_trigger_slash() {
     bc.start_prevote_task(block.index, block.hash.clone());
     let epoch = bc.finality_aggregator.as_ref().unwrap().epoch;
 
-    // Threshold-1 invalid signatures: no slash yet.
+    // Threshold-1 invalid signatures: no slash yet. BLG-0083 (P04-F01): the
+    // spam is self-authenticated under the spammer's key - only a vote the
+    // validator's own key vouches for can count against the validator.
     for _ in 0..(threshold - 1) {
-        let bad = Prevote {
+        let mut bad = Prevote {
             epoch,
             checkpoint_height: cp,
             checkpoint_hash: block.hash.clone(),
             voter_id: spammer,
             sig_bls: vec![0u8; 48], // invalid
+            auth_sig: Vec::new(),
         };
+        bad.auth_sig = crate::chain::finality::sign_bls(&spammer_bls, &bad.auth_signing_message());
         let _ = bc.handle_prevote(bad);
     }
     let mid = bc.state.registry.get(&spammer, roles::VALIDATOR).unwrap();
@@ -721,14 +724,17 @@ fn repeated_invalid_signatures_trigger_slash() {
     );
     assert_eq!(mid.stake, 10_000);
 
-    // An invalid signature past the threshold -> slash.
-    let bad = Prevote {
+    // An invalid signature past the threshold -> slash (BLG-0083: the spam
+    // authenticates itself under the spammer's key).
+    let mut bad = Prevote {
         epoch,
         checkpoint_height: cp,
         checkpoint_hash: block.hash.clone(),
         voter_id: spammer,
         sig_bls: vec![0u8; 48],
+        auth_sig: Vec::new(),
     };
+    bad.auth_sig = crate::chain::finality::sign_bls(&spammer_bls, &bad.auth_signing_message());
     let _ = bc.handle_prevote(bad);
 
     let after = bc.state.registry.get(&spammer, roles::VALIDATOR).unwrap();
@@ -740,7 +746,7 @@ fn repeated_invalid_signatures_trigger_slash() {
     // The MaliciousBehaviour rate is 100% (approved decision): the stake is zeroed.
     assert_eq!(
         after.stake, 0,
-        "invalid-sig spam MaliciousBehaviour %100 kesmeli"
+        "invalid-sig spam must slash 100 percent as MaliciousBehaviour"
     );
     // There is an InvalidSignatureSpam record in the persistent history.
     let hist = bc.state.registry.slashing_history_for(&spammer);
@@ -803,13 +809,17 @@ fn invalid_signatures_below_threshold_do_not_slash() {
 
     // Threshold-1 invalid signatures: NO slash.
     for _ in 0..(threshold - 1) {
-        let bad = Prevote {
+        let mut bad = Prevote {
             epoch,
             checkpoint_height: cp,
             checkpoint_hash: block.hash.clone(),
             voter_id: spammer,
             sig_bls: vec![0u8; 48],
+            auth_sig: Vec::new(),
         };
+        // Authenticated, so the vote may incriminate its own sender (BLG-0083):
+        // the vote signature is the invalid part.
+        bad.auth_sig = sign_bls(&spammer_bls, &bad.auth_signing_message());
         let _ = bc.handle_prevote(bad);
     }
 
@@ -854,18 +864,47 @@ fn blockchain_rejects_invalid_vote_signature_at_ingest() {
     bc.start_prevote_task(block.index, block.hash.clone());
     let epoch = bc.finality_aggregator.as_ref().unwrap().epoch;
 
-    // A vote with an invalid signature -> refused at ingest.
-    let bad = Prevote {
+    // BLG-0083 (P04-F01): a garbage vote WITHOUT authentication is dropped
+    // without attributing anything to the named validator - anybody can put
+    // any name in a message, so the tick is only reachable through the
+    // voter's own authenticated signature (self-incrimination).
+    let spoofed = Prevote {
         epoch,
         checkpoint_height: cp,
         checkpoint_hash: block.hash.clone(),
         voter_id: honest,
         sig_bls: vec![0u8; 48],
+        auth_sig: Vec::new(),
     };
     let err = bc
+        .handle_prevote(spoofed)
+        .expect_err("unauthenticated garbage must be rejected");
+    assert!(err.contains("Unauthenticated"));
+    assert_eq!(
+        bc.state.invalid_votes.invalid_count(&honest),
+        0,
+        "a spoofed vote must not tick the named validator"
+    );
+
+    // The same vote AUTHENTICATED under the victim's key is self-incriminating:
+    // the vote signature is still garbage, so it is refused and the tick counts.
+    let mut hsk = [0u8; 64];
+    hsk[0] = 33;
+    let honest_sk = Scalar::from_bytes_wide(&hsk);
+    let mut bad = Prevote {
+        epoch,
+        checkpoint_height: cp,
+        checkpoint_hash: block.hash.clone(),
+        voter_id: honest,
+        sig_bls: vec![0u8; 48],
+        auth_sig: Vec::new(),
+    };
+    bad.auth_sig = crate::chain::finality::sign_bls(&honest_sk, &bad.auth_signing_message());
+    let err = bc
         .handle_prevote(bad)
-        .expect_err("garbage sig must be rejected");
+        .expect_err("authenticated garbage must be rejected");
     assert!(err.contains("Invalid prevote signature"));
+    assert_eq!(bc.state.invalid_votes.invalid_count(&honest), 1);
     assert_eq!(
         bc.finality_aggregator.as_ref().unwrap().prevotes.len(),
         0,

@@ -1,10 +1,10 @@
-// (Q-A 2026-07-16) L1 relayer proof
+// (Q-A 2026-07-16) chain relayer proof
 // Cryptographic verification, the M5 budlumxyz anti-sybil fee and the M4 BNS fee
 // regression.
 //
 // This file encodes the end of the era in which "an emptiness check is enough":
 // - RelayerResult now carries bincode(MerkleProof) plus a result-fact leaf and a root
-//   Anchoring gerektirir (executor::TransactionType::RelayerResult kolu).
+//   anchoring (the executor::TransactionType::RelayerResult arm).
 // - BudlumxyzRegisterApp now carries the BUDLUMXYZ_REGISTER_MIN_FEE requirement.
 // - The BnsRegister fee check (H1, executor) is sealed as a regression.
 
@@ -174,11 +174,13 @@ fn test_relayer_result_malformed_proof_rejected() {
     let mut res = make_result("0xREAL_HASH");
     res.receipt_proof = vec![1, 2, 3]; // not a bincode(MerkleProof)
     res.external_state_root = [0x11; 32];
+    // The root is anchored, so the refusal comes from the proof decode.
+    state
+        .external_roots
+        .insert(ExternalChain::Custom(0xC0DE).domain_id(), [0x11; 32]);
     let tx = relayer_tx(res, 1);
-    let err = Executor::apply_transaction(&mut state, &tx).expect_err("must reject");
-    // The bincode error text varies by version, so what is verified is that it
-    // was refused and that the balance was left untouched.
-    assert!(!err.is_empty(), "the error text must not be empty");
+    let err = Executor::apply_transaction_checked(&mut state, &tx).expect_err("must reject");
+    assert_eq!(err.code(), "relayer_proof_malformed");
     assert_eq!(state.get_balance(&relayer_addr()), 1_000);
 }
 

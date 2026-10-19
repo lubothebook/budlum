@@ -171,7 +171,7 @@ fn adding_new_role_type_is_non_breaking() {
 use crate::core::account::AccountState;
 use crate::core::transaction::{Transaction, TransactionType};
 use crate::execution::executor::Executor;
-use crate::registry::evidence::{ProofProvenance, SlashingProof, SlashingReport};
+use crate::registry::evidence::{SlashingProof, SlashingReport};
 
 fn funded_state(account: Address, balance: u64) -> AccountState {
     let mut state = AccountState::new();
@@ -251,11 +251,15 @@ fn actionable_report_slashes_registered_validator() {
 
     let report = SlashingReport::consensus_double_sign(
         offender,
-        7,
-        "aa".into(),
-        "bb".into(),
-        vec![1],
-        vec![2],
+        SlashingProof::DoubleSign {
+            height: 7,
+            kind: crate::registry::evidence::DoubleSignKind::BlockHeader,
+            epoch: None,
+            block_hash_1: "aa".into(),
+            block_hash_2: "bb".into(),
+            signature_1: vec![1],
+            signature_2: vec![2],
+        },
         None,
     );
     let outcome = state.registry.slash_from_report(&report).unwrap().unwrap();
@@ -278,12 +282,13 @@ fn unverified_report_does_not_slash() {
         roles::VALIDATOR,
         SlashingProof::DoubleSign {
             height: 7,
+            kind: crate::registry::evidence::DoubleSignKind::BlockHeader,
+            epoch: None,
             block_hash_1: "aa".into(),
             block_hash_2: "bb".into(),
             signature_1: vec![1],
             signature_2: vec![2],
         },
-        ProofProvenance::Unverified,
         Some(addr(0x99)),
     );
     // Registry refuses to act.
@@ -299,11 +304,15 @@ fn report_against_unregistered_is_noop() {
     let mut state = AccountState::new();
     let report = SlashingReport::consensus_double_sign(
         addr(0x33),
-        7,
-        "aa".into(),
-        "bb".into(),
-        vec![1],
-        vec![2],
+        SlashingProof::DoubleSign {
+            height: 7,
+            kind: crate::registry::evidence::DoubleSignKind::BlockHeader,
+            epoch: None,
+            block_hash_1: "aa".into(),
+            block_hash_2: "bb".into(),
+            signature_1: vec![1],
+            signature_2: vec![2],
+        },
         None,
     );
     assert_eq!(state.registry.slash_from_report(&report).unwrap(), None);
@@ -1005,8 +1014,10 @@ fn onboarding_rejects_below_floor_as_active() {
         bc.chain_id,
         fee,
     );
-    // May enter mempool and apply; economic floor means not Active in registry.
-    let _ = bc.add_transaction(tx);
+    // The transaction is well formed, so it enters the mempool; the economic
+    // floor decides whether the registration becomes Active.
+    bc.add_transaction(tx)
+        .expect("a well formed below-floor stake transaction is admitted");
     let _ = bc.produce_block(staker);
 
     assert!(

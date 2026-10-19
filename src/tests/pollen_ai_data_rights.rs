@@ -343,3 +343,101 @@ fn tx_backed_pollen_sale_authorization_registers_and_roundtrips_proto() {
         .get_sale_authorization(&authorization.authorization_id)
         .is_some());
 }
+
+#[test]
+fn ai_request_by_a_requester_who_is_not_the_grantee_is_refused() {
+    let owner = addr(1);
+    let grantee = addr(2);
+    let stranger = addr(3);
+    let model_owner = addr(9);
+    let mut state = AccountState::new();
+    state.add_balance(&stranger, 100);
+    let spec = model_spec(model_owner);
+    let model_id = spec.model_id;
+    state.ai_registry.register_model(spec).unwrap();
+
+    let asset = DataAsset::new(owner, ContentId::of(b"private data"), [0x77; 32], true);
+    let asset_id = state
+        .marketplace
+        .register_data_asset(asset.clone())
+        .unwrap();
+    let grant_id = state
+        .marketplace
+        .create_access_grant(signed_grant(&asset, grantee, 3))
+        .unwrap();
+
+    let input = AiDataInputRef { asset_id, grant_id }.encode();
+    let req = request(stranger, model_id, input, 1);
+    let outcome = Executor::apply_transaction_checked(&mut state, &ai_request_tx(stranger, req, 0));
+    assert!(outcome.is_err(), "a grant belongs to its grantee only");
+    assert_eq!(
+        state
+            .marketplace
+            .access_grants
+            .get(&grant_id)
+            .unwrap()
+            .reads_used,
+        0
+    );
+}
+
+#[test]
+fn ai_request_after_the_asset_is_revoked_is_refused_by_the_executor() {
+    let owner = addr(1);
+    let requester = addr(2);
+    let model_owner = addr(9);
+    let mut state = AccountState::new();
+    state.add_balance(&owner, 100);
+    state.add_balance(&requester, 100);
+    let spec = model_spec(model_owner);
+    let model_id = spec.model_id;
+    state.ai_registry.register_model(spec).unwrap();
+
+    let asset = DataAsset::new(owner, ContentId::of(b"private data"), [0x88; 32], true);
+    let asset_id = state
+        .marketplace
+        .register_data_asset(asset.clone())
+        .unwrap();
+    let grant_id = state
+        .marketplace
+        .create_access_grant(signed_grant(&asset, requester, 3))
+        .unwrap();
+    Executor::apply_transaction_checked(
+        &mut state,
+        &pollen_tx(owner, TransactionType::PollenRevokeDataAsset(asset_id), 0),
+    )
+    .unwrap();
+
+    let input = AiDataInputRef { asset_id, grant_id }.encode();
+    let req = request(requester, model_id, input, 1);
+    let outcome =
+        Executor::apply_transaction_checked(&mut state, &ai_request_tx(requester, req, 0));
+    assert!(outcome.is_err(), "a revoked asset cannot be read");
+}
+
+#[test]
+fn tx_backed_pollen_rejects_a_backdated_or_expired_grant() {
+    let owner = addr(1);
+    let requester = addr(2);
+    let mut state = AccountState::new();
+    state.add_balance(&owner, 100);
+    let asset = DataAsset::new(owner, ContentId::of(b"private data"), [0x66; 32], true);
+    Executor::apply_transaction_checked(
+        &mut state,
+        &pollen_tx(
+            owner,
+            TransactionType::PollenRegisterDataAsset(asset.clone()),
+            0,
+        ),
+    )
+    .unwrap();
+    state.current_block_height = 1_000;
+
+    let grant = signed_grant(&asset, requester, 1);
+    let err = Executor::apply_transaction_checked(
+        &mut state,
+        &pollen_tx(owner, TransactionType::PollenGrantAccess(grant), 1),
+    )
+    .unwrap_err();
+    assert_eq!(err.code(), "pollen_grant_window");
+}

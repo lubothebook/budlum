@@ -24,7 +24,28 @@ use libp2p::{mdns, swarm::behaviour::toggle::Toggle};
 /// "syncing" status indefinitely when a peer disconnects mid-sync or
 /// When gossipsub publish fails without a corresponding reset.
 const SYNC_TIMEOUT_SECS: u64 = 60;
+/// Concurrent request/response streams per connection. The libp2p default is
+/// 100; with a 1 MiB request ceiling that pins 100 MiB or more per peer.
+const MAX_SYNC_CONCURRENT_STREAMS: usize = 16;
 const MAX_PENDING_BITSWAP_FETCH_WAITERS: usize = 128;
+
+/// Double sign guard for precommits.
+///
+/// The node signs the aggregator's checkpoint, so the guard must compare that
+/// height, not the height of the local tip checkpoint. A precommit at or below
+/// the last one signed could carry a different hash after a reorg, which is a
+/// slashable double sign, and would move the persisted mark backwards.
+fn precommit_height_is_new(signed_height: u64, last_precommit_height: u64) -> bool {
+    signed_height > last_precommit_height
+}
+
+/// First `max_chars` characters of a peer controlled string, for log lines.
+///
+/// A byte slice such as `&s[..16]` panics when byte 16 is inside a multi byte
+/// character, and a release node aborts on panic.
+fn log_prefix(s: &str, max_chars: usize) -> String {
+    s.chars().take(max_chars).collect()
+}
 
 /// Extract IPv4 /24 key from a multiaddr (first 3 octets), if present.
 pub fn ipv4_slash24(addr: &Multiaddr) -> Option<[u8; 3]> {
@@ -59,6 +80,9 @@ use crate::chain::chain_actor::ChainHandle;
 use crate::chain::finality::{Precommit, Prevote};
 use crate::network::gossip_dedup::{DedupResult, GossipDedup};
 use crate::network::peer_manager::PeerManager;
+use crate::network::regen_health_tick::{
+    hash32, Checkpoint, CheckpointView, RegenHealthTick, TickOutcome,
+};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 #[allow(clippy::large_enum_variant)]
@@ -286,6 +310,27 @@ fn handshake_requires_rfc9380_bls_scheme() {
 pub const MAX_PEERS: usize = 50;
 pub const DHT_BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(300);
 
+/// Writes the identity key file. On unix the file is created with mode 0600,
+/// so it is never readable by other users, not even briefly.
+fn write_identity_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.write_all(bytes)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, bytes)
+    }
+}
+
 pub fn load_or_generate_identity_key(path: Option<&str>) -> identity::Keypair {
     if let Some(p) = path {
         let file_path = std::path::Path::new(p);
@@ -307,7 +352,7 @@ pub fn load_or_generate_identity_key(path: Option<&str>) -> identity::Keypair {
         }
         match key.to_protobuf_encoding() {
             Ok(encoded) => {
-                if let Err(e) = std::fs::write(file_path, &encoded) {
+                if let Err(e) = write_identity_file(file_path, &encoded) {
                     warn!("Failed to save identity key to {p}: {e}");
                 } else {
                     info!("Saved new P2P identity key to {p}");
@@ -399,6 +444,17 @@ pub struct Node {
     /// Outbound request currently responsible for the one active sync round.
     active_sync_request: Option<request_response::OutboundRequestId>,
     pub pending_bitswap_fetches: PendingBitswapFetches,
+    /// The content id each outbound Bitswap request asked for. A response is
+    /// checked against this, not against the cid the response claims.
+    bitswap_requests: HashMap<request_response::OutboundRequestId, bud_node::store::ContentId>,
+    /// BLG-0212 (P11-F11): outstanding Bitswap answers per content id. A
+    /// waiters list used to be removed only when a response delivered data;
+    /// every `not_found`, every malformed response and every disconnected
+    /// peer left the entry - and the callers in it - in the map forever.
+    /// Each outbound request per peer is one attempt; when the last attempt
+    /// fails by any route, the waiters are answered with the failure and the
+    /// entry is dropped.
+    bitswap_pending_attempts: HashMap<[u8; 32], usize>,
     pub max_peers: usize,
     pub validator_address: Option<crate::core::address::Address>,
     pub last_precommit_height: u64,
@@ -459,6 +515,12 @@ pub struct Node {
     /// leaving the node stuck at whatever its flattest battery earned it. It
     /// is a ceiling and never a floor: a profile can only ask for fewer.
     mobile_peer_ceiling: usize,
+    /// The reversion ledger the regeneration health tick assesses and moves.
+    ///
+    /// Node-local and in memory: the ledger records what this node verified
+    /// about its own view against the finality certificates, and it starts
+    /// again from the live checkpoint on restart.
+    regen_health: RegenHealthTick,
 }
 
 /// On-disk shape of the validator vote high-water marks.
@@ -508,6 +570,24 @@ impl Node {
             );
             poisoned.into_inner()
         })
+    }
+
+    /// Tell gossipsub whether a received message may be forwarded.
+    ///
+    /// The mesh runs with `validate_messages`: a message is held back until
+    /// the application reports a verdict, so a malformed message is not
+    /// relayed to the rest of the network.
+    fn report_gossip(
+        &mut self,
+        id: &gossipsub::MessageId,
+        source: &PeerId,
+        verdict: gossipsub::MessageAcceptance,
+    ) {
+        let _ = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .report_message_validation_result(id, source, verdict);
     }
 
     /// Open a sync round: ask one peer for headers over `/sync`.
@@ -572,10 +652,134 @@ impl Node {
         true
     }
 
+    /// One regeneration health tick against the finalized checkpoints.
+    ///
+    /// The canonical commitment for a height is the checkpoint hash in the
+    /// stored finality certificate; the held one is this node's own block
+    /// hash at that height. [`RegenHealthTick::observe`] decides and moves
+    /// the reversion ledger. This method gathers the view and acts on the
+    /// outcome: repair and revert open a sync round, alarms are logged as
+    /// errors with their stable kind label.
+    async fn regen_health_tick(&mut self) {
+        let live = self.chain.get_finalized_height().await;
+        let chain_id = self.chain.get_chain_id().await;
+        let interval =
+            crate::core::chain_config::finality_checkpoint_interval_for_chain_id(chain_id);
+        let previous = live.checked_sub(interval);
+        let mut heights = vec![live];
+        heights.extend(previous);
+        let held = self.regen_health.held_height();
+        if !heights.contains(&held) {
+            heights.push(held);
+        }
+        let mut checkpoints = Vec::with_capacity(heights.len());
+        for height in heights {
+            let local = self
+                .chain
+                .get_block(height)
+                .await
+                .and_then(|block| hash32(&block.hash));
+            let canonical = self
+                .chain
+                .get_finality_cert(height)
+                .await
+                .and_then(|cert| hash32(&cert.checkpoint_hash));
+            checkpoints.push(Checkpoint {
+                height,
+                local,
+                canonical,
+            });
+        }
+        let view = CheckpointView {
+            live,
+            previous,
+            checkpoints,
+        };
+        let outcome = self.regen_health.observe(&view);
+        match &outcome {
+            TickOutcome::Idle | TickOutcome::Healthy => {}
+            TickOutcome::Repair {
+                stress,
+                repair_cost,
+                regrowth_cost,
+            } => warn!(
+                ?stress,
+                repair_cost,
+                regrowth_cost,
+                height = live,
+                "Regeneration health: view diverges from the finality certificate, repair by sync"
+            ),
+            TickOutcome::Reverted(reversion) => warn!(
+                from = ?reversion.from,
+                to = ?reversion.to,
+                stress = ?reversion.stress,
+                height_after = reversion.height_after,
+                event = reversion.event_number,
+                "Regeneration health: reversion ledger reverted, re-growing by sync"
+            ),
+            TickOutcome::RevertRefused(error) => tracing::error!(
+                %error,
+                height = live,
+                "Regeneration health: the ledger refused the reversion verdict"
+            ),
+            TickOutcome::Alarm { reason, stress } => tracing::error!(
+                kind = reason.kind(),
+                ?reason,
+                ?stress,
+                height = live,
+                "Regeneration health alarm: self-recovery is impossible or unsafe"
+            ),
+        }
+        if outcome.opens_sync() {
+            let locator = self.chain.get_locator().await;
+            if !self.request_headers_from_peer(None, locator, 500) {
+                info!("Regeneration health: no sync round opened, one is open or no peer fits");
+            }
+        }
+    }
+
     fn clear_sync_round(&mut self) {
         self.sync_state.store(0, Ordering::SeqCst);
         self.sync_started_at.store(0, Ordering::SeqCst);
         self.active_sync_request = None;
+    }
+
+    /// Try to switch to the fork that `suffix` belongs to.
+    ///
+    /// `try_reorg` needs the whole candidate chain from genesis. The peer
+    /// sends only the blocks from the fork height, so the shared prefix is
+    /// taken from the local chain. The result is logged, never dropped.
+    async fn reorg_to_peer_suffix(
+        chain: ChainHandle,
+        suffix: Vec<crate::core::block::Block>,
+        peer: &PeerId,
+    ) {
+        let Some(first) = suffix.first() else {
+            return;
+        };
+        let start = first.index;
+        let mut prefix = Vec::new();
+        for height in 0..start {
+            match chain.get_block(height).await {
+                Some(block) => prefix.push(block),
+                None => {
+                    warn!("Reorg from {peer} skipped: local block {height} is missing");
+                    return;
+                }
+            }
+        }
+        let candidate = match join_reorg_candidate(prefix, suffix) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                warn!("Reorg candidate from {peer} rejected: {error}");
+                return;
+            }
+        };
+        match chain.try_reorg(candidate).await {
+            Ok(true) => info!("Reorg to the chain of {peer} done"),
+            Ok(false) => info!("Reorg to the chain of {peer} not needed: not a better chain"),
+            Err(error) => warn!("Reorg to the chain of {peer} failed: {error}"),
+        }
     }
 
     /// The fields a peer advertises in its `Handshake` or `HandshakeAck`.
@@ -847,6 +1051,7 @@ impl Node {
 
         let gossipsub_config = gossipsub_config_builder
             .validation_mode(gossipsub::ValidationMode::Strict)
+            .validate_messages()
             .message_id_fn(message_id_fn)
             .max_transmit_size(crate::network::protocol::MAX_MESSAGE_SIZE)
             .build()
@@ -960,8 +1165,12 @@ impl Node {
                 // style resource-retention DoS against sync and bitswap
                 // (hardening research #58, #60). 30s bounds the wait while
                 // leaving plenty of headroom for large block batches.
+                //
+                // The stream cap bounds memory per connection: each inbound
+                // stream may buffer up to the codec ceiling until the timeout.
                 let req_cfg = request_response::Config::default()
-                    .with_request_timeout(Duration::from_secs(30));
+                    .with_request_timeout(Duration::from_secs(30))
+                    .with_max_concurrent_streams(MAX_SYNC_CONCURRENT_STREAMS);
                 let sync = request_response::Behaviour::new(
                     [(
                         StreamProtocol::new("/budlum/sync/1.0.0"),
@@ -1027,6 +1236,8 @@ impl Node {
             sync_started_at,
             active_sync_request: None,
             pending_bitswap_fetches: HashMap::new(),
+            bitswap_pending_attempts: HashMap::new(),
+            bitswap_requests: HashMap::new(),
             // The server budget. A battery-powered node lowers this through
             // `with_mobile_profile`, which derives it from the power mode
             // rather than from the boolean; deciding it twice is what let a
@@ -1046,6 +1257,7 @@ impl Node {
             mobile_mode,
             mobile_profile: None,
             mobile_peer_ceiling: MAX_PEERS,
+            regen_health: RegenHealthTick::default(),
         })
     }
 
@@ -1299,24 +1511,53 @@ impl Node {
 
     /// Record the vote high-water marks.
     ///
-    /// Written immediately after a vote is published, never batched: the
-    /// window between signing and persisting is exactly the window in which a
-    /// crash loses the record.
+    /// BLG-0210 (P11-F09): written BEFORE the vote is published, never
+    /// batched, and atomically. Persist-then-publish can at worst lose a
+    /// round (mark ahead of the wire); the old publish-then-persist order lost
+    /// the record of a vote everyone else saw.
     fn save_vote_history(&self) {
         let Some(ref path) = self.vote_history_db else {
             return;
         };
-        if let Some(parent) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                warn!(error = %e, path = %path.display(), "Cannot create vote-history directory");
-                return;
-            }
+        let Some(parent) = path.parent() else {
+            warn!(path = %path.display(), "vote-history path has no parent directory");
+            return;
+        };
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            warn!(error = %e, path = %path.display(), "Cannot create vote-history directory");
+            return;
         }
         let body = serde_json::json!({
             "last_prevote_height": self.last_prevote_height,
             "last_precommit_height": self.last_precommit_height,
         });
-        if let Err(e) = std::fs::write(path, body.to_string()) {
+        // BLG-0210 (P11-F09): tmp + fsync + rename. A plain `fs::write` left
+        // a truncated file behind when a crash landed mid-write; the loader
+        // parsed nothing, reset BOTH high-water marks to zero, and the vote
+        // that triggered the write was already on the wire - the exact
+        // double-sign window the marks exist to close.
+        let tmp = parent.join(format!(
+            ".{}.tmp",
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        ));
+        let write = (|| -> std::io::Result<()> {
+            {
+                use std::io::Write;
+                let mut f = std::fs::File::create(&tmp)?;
+                f.write_all(body.to_string().as_bytes())?;
+                f.sync_all()?;
+            }
+            std::fs::rename(&tmp, path)?;
+            // Durability of the rename itself; directory sync is best-effort.
+            if let Ok(d) = std::fs::File::open(parent) {
+                let _ = d.sync_all();
+            }
+            Ok(())
+        })();
+        if let Err(e) = write {
+            let _ = std::fs::remove_file(&tmp);
             warn!(error = %e, path = %path.display(),
                   "Failed to persist vote history; a restart could re-sign a checkpoint");
         }
@@ -1509,6 +1750,10 @@ impl Node {
                            }
                        }
                        _ = finality_interval.tick() => {
+                           // Every node checks its own view, validator or not,
+                           // so the health tick runs before the validator gate.
+                           self.regen_health_tick().await;
+
                            // Resolve validator address lazily
                            if self.validator_address.is_none() {
                                self.validator_address = self.chain.get_validator_address().await;
@@ -1531,7 +1776,10 @@ impl Node {
                            if agg_state.active
                                && agg_state.prevote_quorum_reached
                                && !agg_state.precommit_quorum_reached
-                               && checkpoint_height > self.last_precommit_height
+                               && precommit_height_is_new(
+                                   agg_state.checkpoint_height,
+                                   self.last_precommit_height,
+                               )
                            {
                                match self.chain.sign_precommit(
                                    agg_state.epoch,
@@ -1550,11 +1798,14 @@ impl Node {
                                            checkpoint_hash: precommit.checkpoint_hash,
                                            voter_id: voter_addr.to_hex(),
                                            sig_bls: precommit.sig_bls,
+                                           auth_sig: precommit.auth_sig,
                                        };
-                                       let topic = gossipsub::IdentTopic::new("blocks");
-                                       let _ = self.swarm.behaviour_mut().gossipsub.publish(topic, vote_msg.to_bytes());
+                                       // BLG-0210: the mark is durable before the
+                                       // bytes leave on the wire.
                                        self.last_precommit_height = agg_state.checkpoint_height;
                                        self.save_vote_history();
+                                       let topic = gossipsub::IdentTopic::new("blocks");
+                                       let _ = self.swarm.behaviour_mut().gossipsub.publish(topic, vote_msg.to_bytes());
                                    }
                                    Err(e) => {
                                        warn!("Failed to sign precommit: {e}");
@@ -1565,7 +1816,20 @@ impl Node {
                            // --- Periodic prevote ---
                            if checkpoint_height > 0 && checkpoint_height > self.last_prevote_height {
                                if let Some(block) = self.chain.get_block(checkpoint_height).await {
-                                   let epoch = checkpoint_height / checkpoint_interval;
+                                   // The receiving side derives the epoch as
+                                   // checkpoint_height / epoch_len
+                                   // (`Blockchain::start_prevote_task`).
+                                   // Signing with the checkpoint-interval
+                                   // divisor made every honest prevote fail
+                                   // `add_prevote` with "Prevote epoch
+                                   // mismatch" on every network where the two
+                                   // divisors differ, so the prevote quorum
+                                   // was never reached and native BLS
+                                   // finality never advanced (P10-F01).
+                                   let epoch = checkpoint_height
+                                       / crate::core::chain_config::epoch_len_for_chain_id(
+                                           chain_id,
+                                       );
                                    match self.chain.sign_prevote(
                                        epoch,
                                        checkpoint_height,
@@ -1580,11 +1844,14 @@ impl Node {
                                                checkpoint_hash: prevote.checkpoint_hash,
                                                voter_id: voter_addr.to_hex(),
                                                sig_bls: prevote.sig_bls,
+                                               auth_sig: prevote.auth_sig,
                                            };
-                                           let topic = gossipsub::IdentTopic::new("blocks");
-                                           let _ = self.swarm.behaviour_mut().gossipsub.publish(topic, vote_msg.to_bytes());
+                                           // BLG-0210: persist-before-publish, as
+                                           // for the precommit above.
                                            self.last_prevote_height = checkpoint_height;
                                            self.save_vote_history();
+                                           let topic = gossipsub::IdentTopic::new("blocks");
+                                           let _ = self.swarm.behaviour_mut().gossipsub.publish(topic, vote_msg.to_bytes());
                                        }
                                        Err(e) => {
                                            warn!("Failed to sign prevote: {e}");
@@ -1827,11 +2094,20 @@ impl Node {
                                                    }
                                                    entry.push(response);
                                                    let want_cid = bud_node::store::ContentId(cid);
+                                                   // BLG-0212: one attempt per peer asked;
+                                                   // the counter is what lets a failing route
+                                                   // (not_found, bad response, disconnect)
+                                                   // retire the waiters instead of parking them.
+                                                   *self
+                                                       .bitswap_pending_attempts
+                                                       .entry(cid)
+                                                       .or_insert(0) += peers.len();
                                                    for peer in &peers {
-                                                       let _ = self.swarm.behaviour_mut().bitswap.send_request(
+                                                       let request_id = self.swarm.behaviour_mut().bitswap.send_request(
                                                            peer,
                                                            bud_node::BitswapRequest { want_cid },
                                                        );
+                                                       self.bitswap_requests.insert(request_id, want_cid);
                                                    }
                                                }
                                            }
@@ -1983,6 +2259,34 @@ impl Node {
                                    }
                                }
                                SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                                   // BLG-0212 (P11-F11): every pending fetch asked
+                                   // every connected peer once. When a peer goes
+                                   // away its undelivered answers can never arrive,
+                                   // so retire one attempt per still-pending cid -
+                                   // otherwise a peer that vanishes mid-want parks
+                                   // the waiters and the counters forever.
+                                   let closed_cids: Vec<[u8; 32]> =
+                                       self.bitswap_pending_attempts.keys().copied().collect();
+                                   for cid in closed_cids {
+                                       let exhausted =
+                                                           if let Some(left) = self.bitswap_pending_attempts.get_mut(&cid) {
+                                                               *left = left.saturating_sub(1);
+                                                               *left == 0
+                                                           } else {
+                                                               false
+                                                           };
+                                       if exhausted {
+                                           self.bitswap_pending_attempts.remove(&cid);
+                                           if let Some(senders) = self.pending_bitswap_fetches.remove(&cid) {
+                                               for sender in senders {
+                                                   let _ = sender.send(Err(format!(
+                                                       "no peer served content {} (peers disconnected)",
+                                                       hex::encode(cid)
+                                                   )));
+                                               }
+                                           }
+                                       }
+                                   }
                                    // Same treatment: a poisoned lock used to
                                    // report every close as a real disconnect,
                                    // which drifts `peer_count` in the opposite
@@ -2088,13 +2392,16 @@ impl Node {
                                    {
                                        let pm = self.peer_manager_lock();
                                        if pm.is_banned(&peer_id) {
+                                           drop(pm);
                                            warn!("Ignoring message from banned peer {peer_id}");
+                                           self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Ignore);
                                            continue;
                                        }
                                    }
 
                                    if !self.peer_manager_lock().check_rate_limit(&peer_id) {
                                        warn!("Rate limit exceeded or lock error for peer {peer_id}");
+                                       self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Ignore);
                                        continue;
                                    }
 
@@ -2135,6 +2442,7 @@ impl Node {
                                            }
                                            let _ = self.swarm.disconnect_peer_id(peer_id);
                                        }
+                                       self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Ignore);
                                        continue;
                                    }
 
@@ -2159,7 +2467,30 @@ impl Node {
                                                    let mut pm = self.peer_manager_lock();
                                                    pm.report_invalid_tx(&peer_id);
                                                }
+                                               // Dropped for the sender's state, not for the
+                                               // content: an honest copy must stay new.
+                                               self.gossip_dedup
+                                                   .lock()
+                                                   .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                                   .forget(&message.data);
+                                               self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Reject);
                                                continue;
+                                           }
+
+                                           // The message decoded and the sender is handshaked:
+                                           // only now may gossipsub forward it to the mesh.
+                                           self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Accept);
+
+                                           // A decoded message from a handshaked peer earns
+                                           // score back, so honest forwarders that now and
+                                           // then relay a duplicate do not drift to a ban.
+                                           if let Ok(now) = std::time::SystemTime::now()
+                                               .duration_since(std::time::UNIX_EPOCH)
+                                           {
+                                               self.gossip_dedup
+                                                   .lock()
+                                                   .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                                   .record_valid(&peer_id, now.as_millis() as u64);
                                            }
 
                                            match msg {
@@ -2188,9 +2519,51 @@ impl Node {
                                                    self.peer_manager_lock().report_invalid_block(&peer_id);
                                                    continue;
                                                }
-                                               info!("BLOCK: #{} Hash: {}...", block.index, &block.hash[..8.min(block.hash.len())]);
+                                               info!("BLOCK: #{} Hash: {}...", block.index, log_prefix(&block.hash, 8));
                                                let our_height = self.chain.get_height().await;
                                                if block.index == our_height + 1 {
+                                                   // P01-F20: `MAX_PAST_BLOCK_TIME_MS` bounds how far
+                                                   // chain time may lag the wall clock on the live path.
+                                                   // It was defined and never used, so a producer could
+                                                   // stamp `parent + 1 s` while wall time ran ahead and
+                                                   // drag every time-locked contract behind with it. A
+                                                   // tip extension more than the window stale is refused
+                                                   // unless our own tip is already that old - a stalled
+                                                   // chain resuming must still land its scheduled,
+                                                   // in-the-past blocks. History sync moves through the
+                                                   // batch messages and is not subject to this check.
+                                                   if let Ok(now) = std::time::SystemTime::now()
+                                                       .duration_since(std::time::UNIX_EPOCH)
+                                                   {
+                                                       let now_ms = now.as_millis();
+                                                       let block_lag =
+                                                           now_ms.saturating_sub(block.timestamp);
+                                                       if block_lag > crate::consensus::MAX_PAST_BLOCK_TIME_MS {
+                                                           let tip_stale = match self
+                                                               .chain
+                                                               .get_block(our_height)
+                                                               .await
+                                                           {
+                                                               Some(tip) => {
+                                                                   now_ms.saturating_sub(tip.timestamp)
+                                                                       > crate::consensus::MAX_PAST_BLOCK_TIME_MS
+                                                               }
+                                                               None => true,
+                                                           };
+                                                           if !tip_stale {
+                                                               warn!(
+                                                                   "Rejected gossip block #{} from {}: timestamp lags the wall clock by {} ms (max {})",
+                                                                   block.index,
+                                                                   peer_id,
+                                                                   block_lag,
+                                                                   crate::consensus::MAX_PAST_BLOCK_TIME_MS
+                                                               );
+                                                               self.peer_manager_lock()
+                                                                   .report_invalid_block(&peer_id);
+                                                               continue;
+                                                           }
+                                                       }
+                                                   }
                                                    match self.chain.validate_and_add_block(block.clone()).await {
                                                        Ok(pruned_cids) => {
                                                            info!("Added block #{} to local chain", block.index);
@@ -2213,7 +2586,7 @@ impl Node {
                                                } else if block.index <= our_height {
                                                    if let Some(our_block) = self.chain.get_block(block.index).await {
                                                        if our_block.hash != block.hash {
-                                                           info!("Fork detected at height {} (ours: {}... theirs: {}...)", block.index, &our_block.hash[..8.min(our_block.hash.len())], &block.hash[..8.min(block.hash.len())]);
+                                                           info!("Fork detected at height {} (ours: {}... theirs: {}...)", block.index, log_prefix(&our_block.hash, 8), log_prefix(&block.hash, 8));
 
                                                            info!("Fork detected at height {} - initiating sync to resolve fork", block.index);
                                                            if self.sync_state.load(Ordering::SeqCst) == 0 {
@@ -2380,12 +2753,23 @@ impl Node {
                                                    }
                                                    continue;
                                                }
+                                               // Cheap shape checks for the whole batch before any
+                                               // full validation or reorg work.
+                                               let batch_chain_id = self.chain.get_chain_id().await;
+                                               if !blocks.iter().all(|b| {
+                                                   Self::block_passes_cheap_checks(b, batch_chain_id)
+                                               }) {
+                                                   warn!("Rejected gossip block batch from {peer_id}: cheap checks failed");
+                                                   self.peer_manager_lock().report_invalid_block(&peer_id);
+                                                   continue;
+                                               }
+                                               let height_before = self.chain.get_height().await;
                                                if !blocks.is_empty() {
                                                    let start_idx = blocks[0].index;
                                                    let our_block_at_start = self.chain.get_block(start_idx).await;
                                                    if let Some(our_b) = our_block_at_start {
                                                        if our_b.hash != blocks[0].hash {
-                                                           let _ = self.chain.try_reorg(blocks.clone()).await;
+                                                           Self::reorg_to_peer_suffix(self.chain.clone(), blocks.clone(), &peer_id).await;
                                                        } else {
                                                            for block in blocks {
                                                                let h = self.chain.get_height().await;
@@ -2411,7 +2795,9 @@ impl Node {
                                                        }
                                                    }
                                                }
-                                               {
+                                               // A batch that moved nothing earns nothing: crediting
+                                               // it would offset the penalties of invalid batches.
+                                               if self.chain.get_height().await > height_before {
                                                    let mut pm = self.peer_manager_lock();
                                                    pm.report_good_behavior(&peer_id);
                                                }
@@ -2478,7 +2864,16 @@ impl Node {
                                                    self.peer_manager_lock().report_invalid_block(&peer_id);
                                                    continue;
                                                }
+                                               let snap_chain_id = self.chain.get_chain_id().await;
+                                               if !blocks.iter().all(|b| {
+                                                   Self::block_passes_cheap_checks(b, snap_chain_id)
+                                               }) {
+                                                   warn!("Rejected snap-sync batch from {peer_id}: cheap checks failed");
+                                                   self.peer_manager_lock().report_invalid_block(&peer_id);
+                                                   continue;
+                                               }
                                                info!("Snap-sync: {} blocks from {}", blocks.len(), peer_id);
+                                               let snap_height_before = self.chain.get_height().await;
                                                for block in blocks {
                                                    let h = self.chain.get_height().await;
                                                    if block.index > h {
@@ -2493,7 +2888,9 @@ impl Node {
                                                        }
                                                    }
                                                }
-                                               self.peer_manager_lock().report_good_behavior(&peer_id);
+                                               if self.chain.get_height().await > snap_height_before {
+                                                   self.peer_manager_lock().report_good_behavior(&peer_id);
+                                               }
                                            }
 
                                            NetworkMessage::Handshake { version_major, version_minor, chain_id, best_height, validator_set_hash, supported_schemes } => {
@@ -2563,19 +2960,22 @@ impl Node {
                                                self.sync_if_behind(peer_id, peer_best_height).await;
                                            }
 
-                                           NetworkMessage::Prevote { epoch, checkpoint_height, checkpoint_hash, voter_id, sig_bls } => {
+                                           NetworkMessage::Prevote { epoch, checkpoint_height, checkpoint_hash, voter_id, sig_bls, auth_sig } => {
                                                let rate_limit_ok = self.peer_manager_lock().check_vote_rate_limit(&peer_id);
                                                if !rate_limit_ok {
                                                    warn!("Peer {peer_id} exceeded vote rate limit or lock error. Ignoring Prevote.");
                                                    continue;
                                                }
                                                info!("Prevote from {}: epoch={}, height={}, hash={}..., voter={}",
-                                                   peer_id, epoch, checkpoint_height, &checkpoint_hash[..16.min(checkpoint_hash.len())], voter_id);
+                                                   peer_id, epoch, checkpoint_height, log_prefix(&checkpoint_hash, 16), voter_id);
 
                                                let voter_addr = match crate::core::address::Address::from_hex(&voter_id) {
                                                    Ok(addr) => addr,
                                                    Err(e) => {
+                                                       // BLG-0211 (P11-F10): an unparsable
+                                                       // voter identity is a sender fault.
                                                        warn!("Invalid voter_id in Prevote: {e}");
+                                                       self.peer_manager_lock().report_bad_behavior(&peer_id);
                                                        continue;
                                                    }
                                                };
@@ -2586,6 +2986,7 @@ impl Node {
                                                    checkpoint_hash,
                                                    voter_id: voter_addr,
                                                    sig_bls,
+                                                   auth_sig,
                                                };
                                                match self.chain.handle_prevote(prevote).await {
                                                    Ok(_) => {
@@ -2595,24 +2996,32 @@ impl Node {
                                                        }
                                                    }
                                                    Err(e) => {
+                                                       // BLG-0211 (P11-F10): a rejected vote
+                                                       // cost the sender nothing before - the
+                                                       // rate limit only capped volume; a slow
+                                                       // spammer kept full score and survived
+                                                       // the ban threshold.
                                                        warn!("Prevote from {peer_id} rejected: {e}");
+                                                       self.peer_manager_lock().report_bad_behavior(&peer_id);
                                                    }
                                                }
                                            }
 
-                                           NetworkMessage::Precommit { epoch, checkpoint_height, checkpoint_hash, voter_id, sig_bls } => {
+                                           NetworkMessage::Precommit { epoch, checkpoint_height, checkpoint_hash, voter_id, sig_bls, auth_sig } => {
                                                let rate_limit_ok = self.peer_manager_lock().check_vote_rate_limit(&peer_id);
                                                if !rate_limit_ok {
                                                    warn!("Peer {peer_id} exceeded vote rate limit or lock error. Ignoring Precommit.");
                                                    continue;
                                                }
                                                info!("Precommit from {}: epoch={}, height={}, hash={}..., voter={}",
-                                                   peer_id, epoch, checkpoint_height, &checkpoint_hash[..16.min(checkpoint_hash.len())], voter_id);
+                                                   peer_id, epoch, checkpoint_height, log_prefix(&checkpoint_hash, 16), voter_id);
 
                                                let voter_addr = match crate::core::address::Address::from_hex(&voter_id) {
                                                    Ok(addr) => addr,
                                                    Err(e) => {
+                                                       // BLG-0211 (P11-F10): see the prevote arm.
                                                        warn!("Invalid voter_id in Precommit: {e}");
+                                                       self.peer_manager_lock().report_bad_behavior(&peer_id);
                                                        continue;
                                                    }
                                                };
@@ -2623,6 +3032,7 @@ impl Node {
                                                    checkpoint_hash,
                                                    voter_id: voter_addr,
                                                    sig_bls,
+                                                   auth_sig,
                                                };
                                                match self.chain.handle_precommit(precommit).await {
                                                    Ok(Some(cert)) => {
@@ -2655,7 +3065,9 @@ impl Node {
                                                        }
                                                    }
                                                    Err(e) => {
+                                                       // BLG-0211 (P11-F10): see the prevote arm.
                                                        warn!("Precommit from {peer_id} rejected: {e}");
+                                                       self.peer_manager_lock().report_bad_behavior(&peer_id);
                                                    }
                                                }
                                            }
@@ -2685,7 +3097,7 @@ impl Node {
                                                    continue;
                                                }
                                                info!("FinalityCert from {}: epoch={}, height={}, hash={}...",
-                                                   peer_id, epoch, checkpoint_height, &checkpoint_hash[..16.min(checkpoint_hash.len())]);
+                                                   peer_id, epoch, checkpoint_height, log_prefix(&checkpoint_hash, 16));
 
                                                let cert = crate::chain::finality::FinalityCert {
                                                    epoch,
@@ -2887,15 +3299,15 @@ impl Node {
                                                    header.global_height,
                                                    &header.calculate_hash()[..16]
                                                );
-                                               {
-                                                   let mut pm = self.peer_manager_lock();
-                                                   pm.report_good_behavior(&peer_id);
-                                               }
+                                               // Nothing about the header is validated here, so it
+                                               // earns no credit: crediting it would offset the
+                                               // penalties of invalid blocks (P11-F03).
                                            }
                                        }
                                        }
                                        Err(e) => {
                                            warn!("Computed invalid message from {}: {:?}", peer_id, e);
+                                           self.report_gossip(&id, &peer_id, gossipsub::MessageAcceptance::Reject);
 
                                            self.peer_manager_lock().report_oversized_message(&peer_id);
                                        }
@@ -2920,23 +3332,30 @@ impl Node {
                                                    // still costs a rate token and a banned peer is
                                                    // still refused; only the handshaked check is
                                                    // what this message establishes.
+                                                   //
+                                                   // Ban and rate limit run before the decode: a
+                                                   // banned or flooding peer must not cost a full
+                                                   // protobuf decode per request.
+                                                   let pre_allowed = {
+                                                       let mut pm = self.peer_manager_lock();
+                                                       // Security review (HIGH): a banned peer cannot
+                                                       // issue a /sync request.
+                                                       !pm.is_banned(&peer) && pm.check_rate_limit(&peer)
+                                                   };
+                                                   if !pre_allowed {
+                                                       warn!("Rejected sync request from banned/rate-limited peer {peer}");
+                                                       continue;
+                                                   }
                                                    let parsed = NetworkMessage::from_bytes_validated(&request);
                                                    let is_handshake = matches!(
                                                        parsed,
                                                        Ok(NetworkMessage::Handshake { .. })
                                                            | Ok(NetworkMessage::HandshakeAck { .. })
                                                    );
-                                                   let request_allowed = {
-                                                       let mut pm = self.peer_manager_lock();
-                                                       // Security review (HIGH): a banned peer cannot
-                                                       // issue a /sync request; the ban is checked
-                                                       // together with the handshake and the rate limit.
-                                                       !pm.is_banned(&peer)
-                                                           && (is_handshake || pm.is_handshaked(&peer))
-                                                           && pm.check_rate_limit(&peer)
-                                                   };
-                                                   if !request_allowed {
-                                                       warn!("Rejected sync request from unhandshaked/rate-limited/banned peer {peer}");
+                                                   let handshaked = is_handshake
+                                                       || self.peer_manager_lock().is_handshaked(&peer);
+                                                   if !handshaked {
+                                                       warn!("Rejected sync request from unhandshaked peer {peer}");
                                                        continue;
                                                    }
                                                    if is_handshake {
@@ -2966,7 +3385,7 @@ impl Node {
                                                    if let Some(ref m) = self.metrics {
                                                        m.p2p_sync_requests.inc();
                                                    }
-                                                   if let Ok(msg) = NetworkMessage::from_bytes_validated(&request) {
+                                                   if let Ok(msg) = parsed {
                                                        match msg {
                                                            NetworkMessage::GetHeaders { locator, limit } => {
                                                                if NetworkMessage::validate_header_request(&locator, limit).is_err() {
@@ -3093,7 +3512,7 @@ impl Node {
                                                                    let our_block = self.chain.get_block(start_idx).await;
                                                                    if let Some(our_b) = our_block {
                                                                        if our_b.hash != blocks[0].hash {
-                                                                           let _ = self.chain.try_reorg(blocks).await;
+                                                                           Self::reorg_to_peer_suffix(self.chain.clone(), blocks, &peer).await;
                                                                        } else {
                                                                            for block in blocks {
                                                                                let h = self.chain.get_height().await;
@@ -3155,6 +3574,9 @@ impl Node {
                                    }
                                }
                                SwarmEvent::Behaviour(BudlumBehaviourEvent::Bitswap(event)) => {
+                                   if let request_response::Event::OutboundFailure { request_id, .. } = &event {
+                                       self.bitswap_requests.remove(request_id);
+                                   }
                                    if let Some(ref bitswap) = self.storage_node {
                                        if let request_response::Event::Message { peer, message, .. } = event
                                        {
@@ -3188,12 +3610,20 @@ impl Node {
                                                        .bitswap
                                                        .send_response(channel, response);
                                                }
-                                               request_response::Message::Response { response, .. } => {
+                                               request_response::Message::Response { request_id, response } => {
                                                    let response_cid = response.cid;
                                                    let is_not_found = response.not_found;
-                                                   // MEDIUM (CWE-345): the response must be for the requested block.
-                                                   // Yanitin cid'i, istegini karsiladigi cid'dir (bitswap protokolu).
-                                                   if let Err(e) = bitswap.handle_response(response_cid, response) {
+                                                   // MEDIUM (CWE-345): the response must be for the
+                                                   // requested block. The requested cid comes from the
+                                                   // request we sent, never from the response itself.
+                                                   let Some(requested_cid) = self.bitswap_requests.remove(&request_id) else {
+                                                       warn!("Unsolicited Bitswap response from {peer}");
+                                                       self.peer_manager_lock().report_bad_behavior(&peer);
+                                                       continue;
+                                                   };
+                                                   let mut attempt_failed = true;
+                                                   if let Err(e) = bitswap.handle_response(requested_cid, response) {
+                                                       self.peer_manager_lock().report_bad_behavior(&peer);
                                                        warn!("Bitswap response from {peer} failed: {e}");
                                                    } else {
                                                        {
@@ -3203,10 +3633,39 @@ impl Node {
                                                        if !is_not_found {
                                                            let cid_bytes = response_cid.0;
                                                            if let Ok(data) = bitswap.store().get(&response_cid) {
+                                                               // Delivered: retire the waiters and
+                                                               // every bookkeeping entry for the cid.
+                                                               attempt_failed = false;
+                                                               self.bitswap_pending_attempts.remove(&cid_bytes);
                                                                if let Some(senders) = self.pending_bitswap_fetches.remove(&cid_bytes) {
                                                                    for sender in senders {
                                                                        let _ = sender.send(Ok(data.clone()));
                                                                    }
+                                                               }
+                                                           }
+                                                       }
+                                                   }
+                                                   // BLG-0212: a failed answer is an attempt
+                                                   // spent. When the last peer's attempt is spent,
+                                                   // the waiters get the failure - they no longer
+                                                   // hang and the map no longer grows per fetch.
+                                                   if attempt_failed {
+                                                       let cid_bytes = response_cid.0;
+                                                       let exhausted =
+                                                           if let Some(left) = self.bitswap_pending_attempts.get_mut(&cid_bytes) {
+                                                               *left = left.saturating_sub(1);
+                                                               *left == 0
+                                                           } else {
+                                                               false
+                                                           };
+                                                       if exhausted {
+                                                           self.bitswap_pending_attempts.remove(&cid_bytes);
+                                                           if let Some(senders) = self.pending_bitswap_fetches.remove(&cid_bytes) {
+                                                               for sender in senders {
+                                                                   let _ = sender.send(Err(format!(
+                                                                       "no peer served content {} (all attempts failed)",
+                                                                       hex::encode(cid_bytes)
+                                                                   )));
                                                                }
                                                            }
                                                        }
@@ -3237,6 +3696,54 @@ const _: fn(&mut Node) = |node| {
     fn assert_send<T: Send>(_: T) {}
     assert_send(node.run());
 };
+
+/// Join the local prefix (genesis up to the fork height) and the peer suffix
+/// into one chain for `try_reorg`. The suffix must continue the prefix.
+fn join_reorg_candidate(
+    mut prefix: Vec<crate::core::block::Block>,
+    suffix: Vec<crate::core::block::Block>,
+) -> Result<Vec<crate::core::block::Block>, String> {
+    let first = suffix.first().ok_or("empty suffix")?;
+    let parent = prefix.last().ok_or("fork starts at genesis")?;
+    if first.index != prefix.len() as u64 || first.previous_hash != parent.hash {
+        return Err("suffix does not continue the local prefix".into());
+    }
+    prefix.extend(suffix);
+    Ok(prefix)
+}
+
+#[cfg(test)]
+mod reorg_candidate_tests {
+    use super::join_reorg_candidate;
+    use crate::core::block::Block;
+
+    fn child(parent: &Block) -> Block {
+        Block::new(parent.index + 1, parent.hash.clone(), Vec::new())
+    }
+
+    #[test]
+    fn suffix_is_joined_to_the_prefix_from_genesis() {
+        let genesis = Block::genesis();
+        let one = child(&genesis);
+        let two = child(&one);
+        let joined = join_reorg_candidate(vec![genesis.clone(), one.clone()], vec![two.clone()])
+            .expect("suffix continues prefix");
+        assert_eq!(joined.len(), 3);
+        assert_eq!(joined[0], genesis);
+        assert_eq!(joined[2], two);
+    }
+
+    #[test]
+    fn a_suffix_that_does_not_continue_the_prefix_is_refused() {
+        let genesis = Block::genesis();
+        let one = child(&genesis);
+        let two = child(&one);
+        let three = child(&two);
+        assert!(join_reorg_candidate(vec![genesis.clone()], vec![three]).is_err());
+        assert!(join_reorg_candidate(Vec::new(), vec![one]).is_err());
+        assert!(join_reorg_candidate(vec![genesis], Vec::new()).is_err());
+    }
+}
 
 #[cfg(test)]
 mod vote_history_wiring_tests {
@@ -3278,7 +3785,12 @@ mod vote_history_wiring_tests {
     /// The two defaults are deliberately *not* wired the same way.
     #[test]
     fn vote_history_is_not_gated_on_persist_banned_peers() {
-        let src = include_str!("node.rs");
+        // The production half only: the needles below also sit in this test.
+        let whole = include_str!("node.rs");
+        let parts = whole.split_once("#[cfg(test)]");
+        let src = parts
+            .map(|(before, _)| before)
+            .expect("this file keeps its tests behind #[cfg(test)]");
         let at = src
             .find("pub fn apply_network_security")
             .expect("apply_network_security must exist");
@@ -3349,7 +3861,7 @@ mod mobile_profile_wiring_tests {
     /// would drift from the profile again the moment a fifth mode existed.
     #[test]
     fn the_peer_cap_is_not_decided_a_second_time_in_this_file() {
-        let src = include_str!("node.rs");
+        let whole = include_str!("node.rs");
         // Assembled at runtime rather than written as one literal. Spelled
         // out, the needle appears in this test's own source, `include_str!`
         // reads the whole file including these lines, and the test fails on
@@ -3361,8 +3873,8 @@ mod mobile_profile_wiring_tests {
         // themselves, so searching the whole file would let the test satisfy
         // itself: it would pass on a tree where the wiring had been deleted
         // and only these lines remained.
-        let production = src
-            .split_once("#[cfg(test)]")
+        let parts = whole.split_once("#[cfg(test)]");
+        let production = parts
             .map(|(before, _)| before)
             .expect("this file keeps its tests behind #[cfg(test)]");
 
@@ -3384,7 +3896,7 @@ mod mobile_profile_wiring_tests {
         // Canary: the split has to actually remove something, or the three
         // assertions above silently went back to reading the whole file.
         assert!(
-            production.len() < src.len(),
+            production.len() < whole.len(),
             "the #[cfg(test)] split matched nothing, so this test is measuring \
              its own source and proves nothing about the production path"
         );
@@ -3452,6 +3964,118 @@ mod mobile_profile_wiring_tests {
             !declines,
             "a device at 5% declines storage attestation, so the sweep must \
              not run and spend the radio looking for work it refuses"
+        );
+    }
+}
+
+#[cfg(test)]
+mod sync_handler_order_tests {
+    /// Production half of this file; the test modules would match their own text.
+    fn production() -> &'static str {
+        include_str!("node.rs")
+            .split_once("#[cfg(test)]")
+            .map(|(before, _)| before)
+            .unwrap_or("")
+    }
+
+    /// BLG-0202: a multi byte character on the cut must not panic.
+    #[test]
+    fn log_prefix_survives_multibyte_input() {
+        let hostile = format!("{}{}", "a".repeat(15), "\u{20ac}\u{20ac}");
+        assert_eq!(super::log_prefix(&hostile, 16).chars().count(), 16);
+        assert_eq!(super::log_prefix("abc", 16), "abc");
+    }
+
+    /// BLG-0202: no byte slice of a peer string is left in the production path.
+    #[test]
+    fn no_byte_slice_of_checkpoint_hash_in_logs() {
+        let needle = format!("{}[..16", "checkpoint_hash");
+        let needle2 = format!("&{}.hash[..8", "block");
+        let code = production();
+        assert!(!code.contains(&needle) && !code.contains(&needle2));
+    }
+
+    /// BLG-0203: gossipsub holds messages until the app reports a verdict.
+    #[test]
+    fn gossipsub_forwarding_waits_for_the_application_verdict() {
+        let code = production();
+        assert!(code.contains(".validate_messages()"));
+        for verdict in ["Accept", "Reject", "Ignore"] {
+            let needle = format!("gossipsub::MessageAcceptance::{verdict}");
+            assert!(code.contains(&needle), "missing verdict {verdict}");
+        }
+    }
+
+    /// BLG-0204: gossip batches get the cheap checks and earn credit only
+    /// when the chain moved.
+    #[test]
+    fn gossip_block_batches_are_prechecked_and_not_credited_blindly() {
+        let code = production();
+        for marker in ["batch_chain_id", "snap_chain_id"] {
+            assert!(code.contains(&format!("block_passes_cheap_checks(b, {marker})")));
+        }
+        assert!(code.contains("> height_before"));
+        assert!(code.contains("> snap_height_before"));
+        // P11-F03: an unvalidated GlobalHeader earns no credit.
+        let arm = code
+            .split_once("NetworkMessage::GlobalHeader(header) => {")
+            .and_then(|(_, rest)| rest.split_once("Computed invalid message"))
+            .map(|(arm, _)| arm)
+            .unwrap_or("report_good_behavior");
+        assert!(!arm.contains("report_good_behavior"));
+    }
+
+    /// BLG-0205: the guard compares the height that is signed.
+    #[test]
+    fn precommit_guard_blocks_equal_and_lower_aggregator_heights() {
+        assert!(!super::precommit_height_is_new(100, 100));
+        assert!(!super::precommit_height_is_new(50, 100));
+        assert!(super::precommit_height_is_new(101, 100));
+        let code = production();
+        let old = format!("checkpoint_height > self.{}", "last_precommit_height");
+        assert!(
+            !code.contains(&old),
+            "the guard must use the aggregator height"
+        );
+    }
+
+    /// BLG-0209: the cid a Bitswap response is checked against comes from the
+    /// request we sent.
+    #[test]
+    fn bitswap_response_is_checked_against_the_requested_cid() {
+        let code = production();
+        let own = format!("handle_response({}, response)", "response_cid");
+        assert!(
+            !code.contains(&own),
+            "the response must not vouch for itself"
+        );
+        assert!(code.contains("handle_response(requested_cid, response)"));
+        assert!(code.contains("self.bitswap_requests.insert(request_id, want_cid)"));
+        assert!(code.contains("self.bitswap_requests.remove(request_id)"));
+    }
+
+    /// BLG-0550: ban and rate limit run before the protobuf decode.
+    #[test]
+    fn sync_request_checks_ban_and_rate_before_decode() {
+        let code = production();
+        let arm = code
+            .split_once("request_response::Message::Request { request, channel")
+            .map(|(_, after)| after)
+            .unwrap_or("");
+        let decode = format!("{}from_bytes_validated(&request)", "NetworkMessage::");
+        let rate = arm.find("pm.check_rate_limit(&peer)");
+        let parse = arm.find(&decode);
+        assert!(rate.is_some() && parse.is_some(), "handler shape changed");
+        assert!(rate < parse, "the decode must come after the rate limit");
+    }
+
+    /// BLG-0551: the stream cap is set on the request/response config.
+    #[test]
+    fn request_response_config_caps_concurrent_streams() {
+        let code = production();
+        assert!(
+            code.contains(".with_max_concurrent_streams(MAX_SYNC_CONCURRENT_STREAMS)"),
+            "the request/response config must cap streams per connection"
         );
     }
 }

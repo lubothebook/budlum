@@ -48,7 +48,7 @@
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 
-use super::cold_quorum::{verify_quorum, DeviceSignature, QuorumError, SignerIdentity};
+use super::cold_quorum::{verify_quorum, DeviceSignature, QuorumError};
 use super::cold_wallet::{ColdWalletState, RotationError};
 use crate::consensus::merkle_tree::{combine_sha3, merkle_root, promote_sha3};
 
@@ -120,15 +120,21 @@ pub struct AnchorKeyEntry {
     pub algorithm: AnchorSignatureAlgorithm,
     /// The raw public key bytes.
     pub public_key: Vec<u8>,
+    /// BLG-0070 (P03-F13): the key epoch this entry is authorized for.
+    /// After a rotation, entries from older epochs must stop verifying
+    /// without anyone having to edit the book by hand.
+    #[serde(default)]
+    pub key_epoch: u32,
 }
 
 impl AnchorKeyEntry {
-    /// One entry, convenienced.
+    /// One entry, convenienced, bound to a key epoch.
     #[must_use]
-    pub fn new(algorithm: AnchorSignatureAlgorithm, public_key: Vec<u8>) -> Self {
+    pub fn new(algorithm: AnchorSignatureAlgorithm, public_key: Vec<u8>, key_epoch: u32) -> Self {
         Self {
             algorithm,
             public_key,
+            key_epoch,
         }
     }
 }
@@ -160,6 +166,15 @@ pub enum AnchorError {
     InvalidSignature,
     /// The signer's (algorithm, key) pair is not in the keybook.
     SignerNotInKeybook,
+    /// BLG-0070: the anchor carries a rotated-out key epoch.
+    StaleAnchorEpoch {
+        anchor_epoch: u32,
+        current_epoch: u32,
+    },
+    /// BLG-0075: the signature list is over its bound.
+    TooManySignatures { max: usize, presented: usize },
+    /// BLG-0075: the same (algorithm, key) signed twice in one list.
+    DuplicateSignature,
     /// Full verification requires at least every supported algorithm to be
     /// represented; a required family is missing.
     MissingAlgorithm { algorithm: AnchorSignatureAlgorithm },
@@ -187,6 +202,9 @@ impl AnchorError {
             Self::UnsupportedAlgorithm { .. } => "anchor-unsupported-algorithm",
             Self::InvalidSignature => "anchor-invalid-signature",
             Self::SignerNotInKeybook => "anchor-signer-not-in-keybook",
+            Self::StaleAnchorEpoch { .. } => "anchor-stale-epoch",
+            Self::TooManySignatures { .. } => "anchor-too-many-signatures",
+            Self::DuplicateSignature => "anchor-duplicate-signature",
             Self::MissingAlgorithm { .. } => "anchor-missing-algorithm",
             Self::ProductionBlocked { .. } => "anchor-production-blocked",
             Self::CommitteeQuorum(..) => "anchor-committee-quorum",
@@ -211,6 +229,18 @@ impl std::fmt::Display for AnchorError {
             }
             Self::InvalidSignature => write!(f, "anchor signature failed verification"),
             Self::SignerNotInKeybook => write!(f, "anchor signer not in the keybook"),
+            Self::StaleAnchorEpoch {
+                anchor_epoch,
+                current_epoch,
+            } => write!(
+                f,
+                "anchor key epoch {anchor_epoch} is stale (current {current_epoch})"
+            ),
+            Self::TooManySignatures { max, presented } => write!(
+                f,
+                "anchor carries {presented} signatures, at most {max} are allowed"
+            ),
+            Self::DuplicateSignature => write!(f, "anchor repeats one signer in its list"),
             Self::MissingAlgorithm { algorithm } => {
                 write!(
                     f,
@@ -381,6 +411,47 @@ impl AnchorSigner for HsmSignerStub {
 ///
 /// [`AnchorError::ProductionBlocked`] when `mode` is
 /// [`AnchorMode::ProductionApproved`].
+/// Node-side anchor emission (BLG-0076 / P03-F19): where a sealed anchor is
+/// written, under which mode, at which key epoch, and with which key.
+///
+/// The production trace runs on every global-header seal; the default is the
+/// GatedOff stub, so the trace takes the `Skipped` arm and nothing is
+/// written until a node configures a signer and the devnet mode.
+pub struct AnchorEmission {
+    /// Node-local anchor log path.
+    pub log_path: std::path::PathBuf,
+    /// Enforcement mode (GatedOff skips; ProductionApproved fails closed).
+    pub mode: AnchorMode,
+    /// The key epoch the emitted anchor is signed at.
+    pub key_epoch: u32,
+    /// The signing key (the software signer on devnet; the HSM stub refuses).
+    pub signer: std::sync::Arc<dyn AnchorSigner + Send + Sync>,
+}
+
+impl Clone for AnchorEmission {
+    fn clone(&self) -> Self {
+        Self {
+            log_path: self.log_path.clone(),
+            mode: self.mode,
+            key_epoch: self.key_epoch,
+            signer: std::sync::Arc::clone(&self.signer),
+        }
+    }
+}
+
+impl Default for AnchorEmission {
+    fn default() -> Self {
+        Self {
+            log_path: std::path::PathBuf::from("data/anchors.jsonl"),
+            mode: AnchorMode::GatedOff,
+            key_epoch: 0,
+            signer: std::sync::Arc::new(HsmSignerStub {
+                vendor_label: "unconfigured".to_string(),
+            }),
+        }
+    }
+}
+
 pub fn enforce_anchor_mode(mode: AnchorMode) -> Result<(), AnchorError> {
     match mode {
         AnchorMode::GatedOff | AnchorMode::Devnet => Ok(()),
@@ -404,15 +475,46 @@ fn verify_one(
         .map_err(|_| AnchorError::InvalidSignature)
 }
 
-/// Ensures a signer's (algorithm, key) pair is authorized by the keybook.
+/// Ensures a signer's (algorithm, key) pair is authorized by the keybook
+/// **for the anchor's key epoch** (BLG-0070): a rotated-out entry cannot
+/// authorize anything, however it got into the book.
 fn in_keybook(
     keybook: &[AnchorKeyEntry],
     algorithm: AnchorSignatureAlgorithm,
     public_key: &[u8],
+    key_epoch: u32,
 ) -> bool {
     keybook
         .iter()
-        .any(|e| e.algorithm == algorithm && e.public_key == public_key)
+        .any(|e| e.algorithm == algorithm && e.public_key == public_key && e.key_epoch == key_epoch)
+}
+
+/// BLG-0075 (P03-F18): how many signatures one anchor may carry. Each one
+/// costs an ML-DSA-87 verification; an unbounded list is a DoS multiplier.
+pub const MAX_ANCHOR_SIGNATURES: usize = 8;
+
+/// BLG-0075: refuse oversized or self-duplicate signature lists before any
+/// expensive verification runs.
+fn check_signature_list(signatures: &[AnchorSignature]) -> Result<(), AnchorError> {
+    if signatures.is_empty() {
+        return Err(AnchorError::MissingAlgorithm {
+            algorithm: AnchorSignatureAlgorithm::MlDsa87,
+        });
+    }
+    if signatures.len() > MAX_ANCHOR_SIGNATURES {
+        return Err(AnchorError::TooManySignatures {
+            max: MAX_ANCHOR_SIGNATURES,
+            presented: signatures.len(),
+        });
+    }
+    for (i, sig) in signatures.iter().enumerate() {
+        for prev in &signatures[..i] {
+            if prev.algorithm == sig.algorithm && prev.public_key == sig.public_key {
+                return Err(AnchorError::DuplicateSignature);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Full verification: every signature verifies, every signer is keybooked,
@@ -426,7 +528,18 @@ fn in_keybook(
 pub fn verify_anchor_full(
     anchor: &PqAnchor,
     keybook: &[AnchorKeyEntry],
+    current_key_epoch: u32,
 ) -> Result<(), AnchorError> {
+    check_signature_list(&anchor.signatures)?;
+    // BLG-0070 (P03-F13): an anchor from a rotated-out epoch is dead on
+    // arrival. Without this comparison an old key kept verifying until the
+    // keybook was edited by hand.
+    if anchor.key_epoch != current_key_epoch {
+        return Err(AnchorError::StaleAnchorEpoch {
+            anchor_epoch: anchor.key_epoch,
+            current_epoch: current_key_epoch,
+        });
+    }
     let payload = anchor_payload_for(
         anchor.height,
         &anchor.aggregate_root,
@@ -434,13 +547,8 @@ pub fn verify_anchor_full(
         anchor.crossdomain_root.as_ref(),
         anchor.key_epoch,
     );
-    if anchor.signatures.is_empty() {
-        return Err(AnchorError::MissingAlgorithm {
-            algorithm: AnchorSignatureAlgorithm::MlDsa87,
-        });
-    }
     for sig in &anchor.signatures {
-        if !in_keybook(keybook, sig.algorithm, &sig.public_key) {
+        if !in_keybook(keybook, sig.algorithm, &sig.public_key, anchor.key_epoch) {
             return Err(AnchorError::SignerNotInKeybook);
         }
         verify_one(sig.algorithm, &sig.public_key, &payload, &sig.signature)?;
@@ -471,7 +579,17 @@ pub fn verify_anchor_full(
 pub fn verify_anchor_light(
     anchor: &PqAnchor,
     keybook: &[AnchorKeyEntry],
+    current_key_epoch: u32,
 ) -> Result<(), AnchorError> {
+    // BLG-0075: the same list bound applies to the light path.
+    check_signature_list(&anchor.signatures)?;
+    // BLG-0070: light verification applies the same epoch rule.
+    if anchor.key_epoch != current_key_epoch {
+        return Err(AnchorError::StaleAnchorEpoch {
+            anchor_epoch: anchor.key_epoch,
+            current_epoch: current_key_epoch,
+        });
+    }
     let payload = anchor_payload_for(
         anchor.height,
         &anchor.aggregate_root,
@@ -480,7 +598,7 @@ pub fn verify_anchor_light(
         anchor.key_epoch,
     );
     for sig in &anchor.signatures {
-        if !in_keybook(keybook, sig.algorithm, &sig.public_key) {
+        if !in_keybook(keybook, sig.algorithm, &sig.public_key, anchor.key_epoch) {
             continue;
         }
         if verify_one(sig.algorithm, &sig.public_key, &payload, &sig.signature).is_ok() {
@@ -640,11 +758,25 @@ pub fn rotate_anchor_key_with_committee(
     state: &mut ColdWalletState,
     at_height: u64,
     reason: &str,
-    identities: &[SignerIdentity],
     certificates: &[DeviceSignature],
 ) -> Result<u32, AnchorError> {
-    let mut payload = Vec::with_capacity(26 + 8 + 8 + 32);
-    payload.extend_from_slice(b"BDLM_PQ_ANCHOR_ROTATION_V1");
+    // S2: the committee comes from the wallet's pinned state, never from
+    // the caller.
+    if state.trusted_devices.len() != state.policy.device_count as usize {
+        return Err(AnchorError::CommitteeQuorum(
+            QuorumError::IdentitySetSizeMismatch {
+                device_count: state.policy.device_count,
+                presented: state.trusted_devices.len(),
+            },
+        ));
+    }
+    let identities = state.trusted_devices.clone();
+    let mut payload = Vec::with_capacity(26 + 8 + 8 + 8 + 32);
+    payload.extend_from_slice(b"BDLM_PQ_ANCHOR_ROTATION_V2");
+    // BLG-0069 (P03-F12): the chain id is part of the signed payload. With
+    // the same committee devices on two networks, a V1 rotation certificate
+    // could replay across them and force an epoch bump on the other chain.
+    payload.extend_from_slice(&state.policy.chain_id.to_le_bytes());
     payload.extend_from_slice(&at_height.to_le_bytes());
     payload.extend_from_slice(&(state.key_epoch as u64).to_le_bytes());
     payload.extend_from_slice(&crate::core::hash::hash_fields_bytes(&[
@@ -653,7 +785,7 @@ pub fn rotate_anchor_key_with_committee(
     ]));
     let proven = verify_quorum(
         &state.policy,
-        identities,
+        &identities,
         &payload,
         state.key_epoch,
         certificates,
@@ -836,11 +968,12 @@ mod tests {
             let keybook = vec![AnchorKeyEntry::new(
                 AnchorSignatureAlgorithm::MlDsa87,
                 signer.public_key(),
+                1,
             )];
             let anchor =
                 assemble_anchor(500, &leaves(4), Some([5u8; 32]), None, 1, &signer).unwrap();
-            verify_anchor_full(&anchor, &keybook).expect("full verifies");
-            verify_anchor_light(&anchor, &keybook).expect("light verifies");
+            verify_anchor_full(&anchor, &keybook, 1).expect("full verifies");
+            verify_anchor_light(&anchor, &keybook, 1).expect("light verifies");
         }
 
         #[test]
@@ -849,11 +982,12 @@ mod tests {
             let keybook = vec![AnchorKeyEntry::new(
                 AnchorSignatureAlgorithm::MlDsa87,
                 signer.public_key(),
+                1,
             )];
             let mut anchor = assemble_anchor(500, &leaves(4), None, None, 1, &signer).unwrap();
             anchor.height = 501;
-            verify_anchor_full(&anchor, &keybook).expect_err("tampered height must fail full");
-            verify_anchor_light(&anchor, &keybook).expect_err("tampered height must fail light");
+            verify_anchor_full(&anchor, &keybook, 1).expect_err("tampered height must fail full");
+            verify_anchor_light(&anchor, &keybook, 1).expect_err("tampered height must fail light");
         }
 
         #[test]
@@ -864,10 +998,11 @@ mod tests {
             let keybook = vec![AnchorKeyEntry::new(
                 AnchorSignatureAlgorithm::MlDsa87,
                 stranger.public_key(),
+                1,
             )];
-            let err = verify_anchor_full(&anchor, &keybook).unwrap_err();
+            let err = verify_anchor_full(&anchor, &keybook, 1).unwrap_err();
             assert_eq!(err.kind(), "anchor-signer-not-in-keybook");
-            let err = verify_anchor_light(&anchor, &keybook).unwrap_err();
+            let err = verify_anchor_light(&anchor, &keybook, 1).unwrap_err();
             assert_eq!(err.kind(), "anchor-missing-algorithm");
         }
 
@@ -881,7 +1016,7 @@ mod tests {
                 key_epoch: 1,
                 signatures: Vec::new(),
             };
-            verify_anchor_full(&anchor, &[]).expect_err("empty anchor must fail");
+            verify_anchor_full(&anchor, &[], 1).expect_err("empty anchor must fail");
         }
 
         #[test]
@@ -941,9 +1076,11 @@ mod tests {
                 device_count: 6,
                 refusal_history_capacity: 8,
             })
+            // S2: the committee is pinned in state at installation.
+            .with_trusted_devices(identities())
         }
 
-        fn identities() -> Vec<SignerIdentity> {
+        fn identities() -> Vec<crate::settlement::cold_quorum::SignerIdentity> {
             dev_fixture_device_signers()
                 .iter()
                 .map(|d| d.identity.clone())
@@ -952,7 +1089,8 @@ mod tests {
 
         fn certs(state: &ColdWalletState, at_height: u64, reason: &str) -> Vec<DeviceSignature> {
             let mut payload = Vec::new();
-            payload.extend_from_slice(b"BDLM_PQ_ANCHOR_ROTATION_V1");
+            payload.extend_from_slice(b"BDLM_PQ_ANCHOR_ROTATION_V2");
+            payload.extend_from_slice(&state.policy.chain_id.to_le_bytes());
             payload.extend_from_slice(&at_height.to_le_bytes());
             payload.extend_from_slice(&(state.key_epoch as u64).to_le_bytes());
             payload.extend_from_slice(&crate::core::hash::hash_fields_bytes(&[
@@ -973,7 +1111,6 @@ mod tests {
                 &mut cold,
                 1200,
                 "anchor key believed compromised",
-                &identities(),
                 &certification,
             )
             .expect("committee rotation succeeds");
@@ -991,7 +1128,6 @@ mod tests {
                 &mut cold,
                 1200,
                 "attacker wants the key changed",
-                &identities(),
                 &[],
             )
             .unwrap_err();
@@ -1004,20 +1140,13 @@ mod tests {
         fn certificates_from_the_old_epoch_do_not_rotate_again() {
             let mut cold = cold();
             let certs_old = certs(&cold, 1200, "epoch one compromised");
-            rotate_anchor_key_with_committee(
-                &mut cold,
-                1200,
-                "epoch one compromised",
-                &identities(),
-                &certs_old,
-            )
-            .expect("first rotation succeeds");
+            rotate_anchor_key_with_committee(&mut cold, 1200, "epoch one compromised", &certs_old)
+                .expect("first rotation succeeds");
             assert_eq!(cold.key_epoch, 2);
             let err = rotate_anchor_key_with_committee(
                 &mut cold,
                 1300,
                 "replay of the same certificate",
-                &identities(),
                 &certs_old,
             )
             .unwrap_err();
@@ -1045,5 +1174,51 @@ mod tests {
                 crate::consensus::merkle_tree::promote_sha3,
             )
         );
+    }
+    // ---- BLG-0075 (P03-F18) ----
+
+    #[test]
+    fn a_repeated_signature_in_one_anchor_is_refused() {
+        let sig = AnchorSignature {
+            algorithm: AnchorSignatureAlgorithm::MlDsa87,
+            public_key: vec![1u8; 32],
+            signature: vec![2u8; 64],
+        };
+        let err = check_signature_list(&[sig.clone(), sig]).unwrap_err();
+        assert_eq!(err.kind(), "anchor-duplicate-signature");
+    }
+
+    #[test]
+    fn an_oversized_signature_list_is_refused_before_any_verify() {
+        let sig = AnchorSignature {
+            algorithm: AnchorSignatureAlgorithm::MlDsa87,
+            public_key: vec![1u8; 32],
+            signature: vec![2u8; 64],
+        };
+        let list = vec![sig; MAX_ANCHOR_SIGNATURES + 1];
+        let err = check_signature_list(&list).unwrap_err();
+        assert_eq!(err.kind(), "anchor-too-many-signatures");
+    }
+
+    #[test]
+    fn a_stale_epoch_anchor_fails_before_any_verify() {
+        let anchor = PqAnchor {
+            height: 1,
+            aggregate_root: [9u8; 32],
+            stark_root: None,
+            crossdomain_root: None,
+            key_epoch: 7,
+            // A non-empty list: the empty list is refused first, as a
+            // missing algorithm, and this test pins the epoch rule.
+            signatures: vec![AnchorSignature {
+                algorithm: AnchorSignatureAlgorithm::MlDsa87,
+                public_key: vec![1u8; 32],
+                signature: vec![2u8; 64],
+            }],
+        };
+        let err = verify_anchor_full(&anchor, &[], 8).unwrap_err();
+        assert_eq!(err.kind(), "anchor-stale-epoch");
+        let err = verify_anchor_light(&anchor, &[], 8).unwrap_err();
+        assert_eq!(err.kind(), "anchor-stale-epoch");
     }
 }
