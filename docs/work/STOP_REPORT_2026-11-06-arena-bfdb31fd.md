@@ -52,6 +52,8 @@ available for the WP-04 owner to review or cherry-pick with attribution:
   locks.
 - `24b5526`: bind the identity count to the findings table and correct live
   anchors.
+- `18ebf6d`: correct the preserved systemd credential lock to search repeated
+  `Environment=` declarations, not only the first `RUST_LOG` declaration.
 
 No production behavior was changed. No finding is closed by this report.
 The nine pre-fixed observations in PR #21 still require executed regression
@@ -85,10 +87,20 @@ Arena fixes this session to `arena/bfdb31fd-budlum`. The directive's
 records the deviation rather than switching branches. The report path is
 session-specific and does not overlap PR #17 or #19.
 
+## Post-stop queue check
+
+At 2026-11-06T05:26:18Z, main was still `cccf1da1`. PR #21 was closed at
+05:26:06Z. PR #18 remained open on WP-04. The live queue also contained
+WP-01/02/03 claims (#12, #15, #16), WP-05 (#20), WP-06 (#11), WP-12 (#9),
+WP-20 (#13), WP-44 (#14), the storage/codec stream (#8), and stop reports
+(#17, #19, #22). No dependency-free unclaimed package remained. Later cards
+require dependencies that are not merged on this main SHA; an open PR is not
+a merged dependency. This session therefore does not claim another package.
+
 ## Status
 
 - WP-04 in this session: **blocked by duplicate ownership; locks released**.
-- PR #21: close without merge.
+- PR #21: **closed without merge**; branch and handoff commits preserved.
 - Main: unchanged by this report.
 - Package completion, finding closure, CI success and testnet readiness:
   **not claimed**.
