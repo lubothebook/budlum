@@ -117,3 +117,71 @@ jobs:
           from=$(cast rpc --rpc-url http://127.0.0.1:8546 eth_accounts | tr -d '[]"' | cut -d, -f1)
           forge create --root contracts --offline graft/GraftExecutor.sol:GraftExecutor \
             --rpc-url http://127.0.0.1:8546 --unlocked --from "$from" --broadcast
+
+  # The two Rust contract crates are in the tree and, until this job pair
+  # existed, in no workflow: `contracts/object-layer/cosmwasm` and
+  # `contracts/object-layer/svm` are standalone Cargo workspaces, so the root
+  # `cargo build`, `cargo test --workspace` and `cargo clippy --all-targets`
+  # never saw either of them, and the Solidity job above compiles the `.sol`
+  # files next to them. Code that ships as a contract and compiles nowhere is
+  # code no commit is tested against.
+  #
+  # Two jobs rather than one matrix, and the path written out in each: the
+  # `workflows_cover_every_workspace` gate looks for the workspace path in a
+  # build command or a `working-directory`, and a matrix key interpolated as
+  # `${{ matrix.dir }}` is not a statement that CI builds that directory. A
+  # gate that cannot see the build is the state this job pair exists to end.
+  #
+  # A host target is enough for the checks: the chain targets need the chain
+  # vendors' own toolchains, and the logic under test (the fail-closed verifier,
+  # the endpoint state machine) is target-independent.
+  contract-cosmwasm:
+    name: Object-layer contract crate (cosmwasm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-09-12
+        with:
+          toolchain: "1.97.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: object-layer-cosmwasm
+          workspaces: contracts/object-layer/cosmwasm
+      - name: Format, lint, build and test
+        working-directory: contracts/object-layer/cosmwasm
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo build --locked
+          cargo test --locked
+  contract-svm:
+    name: Object-layer contract crate (SVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-09-12
+        with:
+          toolchain: "1.97.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: object-layer-svm
+          workspaces: contracts/object-layer/svm
+      - name: Format, lint, build and test
+        working-directory: contracts/object-layer/svm
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo build --locked
+          cargo test --locked
