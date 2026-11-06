@@ -1,0 +1,5444 @@
+{
+  "_comment": [
+    "The delivery ledger snapshot.",
+    "Recorded from THE BUDLUM DIREKTIF (version 1.0, 2026-11-04) when that document was read.",
+    "The directive does not enter the tree (section 0.1 item 5), so this file is the",
+    "machine-readable form of the three tables the ledgers under docs/ are built from:",
+    "section 15.7 and the section 15.8 cards (one record per work package), section 18",
+    "(one record per Testnet Launch Gate item) and sections 14.3 to 14.6 (one record per",
+    "finding: BLG-001 to BLG-267 and the 44 archive records).",
+    "Titles and requirement statements are English because the tree is English (section",
+    "0.1 item 5). The subject text of a finding stays in the directive; this file carries",
+    "the identifiers a ledger is counted by. Severity tokens S1, S2 and S3 in the archive",
+    "tables are recorded as Critical, High and Medium.",
+    "Nothing here is a status. Status is measured by ops/scripts/live_audit.py."
+  ],
+  "schema": 1,
+  "directive": {
+    "version": "1.0",
+    "date": "2026-11-04"
+  },
+  "package": [
+    {
+      "id": "WP-01",
+      "title": "Live verification: core",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [],
+      "milestone": "M0",
+      "lock_paths": [
+        "docs/audit/live/lane-a.md",
+        "src/tests/audit_lane_a.rs"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-02",
+      "title": "Live verification: storage",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [],
+      "milestone": "M0",
+      "lock_paths": [
+        "docs/audit/live/lane-b.md",
+        "src/tests/audit_lane_b.rs"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-03",
+      "title": "Live verification: execution, BudZero, domains, privacy and AI",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [],
+      "milestone": "M0",
+      "lock_paths": [
+        "docs/audit/live/lane-c.md",
+        "src/tests/audit_lane_c.rs",
+        "budzero/tests/audit_lane_c.rs"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-04",
+      "title": "Live verification: clients, operations, CI, docs and the consolidated state",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [],
+      "milestone": "M0",
+      "lock_paths": [
+        "docs/audit/live/lane-d.md",
+        "docs/audit/LIVE_STATUS.md",
+        "docs/audit/FINDINGS.md",
+        "docs/work/PACKAGES.md",
+        "src/tests/audit_lane_d.rs"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-05",
+      "title": "Concept-name map and counter gate",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-04"
+      ],
+      "milestone": "M1",
+      "lock_paths": [
+        "config/naming/concept_map.toml",
+        "xtask/gates/src/gates/concept_names.rs",
+        ".github/concept-names-baseline.txt",
+        "docs/NAMING.md"
+      ],
+      "card_tests": [
+        "concept_names_gate_catches_injected_name",
+        "concept_names_baseline_only_decreases",
+        "concept_map_owner_is_a_known_package"
+      ],
+      "closes": [
+        "BLG-255"
+      ]
+    },
+    {
+      "id": "WP-06",
+      "title": "Persistence and state-recovery move",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-02"
+      ],
+      "milestone": "M1",
+      "lock_paths": [
+        "src/storage/{db,traits,merkle_trie,pruning,witness_retention}.rs",
+        "src/persistence/",
+        "src/domain/{regeneration_stage,regen_health,regen_mempool}.rs",
+        "src/network/regen_health_tick.rs",
+        "src/chain/state_recovery/",
+        "xtask/gates/src/gates/{regeneration,zkvm_immune_regeneration,regen_health_door}.rs"
+      ],
+      "card_tests": [
+        "persistence_move_is_behaviour_neutral"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-07",
+      "title": "Removal of the legacy storage systems",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-06"
+      ],
+      "milestone": "M1",
+      "lock_paths": [
+        "bud/",
+        "budzero/bud-node/",
+        "src/storage/",
+        "src/domain/{storage_deal,storage_params,deal_open,storage_tx}.rs",
+        "src/chain/{storage_economics_tests,storage_maintenance}.rs",
+        "src/execution/executor.rs",
+        "StorageTx",
+        "src/rpc/server.rs",
+        "proto/budlum/network/protocol.proto",
+        "xtask/gates/src/gates/",
+        "crates/bud-codec/",
+        "tests/vectors/bud3/corpus/",
+        "docs/BUD_STORAGE_ROADMAP.md",
+        "docs/BUD_CONTENT_ENCRYPTION.md",
+        "docs/STORAGE.md"
+      ],
+      "card_tests": [
+        "no_legacy_storage_gate_catches_injected_identifier",
+        "content_registration_refused_until_bud3_ready",
+        "storage_tx_v2_tags_do_not_decode",
+        "rpc_method_table_matches_registered_methods"
+      ],
+      "closes": [
+        "BLG-035",
+        "BLG-045",
+        "BLG-046",
+        "BLG-047",
+        "BLG-073",
+        "BLG-074",
+        "BLG-075",
+        "BLG-076",
+        "BLG-077",
+        "BLG-078",
+        "BLG-079",
+        "BLG-080",
+        "BLG-122",
+        "BLG-123",
+        "BLG-141",
+        "BLG-152",
+        "BLG-153",
+        "BLG-156",
+        "BLG-208",
+        "BLG-209",
+        "BLG-217",
+        "BLG-253",
+        "BLG-254",
+        "BLG-258",
+        "BLG-148"
+      ]
+    },
+    {
+      "id": "WP-08",
+      "title": "Validator classes and the single registry",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-01"
+      ],
+      "milestone": "M1",
+      "lock_paths": [
+        "src/validators/",
+        "src/registry/{role,permissionless}.rs",
+        "src/core/account.rs",
+        "src/core/chain_config.rs",
+        "min_stake",
+        "src/mempool/"
+      ],
+      "card_tests": [
+        "validator_registration_requires_class_min_stake",
+        "mobile_registration_refuses_seat_fields",
+        "change_class_activates_next_epoch",
+        "operator_key_cannot_withdraw_stake",
+        "roles_5_and_9_are_reserved_and_refused",
+        "mobile_duty_tx_lane_is_rate_limited",
+        "duty_lane_budget_is_twenty_percent",
+        "rotate_operator_key_takes_effect_next_epoch",
+        "quota_increase_activates_next_epoch"
+      ],
+      "closes": [
+        "BLG-252",
+        "BLG-253",
+        "BLG-266"
+      ]
+    },
+    {
+      "id": "WP-09",
+      "title": "Execution-environment interface",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-03"
+      ],
+      "milestone": "M1",
+      "lock_paths": [
+        "crates/uel-abi/",
+        "proto/budlum/execution/v1/ee.proto"
+      ],
+      "card_tests": [
+        "uel_abi_frames_are_bounded",
+        "uel_abi_version_mismatch_refused",
+        "uel_abi_golden_messages",
+        "uel_abi_frame"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-10",
+      "title": "B.U.D. 3.0 skeleton and shared types",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-07"
+      ],
+      "milestone": "M2",
+      "lock_paths": [
+        "src/storage/bud3/",
+        "crates/bud-codec/",
+        "proto/budlum/storage/v3/bud3.proto",
+        "tests/vectors/bud3/",
+        "xtask/gates/src/gates/bud3_forbidden_phrases.rs"
+      ],
+      "card_tests": [
+        "content_id_public_is_sha256_and_len",
+        "content_id_sealed_is_keyed",
+        "bud3_limits_are_genesis_parameters",
+        "bud3_forbidden_phrases_gate"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-11",
+      "title": "Mobile core and light client",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-10",
+        "WP-12",
+        "WP-13",
+        "WP-15",
+        "WP-20"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "mobile/core/",
+        "crates/budlum-types/",
+        "src/light_client/"
+      ],
+      "card_tests": [
+        "light_client_follows_handoff_chain",
+        "light_client_refuses_forged_checkpoint",
+        "mobile_core_answers_custody_audit",
+        "mobile_core_presence_signal_verifies",
+        "mobile_core_switches_relay_on_drop",
+        "mobile_core_respects_quota_floor",
+        "mobile_core_builds_for_all_targets"
+      ],
+      "closes": [
+        "BLG-022",
+        "BLG-257",
+        "BLG-259"
+      ]
+    },
+    {
+      "id": "WP-12",
+      "title": "Committee finality, instant seat handover and consensus hardening",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-08"
+      ],
+      "milestone": "M2",
+      "lock_paths": [
+        "src/consensus/",
+        "src/chain/finality.rs",
+        "src/chain/blockchain.rs",
+        "src/security/",
+        "src/validators/committee.rs"
+      ],
+      "card_tests": [
+        "committee_quorum_ignores_validator_count",
+        "seat_table_derives_only_from_finalized_blocks",
+        "conflicting_certificates_imply_one_third_double_sign",
+        "single_validator_seat_cap_is_one_quarter",
+        "seat_handover_limit_per_checkpoint",
+        "participation_omission_is_provable",
+        "sequential_finality_refuses_vote_ahead",
+        "vote_v3_binds_seat_table_version",
+        "hcle_shadow_mode_has_no_effect",
+        "handoff_certificate_signed_by_seat_holders"
+      ],
+      "closes": [
+        "BLG-001",
+        "BLG-018",
+        "BLG-027",
+        "BLG-096",
+        "BLG-132",
+        "BLG-158",
+        "BLG-203",
+        "BLG-206",
+        "BLG-207",
+        "BLG-246",
+        "BLG-259",
+        "BLG-264"
+      ]
+    },
+    {
+      "id": "WP-13",
+      "title": "Presence protocol and suspension",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-12"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "src/validators/presence.rs",
+        "src/registry/liveness.rs",
+        "src/network/",
+        "/budlum/presence/1",
+        "src/chain/blockchain.rs"
+      ],
+      "card_tests": [
+        "presence_aggregate_verifies",
+        "absent_validator_is_suspended_not_slashed",
+        "resume_restores_after_one_epoch",
+        "presence_double_sign_is_slashed_one_percent",
+        "liveness_report_no_longer_slashes",
+        "presence_window_hours_convert_to_epochs"
+      ],
+      "closes": [
+        "BLG-251"
+      ]
+    },
+    {
+      "id": "WP-14",
+      "title": "Instant duty handover and disaster mode",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-12",
+        "WP-13",
+        "WP-20",
+        "WP-21"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "src/validators/handover.rs",
+        "src/storage/bud3/{custody,repair}.rs",
+        "src/consensus/pos.rs",
+        "tests/churn/"
+      ],
+      "card_tests": [
+        "proposer_round_handover",
+        "repair_task_handover_after_20_blocks",
+        "custody_assignment_handover_after_3_epochs",
+        "presence_aggregate_fallback_next_block",
+        "ten_percent_full_departure_keeps_finality",
+        "all_mobile_departure_does_not_touch_finality",
+        "finality_stall_enters_recovery_mode"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-15",
+      "title": "Network: NAT traversal and P2P hardening",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-01"
+      ],
+      "milestone": "M2",
+      "lock_paths": [
+        "src/network/",
+        "Cargo.toml",
+        "config/*.toml",
+        "[relay]",
+        "src/core/chain_config.rs",
+        "SecurityConfig"
+      ],
+      "card_tests": [
+        "p2p_bincode_is_bounded",
+        "relay_reservation_limits_hold",
+        "autonat_reports_private_behind_nat",
+        "dcutr_upgrade_in_simulated_nat",
+        "kademlia_refuses_private_addresses_on_public_network",
+        "vote_message_utf8_slicing_is_safe"
+      ],
+      "closes": [
+        "BLG-017",
+        "BLG-033",
+        "BLG-034",
+        "BLG-108",
+        "BLG-247",
+        "BLG-205"
+      ]
+    },
+    {
+      "id": "WP-16",
+      "title": "Genesis, ceremony tool and economics",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-08"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "src/chain/genesis.rs",
+        "src/tokenomics/",
+        "config/testnet-genesis.json",
+        "config/testnet.toml",
+        "config/archive.toml",
+        "xtask/tools/src/",
+        "testnet-genesis",
+        "src/registry/"
+      ],
+      "card_tests": [
+        "genesis_supply_audit_counts_every_source",
+        "ceremony_refuses_fewer_than_eight_full_validators",
+        "pool_split_is_40_50_10",
+        "testnet_public_listener_needs_no_key",
+        "archive_profile_chain_id_matches",
+        "genesis_parameters_are_labelled_testnet_default",
+        "vesting_gate_covers_external_collateral"
+      ],
+      "closes": [
+        "BLG-002",
+        "BLG-003",
+        "BLG-005",
+        "BLG-006",
+        "BLG-008",
+        "BLG-094",
+        "BLG-140",
+        "BLG-263",
+        "BLG-266"
+      ]
+    },
+    {
+      "id": "WP-17",
+      "title": "State transition and chain hardening",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-01",
+        "WP-06"
+      ],
+      "milestone": "M2",
+      "lock_paths": [
+        "src/chain/",
+        "src/core/",
+        "src/mempool/",
+        "src/execution/executor.rs",
+        "src/sharding/",
+        "src/main.rs",
+        "src/persistence/",
+        "src/tests/"
+      ],
+      "card_tests": [],
+      "closes": [
+        "BLG-007",
+        "BLG-019",
+        "BLG-020",
+        "BLG-021",
+        "BLG-023",
+        "BLG-028",
+        "BLG-031",
+        "BLG-041",
+        "BLG-042",
+        "BLG-044",
+        "BLG-065",
+        "BLG-066",
+        "BLG-088",
+        "BLG-089",
+        "BLG-090",
+        "BLG-100",
+        "BLG-101",
+        "BLG-102",
+        "BLG-103",
+        "BLG-104",
+        "BLG-107",
+        "BLG-113",
+        "BLG-118",
+        "BLG-119",
+        "BLG-125",
+        "BLG-128",
+        "BLG-147",
+        "BLG-151",
+        "BLG-167",
+        "BLG-183",
+        "BLG-184",
+        "BLG-196",
+        "BLG-197",
+        "BLG-202"
+      ]
+    },
+    {
+      "id": "WP-18",
+      "title": "Segmentation and the RFC 6330 fountain code",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-10"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "src/storage/bud3/{segment,fountain}.rs",
+        "src/storage/qr_carousel.rs",
+        "tests/vectors/bud3/fountain/",
+        "Cargo.toml",
+        "raptorq"
+      ],
+      "card_tests": [
+        "bud3_fountain_acceptance",
+        "bud3_old_ceilings_are_gone",
+        "bud3_sixteen_gib_object",
+        "fountain_golden_vectors_lock_crate_version",
+        "segment_offsets_are_u64",
+        "bud3_symbol_decode"
+      ],
+      "closes": [
+        "BLG-213",
+        "BLG-216"
+      ]
+    },
+    {
+      "id": "WP-19",
+      "title": "BOF-1 object format, QR presentation and video commitment",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-10",
+        "WP-24"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "src/storage/bud3/{object,bof1,frame,qr,video,two_path}.rs",
+        "src/storage/{qr_payload,qr_recipe,three_recipe,qr_reemit,emit,three_pipe,qr_frame,qr_encode,qr_matrix,qr_png,qr_receive,qr_verify,qr_verify_indep,qr_video}.rs",
+        "tests/vectors/bud3/bof1/",
+        "xtask/gates/src/gates/{bud3_object_is_universal,bud3_qr_is_presentation}.rs"
+      ],
+      "card_tests": [
+        "bud3_every_format_round_trips",
+        "bud3_two_paths_are_identical",
+        "bud3_logical_equals_optical",
+        "bud3_lossy_channel",
+        "bud3_golden_vectors_cross_arch",
+        "bud3_information_law_canary",
+        "bud3_text_format_round_trips",
+        "bud3_parsers_fuzz",
+        "video_commitment_ignores_png_bytes"
+      ],
+      "closes": [
+        "BLG-048",
+        "BLG-137",
+        "BLG-144",
+        "BLG-163",
+        "BLG-210",
+        "BLG-211",
+        "BLG-214",
+        "BLG-215",
+        "BLG-218"
+      ]
+    },
+    {
+      "id": "WP-20",
+      "title": "Class-aware placement, custody proof and repair",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-08",
+        "WP-18"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "src/storage/bud3/{placement,custody,repair,maintenance,symbol_protocol}.rs",
+        "src/storage/assignment.rs",
+        "xtask/tools/src/placement_table.rs",
+        "config/testnet-genesis.json",
+        "placement_table",
+        "tests/vectors/bud3/{placement,custody}/",
+        "xtask/gates/src/gates/{bud3_placement,bud3_repair_fires,bud3_custody_proofs}.rs"
+      ],
+      "card_tests": [
+        "bud3_durability_simulation",
+        "bud3_network_shrink",
+        "bud3_mobile_floor_holds",
+        "bud3_mobile_churn_no_loss",
+        "bud3_custody_proof_verifies",
+        "bud3_missed_audit_does_not_slash",
+        "bud3_bad_repair_is_slashed",
+        "bud3_placement_table_reproduces",
+        "bud3_decline_content_reassigns",
+        "release_shares_lowers_quota_without_penalty"
+      ],
+      "closes": [
+        "BLG-220"
+      ]
+    },
+    {
+      "id": "WP-21",
+      "title": "Upload, playback, StorageTx v3 and RPC",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-18",
+        "WP-19",
+        "WP-20"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "src/storage/bud3/{upload,view,volume,tx,rpc,content_gateway}.rs",
+        "src/storage/bud3/content_ref.rs",
+        "src/storage/{three_nft,three_rpc,three_reveal,reveal_gateway,three_gate,three_hooks,three_meter,three_visibility,content_id}.rs",
+        "src/domain/storage_tx.rs",
+        "src/rpc/",
+        "xtask/gates/src/gates/{bud3_paid_view,bud_e2e}.rs"
+      ],
+      "card_tests": [
+        "bud3_e2e_upload_register_view",
+        "bud3_e2e_upload_session_limits",
+        "bud3_e2e_reveal_collects_from_network",
+        "bud3_aggregation_volume",
+        "bud3_upload_memory_ceiling",
+        "bud3_closed_features_refuse"
+      ],
+      "closes": [
+        "BLG-161",
+        "BLG-168",
+        "BLG-208",
+        "BLG-212"
+      ]
+    },
+    {
+      "id": "WP-22",
+      "title": "Deduplication, reference, deletion, sealed content and permissions",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-21"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "src/storage/bud3/{dedup,refcount,delete,seal,keys,grants}.rs",
+        "src/storage/{key_package,payload_crypt,view_grant,social_delete}.rs",
+        "xtask/gates/src/gates/content_encryption_is_declared_and_bound.rs"
+      ],
+      "card_tests": [
+        "bud3_sealed_needs_grant",
+        "bud3_burn_deletes_at_zero",
+        "bud3_public_dedup",
+        "bud3_sealed_isolation",
+        "bud3_crypto_shredding",
+        "bud3_dependency_rules",
+        "bud3_server_side_dedup",
+        "sealed_header_hides_length",
+        "grant_rows_are_unlinkable",
+        "revoked_grant_package_is_not_served"
+      ],
+      "closes": [
+        "BLG-049",
+        "BLG-221",
+        "BLG-237",
+        "BLG-238",
+        "BLG-245"
+      ]
+    },
+    {
+      "id": "WP-23",
+      "title": "B.U.D. 3.0 migration of the dependent modules",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-22"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "src/bns/",
+        "src/socialfi/",
+        "src/pollen/",
+        "src/data_market/",
+        "src/deed/",
+        "src/education_domain/",
+        "src/budlumxyz/",
+        "src/app_registry/",
+        "src/gateway/"
+      ],
+      "card_tests": [
+        "bns_resolves_bud3_content",
+        "socialfi_nft_burn_needs_owner",
+        "data_market_sale_uses_grant",
+        "education_domain_registers_object",
+        "gateway_tree_is_gone"
+      ],
+      "closes": [
+        "BLG-064",
+        "BLG-109",
+        "BLG-110",
+        "BLG-129",
+        "BLG-212",
+        "BLG-261",
+        "BLG-262"
+      ]
+    },
+    {
+      "id": "WP-24",
+      "title": "A0 codec register and access layer",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-10"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "crates/bud-codec/",
+        "src/storage/bud3/{access_tiering,replace}.rs",
+        "src/storage/{transformed,dictionary,derived,living_threshold}.rs",
+        "tests/vectors/bud3/codec/",
+        "xtask/gates/src/gates/derived_content.rs"
+      ],
+      "card_tests": [
+        "bud3_codec_vectors",
+        "bud3_cost_regression",
+        "bud3_object_replacement",
+        "bud3_bud2_transforms_round_trip",
+        "bud3_chain_content_to_video_to_object",
+        "bud3_fast_probe_skips_slow_candidates",
+        "bud3_dictionary_training_reproduces",
+        "closed_codecs_refuse_on_testnet"
+      ],
+      "closes": [
+        "BLG-133",
+        "BLG-135",
+        "BLG-219",
+        "BLG-222"
+      ]
+    },
+    {
+      "id": "WP-25",
+      "title": "Storage fee, Custody Fund and custody rewards",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-16",
+        "WP-21"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "src/storage/bud3/fees.rs",
+        "src/storage/three_regime.rs",
+        "src/tokenomics/",
+        "xtask/gates/src/gates/{bud3_fee_uses_physical_bytes,bud3_custody_rewards}.rs"
+      ],
+      "card_tests": [
+        "storage_fee_formula_matches_section_11_5",
+        "endowment_pays_only_passed_audits",
+        "missed_audit_share_returns_to_pool",
+        "gateway_share_is_five_percent",
+        "decentralization_bytes_paid_by_pool",
+        "storage_rewards_conserve_supply"
+      ],
+      "closes": [
+        "BLG-209"
+      ]
+    },
+    {
+      "id": "WP-26",
+      "title": "Execution Coordinator and EE workers",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-07",
+        "WP-09"
+      ],
+      "milestone": "M2",
+      "lock_paths": [
+        "src/execution/coordinator/",
+        "src/execution/executor.rs",
+        "Execute",
+        "Foreign",
+        "src/core/account.rs",
+        "frac_attos",
+        "src/core/transaction.rs",
+        "src/mempool/",
+        "execution/",
+        "src/settlement/global_block.rs",
+        "execution_root"
+      ],
+      "card_tests": [
+        "uel_worker_panic_yields_fault_receipt",
+        "uel_worker_death_does_not_commit",
+        "uel_bud_conservation",
+        "uel_cross_arch_roots_equal",
+        "coordinator_overlay_rolls_back_frame",
+        "frac_attos_stays_below_1e12",
+        "execution_root_binds_every_namespace",
+        "ee_feature_flag_freezes_new_deploys"
+      ],
+      "closes": [
+        "BLG-248",
+        "BLG-250",
+        "BLG-256",
+        "BLG-260"
+      ]
+    },
+    {
+      "id": "WP-27",
+      "title": "EVM execution environment and the foreign envelope",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-26"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "execution/evm/",
+        "src/execution/coordinator/foreign/",
+        "xtask/gates/src/gates/classical_crypto_is_paired.rs",
+        "contracts/uel/"
+      ],
+      "card_tests": [
+        "uel_alias_collision_refused",
+        "uel_foreign_tx_replay_refused",
+        "uel_quantum_alert_closes_foreign_lane",
+        "foreign_account_cannot_touch_pq_holdings",
+        "adopt_moves_holdings_once",
+        "evm_blob_tx_refused",
+        "evm_state_growth_is_metered"
+      ],
+      "closes": [
+        "BLG-267"
+      ]
+    },
+    {
+      "id": "WP-28",
+      "title": "Ethereum JSON-RPC gateway",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-27"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "src/rpc/compat/ethereum/",
+        "config/*.toml",
+        "[compat.ethereum]"
+      ],
+      "card_tests": [
+        "eth_rpc_method_table_is_complete",
+        "eth_get_proof_returns_method_not_found",
+        "eth_filters_are_bounded",
+        "foundry_script_runs_unchanged",
+        "viem_and_ethers_send_unchanged",
+        "hardhat_deploy_runs_unchanged"
+      ],
+      "closes": [
+        "BLG-249"
+      ]
+    },
+    {
+      "id": "WP-29",
+      "title": "WASM (CosmWasm ABI) and the Cosmos RPC subset",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-26"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "execution/wasm/",
+        "src/execution/coordinator/foreign/cosmos.rs",
+        "src/rpc/compat/cosmos/"
+      ],
+      "card_tests": [
+        "cw_plus_suite_passes",
+        "cosmjs_signing_client_runs_unchanged",
+        "wasm_float_code_refused",
+        "wasm_ibc_entry_points_refused",
+        "uel_foreign_tx_replay_refused"
+      ],
+      "closes": [
+        "BLG-249"
+      ]
+    },
+    {
+      "id": "WP-30",
+      "title": "Universal Call and the Universal Asset Registry",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-27",
+        "WP-29"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "src/execution/coordinator/universal_call.rs",
+        "src/execution/coordinator/assets/",
+        "execution/evm/src/precompile_universal.rs",
+        "execution/wasm/src/budlum_msg.rs",
+        "contracts/uel/"
+      ],
+      "card_tests": [
+        "uel_evm_calls_wasm_atomically",
+        "uel_reentrancy_forbidden",
+        "uel_depth_limit",
+        "uel_pointer_holds_no_balance",
+        "pointer_allowance_lives_at_home",
+        "asset_id_is_deterministic",
+        "universal_call_log_is_visible_to_evm_indexers"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-31",
+      "title": "SVM and the Solana RPC subset",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-26"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "execution/svm/",
+        "src/execution/coordinator/foreign/solana.rs",
+        "src/rpc/compat/solana/"
+      ],
+      "card_tests": [
+        "uel_svm_alias_is_off_curve",
+        "spl_token_suite_passes",
+        "anchor_deploy_and_test_run_unchanged",
+        "solana_web3js_transfer_runs_unchanged",
+        "uel_foreign_tx_replay_refused",
+        "svm_jit_is_disabled"
+      ],
+      "closes": [
+        "BLG-249"
+      ]
+    },
+    {
+      "id": "WP-32",
+      "title": "Move (Aptos) and the Aptos REST subset",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-26"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "execution/move/",
+        "src/execution/coordinator/foreign/aptos.rs",
+        "src/rpc/compat/aptos/",
+        "execution/move/deny.toml"
+      ],
+      "card_tests": [
+        "aptos_framework_move_tests_pass",
+        "aptos_cli_publish_and_run_unchanged",
+        "aptos_ts_sdk_transfer_runs_unchanged",
+        "move_alias_scheme_byte_is_unused",
+        "uel_foreign_tx_replay_refused"
+      ],
+      "closes": [
+        "BLG-249"
+      ]
+    },
+    {
+      "id": "WP-33",
+      "title": "BudZero execution environment and BudZero soundness",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-26"
+      ],
+      "milestone": "M3",
+      "lock_paths": [
+        "budzero/",
+        "bud-node",
+        "execution/budzero/",
+        "src/execution/zkvm.rs",
+        "src/execution/budzero_ee/"
+      ],
+      "card_tests": [
+        "verify_merkle_is_closed_on_testnet",
+        "verify_inference_is_closed_on_testnet",
+        "budzero_ee_stateful_program_persists",
+        "budzero_sender_is_four_words"
+      ],
+      "closes": [
+        "BLG-036",
+        "BLG-037",
+        "BLG-038",
+        "BLG-039",
+        "BLG-040",
+        "BLG-067",
+        "BLG-069",
+        "BLG-114",
+        "BLG-115",
+        "BLG-136",
+        "BLG-139",
+        "BLG-142",
+        "BLG-148",
+        "BLG-154",
+        "BLG-159",
+        "BLG-162",
+        "BLG-182",
+        "BLG-186",
+        "BLG-191",
+        "BLG-198",
+        "BLG-248"
+      ]
+    },
+    {
+      "id": "WP-34",
+      "title": "Migration Kit",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-28"
+      ],
+      "milestone": "not a milestone condition",
+      "lock_paths": [
+        "src/cross_domain/evm/account_proof.rs",
+        "src/execution/coordinator/migration/",
+        "src/bin/bud-migrate.rs"
+      ],
+      "card_tests": [
+        "uel_migration_requires_deployer_authorization",
+        "migration_preserves_address_code_and_storage_root",
+        "migration_refuses_occupied_address",
+        "evm_account_proof_reads_code_hash",
+        "evm_storage_proof_refuses_wrong_slot"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-35",
+      "title": "Conformance, gas calibration and cross-architecture",
+      "lane": "C",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-27",
+        "WP-29",
+        "WP-31",
+        "WP-32",
+        "WP-33"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "execution/conformance/",
+        ".github/workflows/conformance-nightly.yml",
+        "docs/EXECUTION_LIMITS.md"
+      ],
+      "card_tests": [
+        "uel_gas_calibration_bound",
+        "uel_cross_arch_roots_equal"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-36",
+      "title": "Android validator application",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-11"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "mobile/android/",
+        ".github/workflows/mobile.yml"
+      ],
+      "card_tests": [
+        "android_policy_wifi_only_by_default",
+        "android_thermal_pause_cannot_be_disabled",
+        "android_keys_are_keystore_wrapped",
+        "android_leave_releases_shares_and_unbonds",
+        "android_low_space_releases_shares",
+        "android_onboarding_reaches_registered_state",
+        "android_workmanager_answers_audit_when_service_stopped"
+      ],
+      "closes": [
+        "BLG-257",
+        "BLG-265"
+      ]
+    },
+    {
+      "id": "WP-37",
+      "title": "Mobile device matrix and field test",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-36"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "mobile/android/devicetests/",
+        "mobile/tools/log-analyzer/",
+        "docs/MOBILE_DEVICE_MATRIX.md"
+      ],
+      "card_tests": [
+        "android_specialuse_service_runs_24h",
+        "android_battery_budget",
+        "mobile_nat_matrix",
+        "device_log_analyzer_golden_reports"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-38",
+      "title": "iOS opportunistic application",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-11"
+      ],
+      "milestone": "not a milestone condition",
+      "lock_paths": [
+        "mobile/ios/",
+        ".github/workflows/mobile-ios.yml"
+      ],
+      "card_tests": [
+        "ios_bg_task_answers_audit",
+        "ios_quota_cap_is_8_gib",
+        "ios_class_is_opportunistic"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-39",
+      "title": "Wallet core and CLI",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-08",
+        "WP-21",
+        "WP-27"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "crates/wallet-core/",
+        "src/wallet/",
+        "src/cli/",
+        "src/bin/bud.rs",
+        "src/developer_os.rs",
+        "src/project_manifest.rs"
+      ],
+      "card_tests": [
+        "cli_storage_upload_view_round_trip",
+        "cli_validator_register_mobile_class",
+        "cli_exec_evm_deploy_and_call",
+        "cli_alias_show_matches_coordinator",
+        "wallet_refuses_12_word_seed",
+        "wallet_mnemonic_is_nfkd_normalised",
+        "cli_fee_default_reads_network_base_fee"
+      ],
+      "closes": [
+        "BLG-026",
+        "BLG-098",
+        "BLG-117"
+      ]
+    },
+    {
+      "id": "WP-40",
+      "title": "Explorer and indexer",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-21",
+        "WP-26"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "crates/budscan/",
+        "crates/budlum-explorer/",
+        "src/bin/budlum-indexer*",
+        "xtask/gates/src/gates/{budscan_parity,budscan_patchset}.rs",
+        "explorer_parity",
+        "explorer_patchset"
+      ],
+      "card_tests": [
+        "explorer_parity",
+        "explorer_patchset",
+        "explorer_shows_object_placement_with_proof",
+        "explorer_marks_foreign_accounts_classical",
+        "indexer_indexes_universal_call_tree"
+      ],
+      "closes": [
+        "BLG-068",
+        "BLG-121",
+        "BLG-143",
+        "BLG-169"
+      ]
+    },
+    {
+      "id": "WP-41",
+      "title": "Faucet and operations",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-16"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "src/bin/budlum-faucet*",
+        "ops/",
+        "config/testnet.toml",
+        "release/"
+      ],
+      "card_tests": [
+        "faucet_limits_hold",
+        "faucet_pow_difficulty_adjusts",
+        "faucet_sends_signed_transfer_only",
+        "ops_compose_testnet_profile_boots",
+        "alert_rules_reference_existing_metrics"
+      ],
+      "closes": [
+        "BLG-011",
+        "BLG-095",
+        "BLG-030"
+      ]
+    },
+    {
+      "id": "WP-42",
+      "title": "CI, gates and supply chain",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-04"
+      ],
+      "milestone": "M2",
+      "lock_paths": [
+        ".github/workflows/",
+        "xtask/",
+        "fuzz/",
+        "kani/",
+        "benches/",
+        "supply-chain/",
+        "deny.toml"
+      ],
+      "card_tests": [
+        "workflows_cover_every_workspace",
+        "nightly_workflows_are_required"
+      ],
+      "closes": [
+        "BLG-012",
+        "BLG-013",
+        "BLG-014",
+        "BLG-015",
+        "BLG-016",
+        "BLG-081",
+        "BLG-082",
+        "BLG-083",
+        "BLG-084",
+        "BLG-085",
+        "BLG-086",
+        "BLG-087",
+        "BLG-097",
+        "BLG-170",
+        "BLG-171",
+        "BLG-172",
+        "BLG-174",
+        "BLG-175",
+        "BLG-176",
+        "BLG-177",
+        "BLG-178",
+        "BLG-179",
+        "BLG-180",
+        "BLG-181",
+        "BLG-187",
+        "BLG-188",
+        "BLG-189",
+        "BLG-193",
+        "BLG-254"
+      ]
+    },
+    {
+      "id": "WP-43",
+      "title": "Documentation, README and the TLG report",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-46",
+        "WP-47",
+        "WP-48"
+      ],
+      "milestone": "M6",
+      "lock_paths": [
+        "docs/",
+        "README.md",
+        "README.tr.md",
+        "assets/",
+        "budzero/ARCHITECTURE.md",
+        "budzero/README.md",
+        "xtask/gates/src/gates/{readme_definition_block_is_verbatim,readme_has_no_placeholders,readme_claims_are_wired,badges_current}.rs"
+      ],
+      "card_tests": [
+        "readme_definition_block_is_verbatim",
+        "readme_has_no_placeholders",
+        "readme_claims_are_wired",
+        "badges_current",
+        "concept_names",
+        "absolute",
+        "docs_links_resolve"
+      ],
+      "closes": [
+        "BLG-092",
+        "BLG-231",
+        "BLG-241",
+        "BLG-255"
+      ]
+    },
+    {
+      "id": "WP-44",
+      "title": "Domains, bridge, settlement and contracts",
+      "lane": "A",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-01"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "src/domain/",
+        "src/cross_domain/",
+        "src/settlement/",
+        "src/relayer/",
+        "src/registry/{identity,poa_}*",
+        "contracts/",
+        "docs/{MIKORIZA,GRAFT}.md",
+        "docs/SHARED_SECURITY.md",
+        "docs/APP_BINDING.md"
+      ],
+      "card_tests": [
+        "zk_domain_refuses_empty_halt_proof",
+        "bridge_is_closed_on_testnet",
+        "bridge_e2e_lock_mint_burn_unlock",
+        "ethereum_sync_committee_is_closed_on_testnet",
+        "shared_security_is_closed_on_testnet",
+        "app_binding_is_closed_on_testnet"
+      ],
+      "closes": [
+        "BLG-024",
+        "BLG-043",
+        "BLG-050",
+        "BLG-051",
+        "BLG-052",
+        "BLG-053",
+        "BLG-054",
+        "BLG-055",
+        "BLG-056",
+        "BLG-057",
+        "BLG-058",
+        "BLG-091",
+        "BLG-105",
+        "BLG-116",
+        "BLG-120",
+        "BLG-127",
+        "BLG-130",
+        "BLG-131",
+        "BLG-134",
+        "BLG-138",
+        "BLG-146",
+        "BLG-155",
+        "BLG-190",
+        "BLG-194",
+        "BLG-195",
+        "BLG-199",
+        "BLG-204",
+        "BLG-205",
+        "BLG-235"
+      ]
+    },
+    {
+      "id": "WP-45",
+      "title": "Privacy, AI and account abstraction: the testnet boundary",
+      "lane": "B",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-22"
+      ],
+      "milestone": "M4",
+      "lock_paths": [
+        "src/privacy/",
+        "src/account_abstraction/",
+        "src/prover/",
+        "src/ai/",
+        "src/ai_inference/",
+        "crates/ai-inference/",
+        "crates/note-packing/",
+        "crates/bpqs/",
+        "src/execution/executor.rs",
+        "privacy_transfers_enabled"
+      ],
+      "card_tests": [
+        "private_transfer_is_closed_on_testnet",
+        "note_registry_is_closed_on_testnet",
+        "ai_execution_proof_is_closed_on_testnet",
+        "ai_committee_uses_next_epoch_randomness",
+        "ai_commit_reveal_punishes_copying",
+        "ai_ranking_uses_integers",
+        "ai_layer_is_closed_on_testnet"
+      ],
+      "closes": [
+        "BLG-025",
+        "BLG-059",
+        "BLG-060",
+        "BLG-061",
+        "BLG-062",
+        "BLG-063",
+        "BLG-070",
+        "BLG-071",
+        "BLG-072",
+        "BLG-093",
+        "BLG-106",
+        "BLG-111",
+        "BLG-112",
+        "BLG-124",
+        "BLG-126",
+        "BLG-145",
+        "BLG-149",
+        "BLG-157",
+        "BLG-160",
+        "BLG-164",
+        "BLG-165",
+        "BLG-166",
+        "BLG-173",
+        "BLG-185",
+        "BLG-201",
+        "BLG-225",
+        "BLG-224",
+        "BLG-223",
+        "BLG-228",
+        "BLG-229",
+        "BLG-240"
+      ]
+    },
+    {
+      "id": "WP-46",
+      "title": "Ceremony rehearsal, rehearsal network and measurements",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "M4"
+      ],
+      "milestone": "M5",
+      "lock_paths": [
+        "ops/rehearsal/",
+        "docs/rehearsal/",
+        "config/rehearsal-genesis.json"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-47",
+      "title": "Independent review 1: core and storage",
+      "lane": "Cross (C or D)",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "M4"
+      ],
+      "milestone": "M5",
+      "lock_paths": [
+        "docs/audit/REVIEW_1.md"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-48",
+      "title": "Independent review 2: execution, mobile and clients",
+      "lane": "Cross (A or B)",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "M4"
+      ],
+      "milestone": "M5",
+      "lock_paths": [
+        "docs/audit/REVIEW_2.md"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-49",
+      "title": "Universal Object Layer",
+      "lane": "A",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "M7",
+        "WP-30",
+        "WP-44"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "src/object_layer/",
+        "src/settlement/{registries,global_block}.rs",
+        "src/cross_domain/external/{spec,profile}.rs",
+        "src/domain/types.rs",
+        "charter",
+        "contracts/object-layer/",
+        "src/sdk/object_layer/"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-50",
+      "title": "Move (Sui dialect) execution environment",
+      "lane": "C",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-35"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "execution/move-sui/",
+        "src/rpc/compat/sui/"
+      ],
+      "card_tests": [
+        "uel_conformance_move_sui",
+        "sui_cli_publish_runs_unchanged"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-51",
+      "title": "Cairo execution environment",
+      "lane": "C",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-35"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "execution/cairo/",
+        "src/rpc/compat/starknet/"
+      ],
+      "card_tests": [
+        "uel_conformance_cairo",
+        "starknet_foundry_declare_and_deploy_unchanged"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-52",
+      "title": "SVM and Move pointers",
+      "lane": "C",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-30",
+        "WP-31",
+        "WP-32"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "src/execution/coordinator/assets/",
+        "execution/svm/src/pointer/",
+        "execution/move/src/pointer/"
+      ],
+      "card_tests": [
+        "svm_pointer_holds_no_balance",
+        "move_pointer_holds_no_balance",
+        "pointer_allowance_lives_at_home"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-53",
+      "title": "NEAR WASM, PolkaVM, TVM, UTXO script and Plutus",
+      "lane": "C",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-35"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "execution/{near,polkavm,tvm,utxo,plutus}/"
+      ],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-54",
+      "title": "Shared compression context, extra codecs and confidential deduplication",
+      "lane": "B",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-22",
+        "WP-24"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "crates/bud-codec/",
+        "src/storage/bud3/{compression_context,private_dedup}.rs"
+      ],
+      "card_tests": [
+        "bud3_context_codec_vectors",
+        "bud3_context_rotation_keeps_content_id",
+        "bud3_context_burned_corpus_leaves",
+        "bud3_context_fee_goes_to_pool",
+        "bud3_private_dedup_rate_limited",
+        "bud3_private_dedup_needs_ownership_proof",
+        "bud3_private_dedup_hides_match_from_public"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-55",
+      "title": "Live streaming",
+      "lane": "B",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-21"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "src/storage/bud3/live.rs",
+        "src/storage/bud3/bof1.rs"
+      ],
+      "card_tests": [
+        "bud3_live_stream"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-56",
+      "title": "BudZero privacy core, predicate proofs, consent and PTP-1",
+      "lane": "B",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-22",
+        "WP-33"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "budzero/bud-proof/",
+        "budzero/bud-vm/",
+        "budzero/bud-isa/",
+        "budzero/bud-state/",
+        "crates/note-packing/",
+        "budzero/predicates/",
+        "src/storage/bud3/{seal,grants,consent,escrow}.rs",
+        "src/privacy/",
+        "crates/wallet-core/"
+      ],
+      "card_tests": [],
+      "closes": [
+        "BLG-223",
+        "BLG-224",
+        "BLG-225",
+        "BLG-226",
+        "BLG-230",
+        "BLG-232",
+        "BLG-236",
+        "BLG-237",
+        "BLG-242",
+        "BLG-243",
+        "BLG-245"
+      ]
+    },
+    {
+      "id": "WP-57",
+      "title": "AI Verification Layer",
+      "lane": "A",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-45",
+        "WP-56"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "src/ai/",
+        "src/ai_inference/",
+        "crates/ai-inference/",
+        "budzero/",
+        "VerifyInference"
+      ],
+      "card_tests": [],
+      "closes": [
+        "BLG-227",
+        "BLG-228",
+        "BLG-229",
+        "BLG-240",
+        "BLG-244"
+      ]
+    },
+    {
+      "id": "WP-58",
+      "title": "F-Droid and reproducible Android build",
+      "lane": "D",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-36"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "mobile/android/fdroid/",
+        "mobile/android/build.gradle.kts"
+      ],
+      "card_tests": [
+        "android_reproducible_build_matches"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-59",
+      "title": "Parallel execution",
+      "lane": "C",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-35"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "src/execution/coordinator/scheduler/"
+      ],
+      "card_tests": [
+        "parallel_schedule_equals_sequential_root",
+        "parallel_scheduler_is_deterministic_across_arch"
+      ],
+      "closes": []
+    },
+    {
+      "id": "WP-60",
+      "title": "BudZero recursion, RV32, precompiles, domain finality proof and block batch proof",
+      "lane": "C",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-56"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [
+        "budzero/",
+        "budzero/bud-sigagg/",
+        "budzero/bud-pul/",
+        "src/cross_domain/external/zkvm_proof.rs",
+        "src/cross_domain/evm/sync_committee.rs",
+        "src/settlement/",
+        "src/light_client/"
+      ],
+      "card_tests": [],
+      "closes": [
+        "BLG-233",
+        "BLG-234",
+        "BLG-235",
+        "BLG-239"
+      ]
+    },
+    {
+      "id": "WP-61",
+      "title": "RPC and cryptography hardening",
+      "lane": "D",
+      "layer": "T-Opening",
+      "tlg": true,
+      "depends_on": [
+        "WP-01"
+      ],
+      "milestone": "M2",
+      "lock_paths": [
+        "src/rpc/",
+        "compat/",
+        "src/crypto/"
+      ],
+      "card_tests": [
+        "rpc_every_method_has_success_and_refusal_test",
+        "cors_wildcard_does_not_reflect_headers",
+        "rpc_serialization_error_is_explicit"
+      ],
+      "closes": [
+        "BLG-004",
+        "BLG-009",
+        "BLG-010",
+        "BLG-029",
+        "BLG-030",
+        "BLG-032",
+        "BLG-099",
+        "BLG-150",
+        "BLG-192",
+        "BLG-200"
+      ]
+    },
+    {
+      "id": "WP-62",
+      "title": "Universal Object Layer: CosmWasm and Cosmos SDK family",
+      "lane": "A",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-49",
+        "WP-29"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-63",
+      "title": "Universal Object Layer: SVM family",
+      "lane": "A",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-49",
+        "WP-31"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [],
+      "card_tests": [],
+      "closes": []
+    },
+    {
+      "id": "WP-64",
+      "title": "Universal Object Layer: Move family",
+      "lane": "A",
+      "layer": "T-Expansion",
+      "tlg": false,
+      "tlg_note": "Beta: it does not hold the opening",
+      "depends_on": [
+        "WP-49",
+        "WP-32"
+      ],
+      "milestone": "after the opening",
+      "lock_paths": [],
+      "card_tests": [],
+      "closes": []
+    }
+  ],
+  "tlg": [
+    {
+      "id": "TLG-01",
+      "requirement": "No Critical or High finding is open. A finding that stays open is covered by a feature closed on the testnet, and a test proves the closure.",
+      "evidence": "docs/audit/FINDINGS.md count and closure tests",
+      "packages": []
+    },
+    {
+      "id": "TLG-02",
+      "requirement": "Every Closed or Conditionally closed feature of section 1.5 passes its `<feature>_is_closed_on_testnet` test.",
+      "evidence": "CI",
+      "packages": []
+    },
+    {
+      "id": "TLG-03",
+      "requirement": "No legacy storage code remains in the tree.",
+      "evidence": "no_legacy_storage gate",
+      "packages": [
+        "WP-07"
+      ]
+    },
+    {
+      "id": "TLG-04",
+      "requirement": "The B.U.D. 3.0 acceptance tests pass: T1 to T12, T14 to T26 and T34 to T41. The nightly tests T3, T4, T6, T7 and T17 passed on each of the last 7 nights.",
+      "evidence": "CI",
+      "packages": [
+        "WP-18",
+        "WP-25"
+      ]
+    },
+    {
+      "id": "TLG-05",
+      "requirement": "The committee finality and seat handover tests pass (section 7.12).",
+      "evidence": "CI",
+      "packages": [
+        "WP-12",
+        "WP-13"
+      ]
+    },
+    {
+      "id": "TLG-06",
+      "requirement": "The instant duty handover tests and the churn simulation pass.",
+      "evidence": "CI",
+      "packages": [
+        "WP-14"
+      ]
+    },
+    {
+      "id": "TLG-07",
+      "requirement": "Rehearsal drill T-1 passed: every Mobile validator left at once, the finality latency did not change and no object was lost.",
+      "evidence": "rehearsal record",
+      "packages": [
+        "WP-46"
+      ]
+    },
+    {
+      "id": "TLG-08",
+      "requirement": "Rehearsal drill T-2 passed: 10 percent of the Full validators left at once and finality lagged at most 2 checkpoints.",
+      "evidence": "rehearsal record",
+      "packages": [
+        "WP-46"
+      ]
+    },
+    {
+      "id": "TLG-09",
+      "requirement": "Rehearsal drills T-3, T-4, T-5 and T-7 passed.",
+      "evidence": "rehearsal record",
+      "packages": [
+        "WP-46"
+      ]
+    },
+    {
+      "id": "TLG-10",
+      "requirement": "At least 20 real Android phones served as validators in the rehearsal: they stored content, answered audits, served symbols and were rewarded.",
+      "evidence": "explorer records and rehearsal record",
+      "packages": [
+        "WP-36",
+        "WP-46"
+      ]
+    },
+    {
+      "id": "TLG-11",
+      "requirement": "The device matrix results exist: 24 hour service, battery budget and the NAT matrix.",
+      "evidence": "docs/MOBILE_DEVICE_MATRIX.md",
+      "packages": [
+        "WP-37"
+      ]
+    },
+    {
+      "id": "TLG-12",
+      "requirement": "The EVM, WASM (CosmWasm ABI), SVM, Move (Aptos) and BudZero conformance suites pass 100 percent, or every exception sits in the limits table.",
+      "evidence": "CI and docs/EXECUTION_LIMITS.md",
+      "packages": [
+        "WP-35"
+      ]
+    },
+    {
+      "id": "TLG-13",
+      "requirement": "The tool tests passed in the nightly workflow with no code change: Foundry, Hardhat, viem, ethers, CosmJS, Anchor, solana CLI, @solana/web3.js, aptos CLI and the Aptos TypeScript SDK.",
+      "evidence": "CI",
+      "packages": [
+        "WP-28",
+        "WP-32"
+      ]
+    },
+    {
+      "id": "TLG-14",
+      "requirement": "One EVM contract calls one CosmWasm contract in the same transaction and the result is atomic. Rehearsal drill T-6 passed.",
+      "evidence": "uel_evm_calls_wasm_atomically and rehearsal record",
+      "packages": [
+        "WP-30",
+        "WP-46"
+      ]
+    },
+    {
+      "id": "TLG-15",
+      "requirement": "The cross-architecture root equality check passes.",
+      "evidence": "determinism.yml",
+      "packages": [
+        "WP-35"
+      ]
+    },
+    {
+      "id": "TLG-16",
+      "requirement": "The gas calibration criterion is met.",
+      "evidence": "uel_gas_calibration_bound",
+      "packages": [
+        "WP-35"
+      ]
+    },
+    {
+      "id": "TLG-17",
+      "requirement": "The genesis ceremony rehearsal passed, the supply audit is green and at least 8 Full validators took part.",
+      "evidence": "ceremony report",
+      "packages": [
+        "WP-16",
+        "WP-46"
+      ]
+    },
+    {
+      "id": "TLG-18",
+      "requirement": "NAT traversal: the relay, DCUtR and AutoNAT nightlies pass, and the rehearsal records the relay, hole punch and direct connection ratios.",
+      "evidence": "CI and docs/rehearsal/RESULTS.md",
+      "packages": [
+        "WP-15",
+        "WP-46"
+      ]
+    },
+    {
+      "id": "TLG-19",
+      "requirement": "Economics: the pool split, the storage fee and the rewards preserve supply and `economy_invariants` passes.",
+      "evidence": "CI",
+      "packages": [
+        "WP-16",
+        "WP-25",
+        "WP-26"
+      ]
+    },
+    {
+      "id": "TLG-20",
+      "requirement": "RPC: the listener rules, the method tables and the rate limits pass, and rehearsal drill T-7 passed.",
+      "evidence": "CI and rehearsal record",
+      "packages": [
+        "WP-28",
+        "WP-32",
+        "WP-61"
+      ]
+    },
+    {
+      "id": "TLG-21",
+      "requirement": "The faucet, the explorer, the dashboards and the alerts ran in the rehearsal.",
+      "evidence": "rehearsal record",
+      "packages": [
+        "WP-40",
+        "WP-41"
+      ]
+    },
+    {
+      "id": "TLG-22",
+      "requirement": "The independent reviews are complete and their new Critical and High findings are closed.",
+      "evidence": "docs/audit/REVIEW_1.md and docs/audit/REVIEW_2.md",
+      "packages": [
+        "WP-47",
+        "WP-48"
+      ]
+    },
+    {
+      "id": "TLG-23",
+      "requirement": "README.md equals Appendix A and README.tr.md equals Appendix B. The definition blocks are byte for byte identical, no placeholder remains, and every number comes from CI or the rehearsal output.",
+      "evidence": "readme_definition_block_is_verbatim, readme_has_no_placeholders and readme_claims_are_wired",
+      "packages": [
+        "WP-43"
+      ]
+    },
+    {
+      "id": "TLG-24",
+      "requirement": "The concept-name gate is green in absolute mode.",
+      "evidence": "concept_names",
+      "packages": [
+        "WP-43"
+      ]
+    },
+    {
+      "id": "TLG-25",
+      "requirement": "CI is green and every nightly workflow passed on each of the last 7 nights.",
+      "evidence": "CI",
+      "packages": [
+        "WP-42"
+      ]
+    },
+    {
+      "id": "TLG-26",
+      "requirement": "The release artifacts are reproducible and the SBOM and the signatures are published.",
+      "evidence": "release.yml",
+      "packages": [
+        "WP-41",
+        "WP-42"
+      ]
+    },
+    {
+      "id": "TLG-27",
+      "requirement": "The bridge decision and the AI layer decision are written in the TLG report and proven by a test.",
+      "evidence": "CI",
+      "packages": [
+        "WP-44",
+        "WP-45"
+      ]
+    }
+  ],
+  "finding": [
+    {
+      "id": "BLG-001",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "2/2"
+    },
+    {
+      "id": "BLG-002",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [],
+      "trace": "4/4"
+    },
+    {
+      "id": "BLG-003",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [],
+      "trace": "6/7"
+    },
+    {
+      "id": "BLG-004",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "8/10"
+    },
+    {
+      "id": "BLG-005",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [],
+      "trace": "-"
+    },
+    {
+      "id": "BLG-006",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [],
+      "trace": "2/2"
+    },
+    {
+      "id": "BLG-007",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "3/3"
+    },
+    {
+      "id": "BLG-008",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [],
+      "trace": "5/5"
+    },
+    {
+      "id": "BLG-009",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "3/3"
+    },
+    {
+      "id": "BLG-010",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "2/4"
+    },
+    {
+      "id": "BLG-011",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-41"
+      ],
+      "locations": [],
+      "trace": "1/3"
+    },
+    {
+      "id": "BLG-012",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "1/1"
+    },
+    {
+      "id": "BLG-013",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "1/1"
+    },
+    {
+      "id": "BLG-014",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "2/2"
+    },
+    {
+      "id": "BLG-015",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "3/3"
+    },
+    {
+      "id": "BLG-016",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "4/4"
+    },
+    {
+      "id": "BLG-017",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-15"
+      ],
+      "locations": [],
+      "trace": "8/8"
+    },
+    {
+      "id": "BLG-018",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "13/13"
+    },
+    {
+      "id": "BLG-019",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "4/5"
+    },
+    {
+      "id": "BLG-020",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "24/25"
+    },
+    {
+      "id": "BLG-021",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "12/12"
+    },
+    {
+      "id": "BLG-022",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-11"
+      ],
+      "locations": [],
+      "trace": "4/4"
+    },
+    {
+      "id": "BLG-023",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "8/8"
+    },
+    {
+      "id": "BLG-024",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "8/8"
+    },
+    {
+      "id": "BLG-025",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "6/6"
+    },
+    {
+      "id": "BLG-026",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-39"
+      ],
+      "locations": [],
+      "trace": "4/4"
+    },
+    {
+      "id": "BLG-027",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "13/13"
+    },
+    {
+      "id": "BLG-028",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "4/4"
+    },
+    {
+      "id": "BLG-029",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "3/3"
+    },
+    {
+      "id": "BLG-030",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61",
+        "WP-41"
+      ],
+      "locations": [],
+      "trace": "22/23"
+    },
+    {
+      "id": "BLG-031",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "10/10"
+    },
+    {
+      "id": "BLG-032",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "24/24"
+    },
+    {
+      "id": "BLG-033",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-15"
+      ],
+      "locations": [],
+      "trace": "13/14"
+    },
+    {
+      "id": "BLG-034",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-15"
+      ],
+      "locations": [],
+      "trace": "12/12"
+    },
+    {
+      "id": "BLG-035",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "7/7"
+    },
+    {
+      "id": "BLG-036",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "15/15"
+    },
+    {
+      "id": "BLG-037",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "12/13"
+    },
+    {
+      "id": "BLG-038",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "17/18"
+    },
+    {
+      "id": "BLG-039",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "6/6"
+    },
+    {
+      "id": "BLG-040",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "13/15"
+    },
+    {
+      "id": "BLG-041",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "29/34"
+    },
+    {
+      "id": "BLG-042",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "10/11"
+    },
+    {
+      "id": "BLG-043",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "14/19"
+    },
+    {
+      "id": "BLG-044",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "14/16"
+    },
+    {
+      "id": "BLG-045",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "10/10"
+    },
+    {
+      "id": "BLG-046",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "12/14"
+    },
+    {
+      "id": "BLG-047",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "10/10"
+    },
+    {
+      "id": "BLG-048",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": [],
+      "trace": "25/25"
+    },
+    {
+      "id": "BLG-049",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-22"
+      ],
+      "locations": [],
+      "trace": "11/12"
+    },
+    {
+      "id": "BLG-050",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "16/16"
+    },
+    {
+      "id": "BLG-051",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "9/9"
+    },
+    {
+      "id": "BLG-052",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "15/16"
+    },
+    {
+      "id": "BLG-053",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "16/16"
+    },
+    {
+      "id": "BLG-054",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "15/19"
+    },
+    {
+      "id": "BLG-055",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "17/18"
+    },
+    {
+      "id": "BLG-056",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "29/30"
+    },
+    {
+      "id": "BLG-057",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "17/17"
+    },
+    {
+      "id": "BLG-058",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "19/19"
+    },
+    {
+      "id": "BLG-059",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "17/17"
+    },
+    {
+      "id": "BLG-060",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "12/12"
+    },
+    {
+      "id": "BLG-061",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "23/23"
+    },
+    {
+      "id": "BLG-062",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "17/17"
+    },
+    {
+      "id": "BLG-063",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "25/25"
+    },
+    {
+      "id": "BLG-064",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-23"
+      ],
+      "locations": [],
+      "trace": "20/21"
+    },
+    {
+      "id": "BLG-065",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "27/27"
+    },
+    {
+      "id": "BLG-066",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "19/20"
+    },
+    {
+      "id": "BLG-067",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "30/30"
+    },
+    {
+      "id": "BLG-068",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-40"
+      ],
+      "locations": [],
+      "trace": "23/23"
+    },
+    {
+      "id": "BLG-069",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "9/9"
+    },
+    {
+      "id": "BLG-070",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "14/14"
+    },
+    {
+      "id": "BLG-071",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "27/27"
+    },
+    {
+      "id": "BLG-072",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "16/16"
+    },
+    {
+      "id": "BLG-073",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "31/31"
+    },
+    {
+      "id": "BLG-074",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "25/25"
+    },
+    {
+      "id": "BLG-075",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "32/33"
+    },
+    {
+      "id": "BLG-076",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "22/22"
+    },
+    {
+      "id": "BLG-077",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "15/19"
+    },
+    {
+      "id": "BLG-078",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "28/28"
+    },
+    {
+      "id": "BLG-079",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "21/21"
+    },
+    {
+      "id": "BLG-080",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "21/21"
+    },
+    {
+      "id": "BLG-081",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "8/8"
+    },
+    {
+      "id": "BLG-082",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "24/25"
+    },
+    {
+      "id": "BLG-083",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "20/20"
+    },
+    {
+      "id": "BLG-084",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "7/7"
+    },
+    {
+      "id": "BLG-085",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "15/15"
+    },
+    {
+      "id": "BLG-086",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "19/19"
+    },
+    {
+      "id": "BLG-087",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "29/32"
+    },
+    {
+      "id": "BLG-088",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "14/14"
+    },
+    {
+      "id": "BLG-089",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "16/17"
+    },
+    {
+      "id": "BLG-090",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "12/14"
+    },
+    {
+      "id": "BLG-091",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "18/22"
+    },
+    {
+      "id": "BLG-092",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-43"
+      ],
+      "locations": [],
+      "trace": "5/6"
+    },
+    {
+      "id": "BLG-093",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "-"
+    },
+    {
+      "id": "BLG-094",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [],
+      "trace": "3/3"
+    },
+    {
+      "id": "BLG-095",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-41"
+      ],
+      "locations": [],
+      "trace": "3/3"
+    },
+    {
+      "id": "BLG-096",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "21/22"
+    },
+    {
+      "id": "BLG-097",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "14/14"
+    },
+    {
+      "id": "BLG-098",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-39"
+      ],
+      "locations": [],
+      "trace": "23/25"
+    },
+    {
+      "id": "BLG-099",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "4/6"
+    },
+    {
+      "id": "BLG-100",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "32/33"
+    },
+    {
+      "id": "BLG-101",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "27/30"
+    },
+    {
+      "id": "BLG-102",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "17/19"
+    },
+    {
+      "id": "BLG-103",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "26/27"
+    },
+    {
+      "id": "BLG-104",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "24/28"
+    },
+    {
+      "id": "BLG-105",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "15/17"
+    },
+    {
+      "id": "BLG-106",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "15/16"
+    },
+    {
+      "id": "BLG-107",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "16/17"
+    },
+    {
+      "id": "BLG-108",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-15"
+      ],
+      "locations": [],
+      "trace": "22/24"
+    },
+    {
+      "id": "BLG-109",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-23"
+      ],
+      "locations": [],
+      "trace": "15/16"
+    },
+    {
+      "id": "BLG-110",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-23"
+      ],
+      "locations": [],
+      "trace": "23/23"
+    },
+    {
+      "id": "BLG-111",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "13/14"
+    },
+    {
+      "id": "BLG-112",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "23/23"
+    },
+    {
+      "id": "BLG-113",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "19/19"
+    },
+    {
+      "id": "BLG-114",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "10/10"
+    },
+    {
+      "id": "BLG-115",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "13/19"
+    },
+    {
+      "id": "BLG-116",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "27/31"
+    },
+    {
+      "id": "BLG-117",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-39"
+      ],
+      "locations": [],
+      "trace": "28/31"
+    },
+    {
+      "id": "BLG-118",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "26/27"
+    },
+    {
+      "id": "BLG-119",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "31/33"
+    },
+    {
+      "id": "BLG-120",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "29/33"
+    },
+    {
+      "id": "BLG-121",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-40"
+      ],
+      "locations": [],
+      "trace": "25/26"
+    },
+    {
+      "id": "BLG-122",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "42/43"
+    },
+    {
+      "id": "BLG-123",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "22/23"
+    },
+    {
+      "id": "BLG-124",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "28/29"
+    },
+    {
+      "id": "BLG-125",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "48/58"
+    },
+    {
+      "id": "BLG-126",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "21/24"
+    },
+    {
+      "id": "BLG-127",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "35/37"
+    },
+    {
+      "id": "BLG-128",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "25/26"
+    },
+    {
+      "id": "BLG-129",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-23"
+      ],
+      "locations": [],
+      "trace": "36/37"
+    },
+    {
+      "id": "BLG-130",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "31/35"
+    },
+    {
+      "id": "BLG-131",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "17/19"
+    },
+    {
+      "id": "BLG-132",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "27/29"
+    },
+    {
+      "id": "BLG-133",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-24"
+      ],
+      "locations": [],
+      "trace": "44/46"
+    },
+    {
+      "id": "BLG-134",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "18/22"
+    },
+    {
+      "id": "BLG-135",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-24"
+      ],
+      "locations": [],
+      "trace": "29/31"
+    },
+    {
+      "id": "BLG-136",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "30/32"
+    },
+    {
+      "id": "BLG-137",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": [],
+      "trace": "45/48"
+    },
+    {
+      "id": "BLG-138",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "21/23"
+    },
+    {
+      "id": "BLG-139",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "17/22"
+    },
+    {
+      "id": "BLG-140",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [],
+      "trace": "32/34"
+    },
+    {
+      "id": "BLG-141",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "25/28"
+    },
+    {
+      "id": "BLG-142",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "23/25"
+    },
+    {
+      "id": "BLG-143",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-40"
+      ],
+      "locations": [],
+      "trace": "25/28"
+    },
+    {
+      "id": "BLG-144",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": [],
+      "trace": "20/23"
+    },
+    {
+      "id": "BLG-145",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "17/19"
+    },
+    {
+      "id": "BLG-146",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "21/23"
+    },
+    {
+      "id": "BLG-147",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "20/22"
+    },
+    {
+      "id": "BLG-148",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33",
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "17/19"
+    },
+    {
+      "id": "BLG-149",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "26/29"
+    },
+    {
+      "id": "BLG-150",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "23/25"
+    },
+    {
+      "id": "BLG-151",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "32/35"
+    },
+    {
+      "id": "BLG-152",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "15/17"
+    },
+    {
+      "id": "BLG-153",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "16/18"
+    },
+    {
+      "id": "BLG-154",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "19/21"
+    },
+    {
+      "id": "BLG-155",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "15/17"
+    },
+    {
+      "id": "BLG-156",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [],
+      "trace": "17/19"
+    },
+    {
+      "id": "BLG-157",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "16/18"
+    },
+    {
+      "id": "BLG-158",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "10/12"
+    },
+    {
+      "id": "BLG-159",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "14/17"
+    },
+    {
+      "id": "BLG-160",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "15/17"
+    },
+    {
+      "id": "BLG-161",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-21"
+      ],
+      "locations": [],
+      "trace": "23/25"
+    },
+    {
+      "id": "BLG-162",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "13/16"
+    },
+    {
+      "id": "BLG-163",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": [],
+      "trace": "8/10"
+    },
+    {
+      "id": "BLG-164",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "10/13"
+    },
+    {
+      "id": "BLG-165",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "10/13"
+    },
+    {
+      "id": "BLG-166",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "27/31"
+    },
+    {
+      "id": "BLG-167",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "24/28"
+    },
+    {
+      "id": "BLG-168",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-21"
+      ],
+      "locations": [],
+      "trace": "20/25"
+    },
+    {
+      "id": "BLG-169",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-40"
+      ],
+      "locations": [],
+      "trace": "14/16"
+    },
+    {
+      "id": "BLG-170",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "25/27"
+    },
+    {
+      "id": "BLG-171",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "16/19"
+    },
+    {
+      "id": "BLG-172",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "15/17"
+    },
+    {
+      "id": "BLG-173",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "10/15"
+    },
+    {
+      "id": "BLG-174",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "18/20"
+    },
+    {
+      "id": "BLG-175",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "15/17"
+    },
+    {
+      "id": "BLG-176",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "8/10"
+    },
+    {
+      "id": "BLG-177",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "20/22"
+    },
+    {
+      "id": "BLG-178",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "16/18"
+    },
+    {
+      "id": "BLG-179",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "21/26"
+    },
+    {
+      "id": "BLG-180",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "16/20"
+    },
+    {
+      "id": "BLG-181",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "13/16"
+    },
+    {
+      "id": "BLG-182",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "19/21"
+    },
+    {
+      "id": "BLG-183",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "15/21"
+    },
+    {
+      "id": "BLG-184",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "14/15"
+    },
+    {
+      "id": "BLG-185",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "16/21"
+    },
+    {
+      "id": "BLG-186",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "17/19"
+    },
+    {
+      "id": "BLG-187",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "19/20"
+    },
+    {
+      "id": "BLG-188",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "11/13"
+    },
+    {
+      "id": "BLG-189",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "19/20"
+    },
+    {
+      "id": "BLG-190",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "30/31"
+    },
+    {
+      "id": "BLG-191",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "20/22"
+    },
+    {
+      "id": "BLG-192",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "12/13"
+    },
+    {
+      "id": "BLG-193",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [],
+      "trace": "41/42"
+    },
+    {
+      "id": "BLG-194",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "18/21"
+    },
+    {
+      "id": "BLG-195",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "26/26"
+    },
+    {
+      "id": "BLG-196",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "13/15"
+    },
+    {
+      "id": "BLG-197",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "23/25"
+    },
+    {
+      "id": "BLG-198",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [],
+      "trace": "10/12"
+    },
+    {
+      "id": "BLG-199",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "8/8"
+    },
+    {
+      "id": "BLG-200",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [],
+      "trace": "13/13"
+    },
+    {
+      "id": "BLG-201",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45"
+      ],
+      "locations": [],
+      "trace": "17/18"
+    },
+    {
+      "id": "BLG-202",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [],
+      "trace": "12/13"
+    },
+    {
+      "id": "BLG-203",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "27/28"
+    },
+    {
+      "id": "BLG-204",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44"
+      ],
+      "locations": [],
+      "trace": "20/23"
+    },
+    {
+      "id": "BLG-205",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44",
+        "WP-15"
+      ],
+      "locations": [],
+      "trace": "30/30"
+    },
+    {
+      "id": "BLG-206",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "24/25"
+    },
+    {
+      "id": "BLG-207",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [],
+      "trace": "11/12"
+    },
+    {
+      "id": "BLG-208",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07",
+        "WP-21"
+      ],
+      "locations": [
+        "src/storage/generated.rs"
+      ]
+    },
+    {
+      "id": "BLG-209",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07",
+        "WP-25"
+      ],
+      "locations": [
+        "src/storage/three_regime.rs"
+      ]
+    },
+    {
+      "id": "BLG-210",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": [
+        "src/storage/three_recipe.rs"
+      ]
+    },
+    {
+      "id": "BLG-211",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": [
+        "src/storage/qr_recipe.rs",
+        "three_recipe.rs",
+        "three_nft.rs"
+      ]
+    },
+    {
+      "id": "BLG-212",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-21",
+        "WP-23"
+      ],
+      "locations": [
+        "src/rpc/server.rs",
+        "bud_storageQrFeed*",
+        "three_reveal.rs",
+        "three_nft.rs"
+      ]
+    },
+    {
+      "id": "BLG-213",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-18"
+      ],
+      "locations": [
+        "emit.rs",
+        "qr_payload.rs",
+        "qr_carousel.rs",
+        "qr_video.rs",
+        "three_recipe.rs"
+      ]
+    },
+    {
+      "id": "BLG-214",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": [
+        "qr_video.rs",
+        "qr_png.rs"
+      ]
+    },
+    {
+      "id": "BLG-215",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": []
+    },
+    {
+      "id": "BLG-216",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-18"
+      ],
+      "locations": [
+        "qr_carousel.rs"
+      ]
+    },
+    {
+      "id": "BLG-217",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [
+        "bud/src/"
+      ]
+    },
+    {
+      "id": "BLG-218",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": [
+        "three_pipe.rs"
+      ]
+    },
+    {
+      "id": "BLG-219",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-24"
+      ],
+      "locations": [
+        "transformed.rs"
+      ]
+    },
+    {
+      "id": "BLG-220",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-20"
+      ],
+      "locations": [
+        "erasure.rs"
+      ]
+    },
+    {
+      "id": "BLG-221",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-22"
+      ],
+      "locations": []
+    },
+    {
+      "id": "BLG-222",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-24"
+      ],
+      "locations": [
+        "dictionary.rs",
+        "living_threshold.rs",
+        "derived.rs"
+      ]
+    },
+    {
+      "id": "BLG-223",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-56",
+        "WP-33",
+        "WP-45"
+      ],
+      "locations": [
+        "budzero/bud-proof/src/bud_stark/prover.rs"
+      ]
+    },
+    {
+      "id": "BLG-224",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-56",
+        "WP-45"
+      ],
+      "locations": [
+        "crates/note-packing/src/lib.rs",
+        "budzero/bud-state/src/note.rs",
+        "budzero/bud-vm/src/lib.rs"
+      ]
+    },
+    {
+      "id": "BLG-225",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45",
+        "WP-56"
+      ],
+      "locations": [
+        "src/execution/executor.rs",
+        "src/privacy/submit.rs"
+      ]
+    },
+    {
+      "id": "BLG-226",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-56",
+        "WP-33"
+      ],
+      "locations": [
+        "budzero/bud-isa/src/lib.rs"
+      ]
+    },
+    {
+      "id": "BLG-227",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-57",
+        "WP-33"
+      ],
+      "locations": [
+        "budzero/bud-isa/src/lib.rs",
+        "docs/AI_VERIFICATION_STATUS.md"
+      ]
+    },
+    {
+      "id": "BLG-228",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-57",
+        "WP-45"
+      ],
+      "locations": [
+        "src/ai/mod.rs"
+      ]
+    },
+    {
+      "id": "BLG-229",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45",
+        "WP-57"
+      ],
+      "locations": [
+        "src/ai/registry.rs"
+      ]
+    },
+    {
+      "id": "BLG-230",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-33",
+        "WP-56"
+      ],
+      "locations": [
+        "budzero/bud-vm/src/lib.rs",
+        "src/execution/zkvm.rs"
+      ]
+    },
+    {
+      "id": "BLG-231",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-43"
+      ],
+      "locations": [
+        "budzero/bud-state/src/lib.rs",
+        "budzero/ARCHITECTURE.md"
+      ]
+    },
+    {
+      "id": "BLG-232",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-56"
+      ],
+      "locations": [
+        "budzero/bud-proof/src/plonky3_air.rs"
+      ]
+    },
+    {
+      "id": "BLG-233",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-60"
+      ],
+      "locations": [
+        "budzero/bud-proof/src/plonky3_prover.rs"
+      ]
+    },
+    {
+      "id": "BLG-234",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-60"
+      ],
+      "locations": [
+        "budzero/bud-isa/src/lib.rs"
+      ]
+    },
+    {
+      "id": "BLG-235",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-44",
+        "WP-60"
+      ],
+      "locations": [
+        "src/cross_domain/external/zkvm_proof.rs",
+        "src/cross_domain/evm/sync_committee.rs"
+      ]
+    },
+    {
+      "id": "BLG-236",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-56"
+      ],
+      "locations": [
+        "docs/BUD_CONTENT_ENCRYPTION.md",
+        "src/storage/payload_crypt.rs"
+      ]
+    },
+    {
+      "id": "BLG-237",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-22",
+        "WP-56"
+      ],
+      "locations": [
+        "src/storage/view_grant.rs"
+      ]
+    },
+    {
+      "id": "BLG-238",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-22"
+      ],
+      "locations": [
+        "src/storage/key_package.rs"
+      ]
+    },
+    {
+      "id": "BLG-239",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-60"
+      ],
+      "locations": [
+        "docs/MAINNET_READINESS.md",
+        "budzero/bud-pul"
+      ]
+    },
+    {
+      "id": "BLG-240",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-45",
+        "WP-57"
+      ],
+      "locations": [
+        "src/ai/registry.rs"
+      ]
+    },
+    {
+      "id": "BLG-241",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-43"
+      ],
+      "locations": [
+        "budzero/bud-isa/src/lib.rs",
+        "budzero/bud-vm/src/lib.rs"
+      ]
+    },
+    {
+      "id": "BLG-242",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-56"
+      ],
+      "locations": []
+    },
+    {
+      "id": "BLG-243",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-56"
+      ],
+      "locations": [
+        "budzero/README.md",
+        "docs/AI_VERIFICATION_STATUS.md"
+      ]
+    },
+    {
+      "id": "BLG-244",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-57"
+      ],
+      "locations": []
+    },
+    {
+      "id": "BLG-245",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-22",
+        "WP-56"
+      ],
+      "locations": []
+    },
+    {
+      "id": "BLG-246",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/chain/finality.rs",
+        "quorum_count",
+        "check_prevote_quorum",
+        "check_precommit_quorum"
+      ]
+    },
+    {
+      "id": "BLG-247",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-15"
+      ],
+      "locations": [
+        "Cargo.toml",
+        "src/core/chain_config.rs",
+        "SecurityConfig"
+      ]
+    },
+    {
+      "id": "BLG-248",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-26",
+        "WP-33"
+      ],
+      "locations": [
+        "src/execution/executor.rs",
+        "ContractCall",
+        "src/execution/zkvm.rs"
+      ]
+    },
+    {
+      "id": "BLG-249",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-28",
+        "WP-29",
+        "WP-31",
+        "WP-32"
+      ],
+      "locations": [
+        "src/rpc/method_class.rs"
+      ]
+    },
+    {
+      "id": "BLG-250",
+      "severity": "Critical",
+      "family": "ledger",
+      "closes_with": [
+        "WP-26"
+      ],
+      "locations": [
+        "Cargo.toml",
+        "[profile.release] panic = \"abort\""
+      ]
+    },
+    {
+      "id": "BLG-251",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-13"
+      ],
+      "locations": [
+        "src/registry/liveness.rs"
+      ]
+    },
+    {
+      "id": "BLG-252",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-08"
+      ],
+      "locations": [
+        "src/registry/role.rs"
+      ]
+    },
+    {
+      "id": "BLG-253",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07",
+        "WP-08"
+      ],
+      "locations": [
+        "src/storage/mobile_self.rs",
+        "src/storage/server_admission.rs",
+        "src/network/mobile.rs"
+      ]
+    },
+    {
+      "id": "BLG-254",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07",
+        "WP-42"
+      ],
+      "locations": [
+        "xtask/gates/src/gates/three_is_recipe_only.rs",
+        "zero_storage_frozen.rs",
+        "generated_content.rs"
+      ]
+    },
+    {
+      "id": "BLG-255",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-05",
+        "WP-43"
+      ],
+      "locations": []
+    },
+    {
+      "id": "BLG-256",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-26"
+      ],
+      "locations": [
+        "src/core/account.rs",
+        "balance: u64"
+      ]
+    },
+    {
+      "id": "BLG-257",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-11",
+        "WP-36"
+      ],
+      "locations": [
+        "src/main.rs",
+        "MobileNodeProfile::new(..., DeviceType::Phone)"
+      ]
+    },
+    {
+      "id": "BLG-258",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [
+        "budzero/bud-node/"
+      ]
+    },
+    {
+      "id": "BLG-259",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12",
+        "WP-11"
+      ],
+      "locations": [
+        "src/chain/finality.rs",
+        "src/consensus/qc.rs"
+      ]
+    },
+    {
+      "id": "BLG-260",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-26"
+      ],
+      "locations": [
+        "src/storage/db.rs",
+        "sled"
+      ]
+    },
+    {
+      "id": "BLG-261",
+      "severity": "Low",
+      "family": "ledger",
+      "closes_with": [
+        "WP-23"
+      ],
+      "locations": [
+        "src/deed/mod.rs"
+      ]
+    },
+    {
+      "id": "BLG-262",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-23"
+      ],
+      "locations": [
+        "src/gateway/service.rs"
+      ]
+    },
+    {
+      "id": "BLG-263",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [
+        "src/tokenomics/reward_pool.rs",
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "BLG-264",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/consensus/filiz.rs",
+        "src/consensus/handoff.rs"
+      ]
+    },
+    {
+      "id": "BLG-265",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-36"
+      ],
+      "locations": [
+        "src/network/mobile.rs"
+      ]
+    },
+    {
+      "id": "BLG-266",
+      "severity": "Medium",
+      "family": "ledger",
+      "closes_with": [
+        "WP-08",
+        "WP-16"
+      ],
+      "locations": [
+        "src/core/chain_config.rs",
+        "min_stake"
+      ]
+    },
+    {
+      "id": "BLG-267",
+      "severity": "High",
+      "family": "ledger",
+      "closes_with": [
+        "WP-27"
+      ],
+      "locations": [
+        "xtask/gates/src/gates/classical_crypto_is_paired.rs"
+      ]
+    },
+    {
+      "id": "BULGU-001",
+      "severity": "High",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/consensus/pos.rs"
+      ]
+    },
+    {
+      "id": "BULGU-002",
+      "severity": "High",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/consensus/pos.rs"
+      ]
+    },
+    {
+      "id": "BULGU-003",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/consensus/pos.rs"
+      ]
+    },
+    {
+      "id": "BULGU-004",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/consensus/pos.rs",
+        "consensus/mod.rs"
+      ]
+    },
+    {
+      "id": "BULGU-005",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "BULGU-006",
+      "severity": "High",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "BULGU-007",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "BULGU-008",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "BULGU-009",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "BULGU-010",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/core/transaction.rs"
+      ]
+    },
+    {
+      "id": "BULGU-011",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [
+        "src/rpc/server.rs"
+      ]
+    },
+    {
+      "id": "BULGU-012",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [
+        "src/rpc/server.rs"
+      ]
+    },
+    {
+      "id": "BULGU-013",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/execution/executor.rs"
+      ]
+    },
+    {
+      "id": "BULGU-014",
+      "severity": "High",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/network/node.rs"
+      ]
+    },
+    {
+      "id": "BULGU-015",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/chain/chain_actor.rs"
+      ]
+    },
+    {
+      "id": "BULGU-016",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/core/account.rs"
+      ]
+    },
+    {
+      "id": "BULGU-017",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [
+        "src/domain/storage_deal.rs"
+      ]
+    },
+    {
+      "id": "BULGU-018",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [
+        "src/chain/genesis.rs"
+      ]
+    },
+    {
+      "id": "BULGU-019",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [
+        "src/core/account.rs",
+        "src/execution/executor.rs"
+      ]
+    },
+    {
+      "id": "BULGU-020",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": []
+    },
+    {
+      "id": "BULGU-021",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-17"
+      ],
+      "locations": [
+        "src/sharding/mod.rs"
+      ]
+    },
+    {
+      "id": "BULGU-022",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-08"
+      ],
+      "locations": [
+        "RoleBond"
+      ]
+    },
+    {
+      "id": "BULGU-023",
+      "severity": "High",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/consensus/pos.rs",
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "BULGU-024",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/chain/blockchain.rs",
+        "src/consensus/pos.rs"
+      ]
+    },
+    {
+      "id": "BULGU-025",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/consensus/pos.rs"
+      ]
+    },
+    {
+      "id": "BULGU-026",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "BULGU-027",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": [
+        "src/chain/blockchain.rs"
+      ]
+    },
+    {
+      "id": "TEST-GAP-01",
+      "severity": "High",
+      "family": "archive",
+      "closes_with": [
+        "WP-16"
+      ],
+      "locations": [
+        "src/core/account.rs"
+      ]
+    },
+    {
+      "id": "TEST-GAP-02",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [
+        "kani/"
+      ]
+    },
+    {
+      "id": "TEST-GAP-03",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-19"
+      ],
+      "locations": []
+    },
+    {
+      "id": "TEST-GAP-04",
+      "severity": "Low",
+      "family": "archive",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [
+        "src/bin/budlum-domain-producer.rs"
+      ]
+    },
+    {
+      "id": "TEST-GAP-05",
+      "severity": "Low",
+      "family": "archive",
+      "closes_with": [
+        "WP-33"
+      ],
+      "locations": [
+        "budzero",
+        "folder.rs",
+        "ir/mod.rs"
+      ]
+    },
+    {
+      "id": "TEST-GAP-06",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-07"
+      ],
+      "locations": [
+        "bud/kani"
+      ]
+    },
+    {
+      "id": "TEST-GAP-07",
+      "severity": "Low",
+      "family": "archive",
+      "closes_with": [
+        "WP-61"
+      ],
+      "locations": [
+        "src/rpc"
+      ]
+    },
+    {
+      "id": "TEST-GAP-08",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-12"
+      ],
+      "locations": []
+    },
+    {
+      "id": "DOC-GAP-01",
+      "severity": "Critical",
+      "family": "archive",
+      "closes_with": [
+        "WP-41"
+      ],
+      "locations": [
+        "config/testnet.toml",
+        "src/main.rs",
+        "ops/"
+      ]
+    },
+    {
+      "id": "DOC-GAP-02",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-43"
+      ],
+      "locations": []
+    },
+    {
+      "id": "DOC-GAP-03",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-43"
+      ],
+      "locations": [
+        "ops/scripts"
+      ]
+    },
+    {
+      "id": "DOC-GAP-04",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-41"
+      ],
+      "locations": [
+        "ops/budlum-core.service"
+      ]
+    },
+    {
+      "id": "DOC-GAP-05",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-43"
+      ],
+      "locations": [
+        "docs/VALIDATOR_GUIDE.md",
+        "docs/TESTNET.md",
+        "docs/OPERATIONS.md"
+      ]
+    },
+    {
+      "id": "DOC-GAP-06",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-46"
+      ],
+      "locations": [
+        "docs/TESTNET.md",
+        "docs/VALIDATOR_GUIDE.md"
+      ]
+    },
+    {
+      "id": "DOC-GAP-07",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-42"
+      ],
+      "locations": [
+        "Cargo.toml"
+      ]
+    },
+    {
+      "id": "DOC-GAP-08",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-39"
+      ],
+      "locations": [
+        "src/bin/bud.rs"
+      ]
+    },
+    {
+      "id": "DOC-GAP-09",
+      "severity": "Medium",
+      "family": "archive",
+      "closes_with": [
+        "WP-43"
+      ],
+      "locations": []
+    }
+  ]
+}

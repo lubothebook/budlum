@@ -47,6 +47,7 @@ mod gates {
     pub mod ai_inference_zk;
     pub mod air_selectors;
     pub mod ast_security_gates;
+    pub mod audit_ledgers;
     pub mod badges_current;
     pub mod binding_claims;
     pub mod bit_decompositions;
@@ -1395,6 +1396,14 @@ const GATES: &[Gate] = &[
         run_log: Some(gates::pq_core_gate::run),
         run_args: None,
         self_test: gates::pq_core_gate::self_test,
+    },
+    Gate {
+        name: "audit-ledgers",
+        replaces: None,
+        run: gates::audit_ledgers::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::audit_ledgers::self_test,
     },
 ];
 
