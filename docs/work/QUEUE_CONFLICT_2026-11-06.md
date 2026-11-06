@@ -53,8 +53,11 @@ presence of B.U.D. 3.0 modules alone establish completion of WP-10: for example,
 its required `proto/budlum/storage/v3/bud3.proto` is absent. No package is
 claimed complete merely because an implementation fragment exists.
 
-PR #20 also claims WP-05, while its description identifies WP-04 as still in progress; WP-04 is a prerequisite
-in section 15.7. An open PR is not evidence that the prerequisite has merged.
+PR #20 also claims WP-05, while its description identifies WP-04 as still in
+progress; WP-04 is a prerequisite in section 15.7. An open PR is not evidence
+that the prerequisite has merged. PR #21 says its duplicate WP-04 claim was
+released, but was open again at the snapshot and still contained changes to
+lane D paths.
 
 The repository reports GitHub Issues disabled. Consequently the issue-based
 `CLAIM` and `in-progress` procedure in section 15.3.2 cannot currently be
@@ -105,6 +108,25 @@ section 14.1.3 and the WP-03 card require reproduction evidence for that status.
 Both concerns and the path overlap were reported in a
 review comment on PR #16.
 
+## Independent review of the WP-05 owner map
+
+At PR #20 head `edb7ba8aa377661e202af7d307a7e7c9df8c6a9c`, a Python TOML
+comparison matched each proposed concept entry to the binding Appendix C by its
+original-name key. All 27 entries were present, but three owner values differed
+(entry numbers are one-based in Appendix C order):
+
+```text
+entry 8:  expected WP-23, proposed WP-40
+entry 22: expected WP-56, proposed WP-22
+entry 26: expected WP-56, proposed WP-33
+```
+
+The proposed owner parser also hard-codes a maximum of WP-64, while section
+15.7 permits new packages numbered WP-65 onward. The gate should reject unknown
+owners while allowing a newly registered package. The three mismatches, the
+future-package constraint and the unmerged WP-04 prerequisite were reported in
+a review comment on PR #20. This comparison did not execute the Rust gate.
+
 ## Proposed resolution
 
 1. Coordinate one WP-03 owner across #12, #15 and #16 and consolidate their
@@ -115,10 +137,14 @@ review comment on PR #16.
    assertions. Finish and merge the live verification packages according to
    their acceptance criteria and the directive's review and merge rules.
    WP-04's final consolidation follows the WP-01, WP-02 and WP-03 merges.
-3. Once a dependency is merged and the relevant paths are free, select the
+3. Align the proposed WP-05 map and documentation with Appendix C, and make
+   the owner check compatible with registered future packages. Its prerequisite
+   WP-04 must merge before the package is ready.
+4. Once a dependency is merged and the relevant paths are free, select the
    next ready package using section 15.4. For example, WP-06 additionally has
-   an existing claim in #11, so the merge of WP-02 by itself would not make it available to this agent.
-4. Enable GitHub Issues so package records and claims can be recorded as
+   an existing claim in #11, so the merge of WP-02 by itself would not make it
+   available to this agent.
+5. Enable GitHub Issues so package records and claims can be recorded as
    required. Recheck the live queue and locks before making any new claim.
 
 ## Validation and limits
