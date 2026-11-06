@@ -12,6 +12,8 @@
 //! | [`meter`] | The parser and decoder budget |
 //! | [`varint`] | Bounded LEB128 |
 //! | [`bof1`] | The BOF-1 object: canonical binary header and payload |
+//! | [`compression_context`] | The shared compression context: manifest, corpus, renewal, savings fee |
+//! | [`private_dedup`] | Sealed cross-owner dedup: threshold OPRF, rate limit, proof, blinded field, aggregate |
 //! | [`segment`] | Segmentation, segment digests and the object commitment |
 //! | [`placement`] | Stake-weighted rendezvous placement, diversity caps, the placement table |
 //! | [`registry`] | Chain state: objects, dedup, references, deletion, shares, audits |
@@ -19,6 +21,11 @@
 //! | [`custody`] | Sub-block tree, symbol root, the audit draw and custody proofs |
 //! | [`pipeline`] | Upload (content to record and symbols) and view (symbols to checked content) |
 //! | [`fountain`] | RFC 6330 per-segment encoder and decoder, and the streaming encoder |
+//! | [`object`] | The object path: streaming commitment, logical frames, the video commitment, the text form |
+//! | [`frames`] | The optical path: symbols to QR rasters and back, the two-path gate (Y11) |
+//! | [`stages`] | The A0 stage chain: recognition, dedup, transform, entropy coding, sealing |
+//! | [`live`] | The live stream: time segments, the `prev_object` chain, the closing NFT binding |
+//! | [`volume`] | The aggregation volume for objects smaller than one symbol |
 //!
 //! The commitment is fixed-size (32 bytes). The object is not fixed-size: it
 //! is the header plus the payload, and it is at most the header larger than
@@ -30,18 +37,25 @@
 //! own tests and the golden vectors under `tests/vectors/bud3/`.
 
 pub mod bof1;
+pub mod compression_context;
 pub mod content_id;
 pub mod custody;
 pub mod dedup_index;
 pub mod fountain;
+pub mod frames;
 pub mod limits;
+pub mod live;
 pub mod meter;
+pub mod object;
 pub mod pipeline;
 pub mod placement;
+pub mod private_dedup;
 pub mod registry;
 pub mod segment;
+pub mod stages;
 pub mod tx;
 pub mod varint;
+pub mod volume;
 
 pub use bof1::{Bof1Error, Flags, Header, Object};
 pub use content_id::{ContentId, ContentKey};
