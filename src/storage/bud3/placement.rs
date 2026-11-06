@@ -111,6 +111,35 @@ impl PlacementRow {
         self.full_only_symbols() >= k as u64 + 2
     }
 
+    /// The physical bytes the user pays for (§6.9.5 item 1): the smallest
+    /// placement that rebuilds a segment, `k + 2` symbols.
+    ///
+    /// The Mobile floor is a protocol choice, not something the content needs,
+    /// so the fee record charges the user for what a floorless placement would
+    /// have held and nothing more. Expressed in bytes because that is the unit
+    /// the quota and the storage bill use.
+    #[must_use]
+    pub const fn user_physical_bytes(&self, k: u32, symbol_size: u32) -> u64 {
+        (k as u64 + 2) * symbol_size as u64
+    }
+
+    /// The physical bytes the Mobile floor adds (§6.9.5 item 2), paid from the
+    /// Network Security Pool (Bölüm 11.4).
+    ///
+    /// The fee record carries this as its own field, so a user bill and a
+    /// protocol subsidy can never be confused for one another - and so a table
+    /// row that made the floor free would be visible as one.
+    #[must_use]
+    pub const fn decentralization_physical_bytes(&self, k: u32, symbol_size: u32) -> u64 {
+        let total = self.total_symbols() * symbol_size as u64;
+        let user = self.user_physical_bytes(k, symbol_size);
+        if total < user {
+            0
+        } else {
+            total - user
+        }
+    }
+
     /// The Mobile share of the symbols, in thousandths.
     #[must_use]
     pub const fn mobile_share_milli(&self) -> u64 {
@@ -367,13 +396,37 @@ mod tests {
             .collect()
     }
 
+    /// `log2` in Q32, checked against integers only.
+    ///
+    /// The obvious test converts the fixed-point result to `f64` and compares
+    /// with `log2(3)`. That would put floating point in the placement path,
+    /// which is exactly what G-2 forbids and what `bud3-placement` gates - and
+    /// a test that is exempt from the rule it tests for is not the test the
+    /// rule needs. So the check is arithmetic: `log2(3)` is bracketed by
+    /// `log2(2) = 1` and `log2(4) = 2`, the error of a Q32 logarithm is under
+    /// one unit in the last place, and `2^log2(3)` must land back on 3 within
+    /// the resolution a Q32 fraction can express.
     #[test]
     fn log2_fixed_point_is_exact_on_powers_and_close_elsewhere() {
         assert_eq!(log2_q32(1), 0);
         assert_eq!(log2_q32(1 << 40), 40u64 << 32);
-        // log2(3) = 1.584962500721156...
-        let l3 = log2_q32(3) as f64 / (1u64 << 32) as f64;
-        assert!((l3 - 1.584_962_500_721_156).abs() < 1e-8, "{l3}");
+        // log2(3) is strictly between log2(2) and log2(4).
+        let l3 = log2_q32(3);
+        assert!(l3 > 1u64 << 32, "log2(3) > 1");
+        assert!(l3 < 2u64 << 32, "log2(3) < 2");
+        // 1.584962500721156 in Q32 is 6 807 362 106 - floor(log2(3) * 2^32).
+        // The fixed-point log must agree to within one Q32 step, which is the
+        // resolution of the representation rather than a tolerance chosen to
+        // make the test pass.
+        let expected = 6_807_362_106u64;
+        let delta = l3.abs_diff(expected);
+        assert!(
+            delta <= 1,
+            "log2(3) in Q32 is {l3}, expected {expected} +/- 1"
+        );
+        // Monotonic where it has to be: a bigger input never yields a smaller
+        // logarithm, which is what the ranker's ordering relies on.
+        assert!(log2_q32(1_000) < log2_q32(1_001));
         assert_eq!(neg_log2_unit_q32(u64::MAX), 1, "never an infinite score");
         assert_eq!(neg_log2_unit_q32(0), 64u64 << 32);
     }
@@ -397,6 +450,30 @@ mod tests {
             s_mobile: 0,
         });
         assert_eq!(bad.validate(), Err(PlacementError::RowTooSmall));
+    }
+
+    /// §6.9.5: the fee record's two terms are the user's minimum and the
+    /// floor's extra bytes, and they add up to the row.
+    #[test]
+    fn the_fee_record_splits_user_bytes_from_the_floor() {
+        let t = PlacementTable::testnet_default();
+        for row in &t.rows {
+            let user = row.user_physical_bytes(t.k, 128);
+            let floor = row.decentralization_physical_bytes(t.k, 128);
+            assert_eq!(user + floor, row.total_symbols() * 128);
+            assert_eq!(user, (u64::from(t.k) + 2) * 128);
+        }
+        // An all-Full row still needs redundancy above `k + 2`; that excess is
+        // a placement choice, and it lands in the floor term rather than
+        // silently repricing the user. The floor term is only zero for a row
+        // that holds exactly the minimum.
+        let minimal = PlacementRow {
+            n_full: 1,
+            s_full: t.k + 2,
+            n_mobile: 0,
+            s_mobile: 0,
+        };
+        assert_eq!(minimal.decentralization_physical_bytes(t.k, 128), 0);
     }
 
     #[test]
