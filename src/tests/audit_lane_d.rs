@@ -142,9 +142,12 @@ fn audit_lane_d_blg_011_service_supplies_credentials_and_disables_dumps() {
     };
     assert_eq!(setting("LimitCORE"), "0");
     assert_eq!(setting("EnvironmentFile"), "/etc/budlum/rpc.env");
-    let key_env = setting("Environment")
-        .lines()
-        .find_map(|line| line.strip_prefix("BUDLUM_RPC_API_KEY_ENV="));
+    // systemd permits repeated Environment settings. The first one carries
+    // RUST_LOG, so select the credential declaration across all such lines.
+    let key_env = settings
+        .iter()
+        .filter_map(|line| line.trim().strip_prefix("Environment="))
+        .find_map(|value| value.strip_prefix("BUDLUM_RPC_API_KEY_ENV="));
     assert_eq!(key_env, Some("BUDLUM_RPC_API_KEY"));
 }
 
