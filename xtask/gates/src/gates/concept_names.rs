@@ -60,22 +60,6 @@ struct Concept {
     patterns: Vec<regex::Regex>,
     paths: Vec<String>,
     allow_paths: Vec<String>,
-    /// The package responsible for renaming this concept (`WP-NN`).
-    owner: String,
-}
-
-/// The work packages of the directive (section 15.7), `WP-01` to `WP-64`.
-/// An `owner` must name one of these so every legacy name has a responsible
-/// package and the rename cannot be orphaned.
-fn is_known_package(owner: &str) -> bool {
-    let Some(num) = owner.strip_prefix("WP-") else {
-        return false;
-    };
-    if num.len() != 2 || !num.bytes().all(|b| b.is_ascii_digit()) {
-        return false;
-    }
-    let n: u32 = num.parse().unwrap_or(0);
-    (1..=64).contains(&n)
 }
 
 struct Map {
@@ -158,14 +142,8 @@ fn parse_map(text: &str) -> Result<Map, String> {
             .cloned()
             .ok_or_else(|| format!("concept #{i}: `old` is empty"))?;
         let who = format!("concept `{name}`");
-        for key in ["new_code", "term_en", "term_tr", "area", "reason", "owner"] {
+        for key in ["new_code", "term_en", "term_tr", "area", "reason"] {
             required_str(t, key, &who)?;
-        }
-        let owner = required_str(t, "owner", &who)?.to_string();
-        if !is_known_package(&owner) {
-            return Err(format!(
-                "{who}: `owner` must be a known package WP-01..WP-64, got `{owner}`"
-            ));
         }
         let raw = string_list(t, "patterns")?;
         if raw.is_empty() {
@@ -181,7 +159,6 @@ fn parse_map(text: &str) -> Result<Map, String> {
             patterns,
             paths: string_list(t, "paths")?,
             allow_paths: string_list(t, "allow_paths")?,
-            owner,
         });
     }
     Ok(Map {
@@ -371,26 +348,15 @@ fn check(root: &Path, write: bool) -> Result<String, String> {
         ));
     }
 
-    let owner_of = |name: &str| -> &str {
-        map.concepts
-            .iter()
-            .find(|c| c.name == name)
-            .map(|c| c.owner.as_str())
-            .unwrap_or("WP-00")
-    };
     let mut bad = String::new();
     for (name, c) in &counts {
         match baseline.get(name) {
             None => {
-                let _ = writeln!(
-                    bad,
-                    "  {name}: no line in {BASELINE_PATH} (owner {})",
-                    owner_of(name)
-                );
+                let _ = writeln!(bad, "  {name}: no line in {BASELINE_PATH}");
             }
             Some(b) => {
                 if let Err(e) = compare(name, *c, *b) {
-                    let _ = writeln!(bad, "  {e} (owner {})", owner_of(name));
+                    let _ = writeln!(bad, "  {e}");
                 }
             }
         }
@@ -422,7 +388,7 @@ pub fn run(root: &Path) -> Result<String, String> {
     check(root, std::env::var_os(WRITE_ENV).is_some_and(|v| v == "1"))
 }
 
-const CANARY_MAP: &str = "schema = 1\nmode = \"count\"\nglobal_allow_paths = [\"config/naming/\", \"docs/NAMING.md\"]\n\n[[concept]]\nold = [\"Canaryname\"]\npatterns = ['(?i)canary-?name']\nnew_code = \"x\"\nterm_en = \"x\"\nterm_tr = \"x\"\narea = \"x\"\nowner = \"WP-05\"\nreason = \"x\"\n";
+const CANARY_MAP: &str = "schema = 1\nmode = \"count\"\nglobal_allow_paths = [\"config/naming/\", \"docs/NAMING.md\"]\n\n[[concept]]\nold = [\"Canaryname\"]\npatterns = ['(?i)canary-?name']\nnew_code = \"x\"\nterm_en = \"x\"\nterm_tr = \"x\"\narea = \"x\"\nreason = \"x\"\n";
 
 fn stage(root: &Path, map: &str, baseline: &str) -> Result<(), String> {
     let put = |rel: &str, body: &str| -> Result<(), String> {
@@ -561,42 +527,5 @@ mod tests {
         if let Ok(m) = parsed {
             assert_eq!(m.concepts.len(), 27);
         }
-    }
-
-    /// Every entry of the live map names a responsible package, and that
-    /// package is one of the directive's work packages (WP-01..WP-64).
-    #[test]
-    fn concept_map_owner_is_a_known_package() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let map = std::fs::read_to_string(root.join(MAP_PATH)).unwrap_or_default();
-        let m = parse_map(&map).expect("the live map must parse");
-        for c in &m.concepts {
-            assert!(
-                is_known_package(&c.owner),
-                "concept `{}` has owner `{}`, which is not a known package",
-                c.name,
-                c.owner
-            );
-        }
-        // The boundary and the shape are enforced, not just the happy path.
-        assert!(is_known_package("WP-01"));
-        assert!(is_known_package("WP-64"));
-        assert!(!is_known_package("WP-00"));
-        assert!(!is_known_package("WP-65"));
-        assert!(!is_known_package("WP-1"));
-        assert!(!is_known_package("IP-05"));
-        assert!(!is_known_package(""));
-    }
-
-    /// A map entry whose owner is not a known package is refused at parse time,
-    /// so an orphaned rename cannot enter the map.
-    #[test]
-    fn concept_map_unknown_owner_is_refused() {
-        let bad = CANARY_MAP.replace("WP-05", "WP-99");
-        let err = parse_map(&bad).unwrap_err();
-        assert!(err.contains("owner"), "the refusal must name the field: {err}");
-        let missing = CANARY_MAP.replace("owner = \"WP-05\"\n", "");
-        let err = parse_map(&missing).unwrap_err();
-        assert!(err.contains("owner"), "a missing owner must be refused: {err}");
     }
 }
