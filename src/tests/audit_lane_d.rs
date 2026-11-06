@@ -175,7 +175,12 @@ fn audit_lane_d_doc_gap_07_indexer_is_registered_and_tested() {
 #[test]
 fn audit_lane_d_ledger_covers_the_assigned_identities() {
     let ledger = read_repo("docs/audit/live/lane-d.md");
-    let ids: Vec<&str> = ledger
+    let findings = ledger
+        .split("## Findings\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\n## ").next())
+        .expect("findings section");
+    let ids: Vec<&str> = findings
         .lines()
         .filter_map(|line| line.strip_prefix("| "))
         .filter_map(|rest| rest.split(" |").next())
