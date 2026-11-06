@@ -20,3 +20,7 @@ __pycache__/
 /contracts/out/
 /contracts/cache/
 .claude/settings.local.json
+
+# External planning directive and local CLI wrapper stay outside the repository tree (section 0.1.5).
+/THE_BUDLUM_DIREKTIF.md
+/arena_claude.py

@@ -149,3 +149,68 @@ fn indexer_binary_is_registered() {
         "no explicit [[bin]] for budlum-indexer"
     );
 }
+
+#[test]
+fn external_planning_directive_and_wrapper_stay_outside_repository() {
+    let ignore = read(".gitignore");
+    for name in ["THE_BUDLUM_DIREKTIF.md", "arena_claude.py"] {
+        assert!(
+            !root().join(name).exists(),
+            "non-English external file must stay outside the repository tree: {name}"
+        );
+        assert!(
+            ignore.contains(&format!("/{name}")),
+            ".gitignore must keep /{name} out of git status"
+        );
+    }
+}
+
+#[test]
+fn required_fee_is_classified_as_a_read() {
+    let gate = read("xtask/gates/src/gates/no_out_of_block_consensus_writes.rs");
+    let names = gate
+        .split("const READ_NAMES: &[&str] = &[")
+        .nth(1)
+        .and_then(|t| t.split("];").next())
+        .unwrap_or_default();
+    assert!(
+        names.contains("\"required_fee\""),
+        "required_fee must be listed in READ_NAMES"
+    );
+}
+
+#[test]
+fn base_tree_bud3_and_lockfile_regressions_stay_closed() {
+    let filter = read("src/storage/bud3/dedup_index.rs");
+    assert!(filter.contains("bits.div_ceil(64)"));
+    assert!(!filter.contains("((bits + 63) / 64)"));
+    assert!(filter.contains("lanes.iter_mut().zip(digest.chunks_exact(8))"));
+    assert!(!filter.contains("lanes[i] = v"));
+
+    let http = read("src/bin/support/http.rs");
+    assert!(http.contains("octets.get_mut(8..)"));
+
+    let registry = read("src/storage/bud3/registry.rs");
+    assert!(registry.contains("impl serde::Serialize for Bud3Registry"));
+    assert!(registry.contains("probe.mark_unseen(holder)"));
+
+    for lock in ["Cargo.lock", "fuzz/Cargo.lock"] {
+        let body = read(lock);
+        assert!(
+            body.contains("name = \"bud-codec\""),
+            "{lock} must lock bud-codec"
+        );
+    }
+
+    let osv = read(".github/workflows/osv-scanner.yml");
+    for lock in [
+        "crates/bud-codec/Cargo.lock",
+        "crates/uel-abi/Cargo.lock",
+        "kani/Cargo.lock",
+    ] {
+        assert!(
+            osv.contains(&format!("--lockfile={lock}")),
+            "osv-scanner.yml must scan {lock}"
+        );
+    }
+}
