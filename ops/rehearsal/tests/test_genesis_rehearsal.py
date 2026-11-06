@@ -1,6 +1,7 @@
 """Regression tests for the WP-46 public-operator-record ceremony."""
 
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY = Path(__file__).resolve().parents[3]
@@ -74,6 +76,17 @@ FAKE_BUD = textwrap.dedent(
         )
     }
     genesis["reward_pool"] = {"enabled": True}
+    mutation = os.environ.get("BUD_TEST_MUTATION")
+    if mutation == "address":
+        genesis["validators"][0] = "ff" * 32
+        genesis["validator_consensus_keys"][0]["validator"] = "ff" * 32
+    elif mutation == "key":
+        genesis["validator_consensus_keys"][0]["registration"]["bls_public_key"][0] ^= 1
+    elif mutation == "bool-byte":
+        genesis["validator_consensus_keys"][0]["registration"]["vrf_public_key"][0] = True
+    elif mutation == "reorder":
+        genesis["validators"].reverse()
+        genesis["validator_consensus_keys"].reverse()
     out.write_text(json.dumps(genesis), encoding="utf-8")
     print(f"assembled {len(records)} records")
     """
@@ -110,7 +123,7 @@ class GenesisRehearsalTests(unittest.TestCase):
         self.fake_bud.chmod(0o755)
         self.call_log = self.root / "bud-calls.json"
 
-    def run_ceremony(self, records, fail_assembly=False):
+    def run_ceremony(self, records, fail_assembly=False, mutation=None):
         for filename, record in records:
             (self.records / filename).write_text(json.dumps(record), encoding="utf-8")
         env = os.environ.copy()
@@ -118,6 +131,8 @@ class GenesisRehearsalTests(unittest.TestCase):
         env["BUD_TEST_CALLS"] = str(self.call_log)
         if fail_assembly:
             env["BUD_TEST_FAIL"] = "1"
+        if mutation:
+            env["BUD_TEST_MUTATION"] = mutation
         return subprocess.run(
             ["bash", str(SCRIPT), str(self.records), str(self.output)],
             cwd=self.root,
@@ -223,6 +238,51 @@ class GenesisRehearsalTests(unittest.TestCase):
         self.assertEqual(result.returncode, 9, result.stderr)
         self.assertFalse((self.output / "rehearsal-genesis.json").exists())
         self.assertFalse((self.output / "rehearsal-genesis.sha256").exists())
+
+    def test_assembler_cannot_replace_validated_operator_records(self):
+        for mutation in ("address", "key", "bool-byte"):
+            with self.subTest(mutation=mutation):
+                records = [(f"operator-{index}.json", public_record(index)) for index in range(8)]
+                result = self.run_ceremony(records, mutation=mutation)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertTrue(self.call_log.exists())
+                self.assertFalse((self.output / "rehearsal-genesis.json").exists())
+                self.assertFalse((self.output / "rehearsal-genesis.sha256").exists())
+
+    def test_assembler_may_reorder_validated_operator_records(self):
+        records = [(f"operator-{index}.json", public_record(index)) for index in range(8)]
+        result = self.run_ceremony(records, mutation="reorder")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_publish_failure_never_leaves_an_old_digest_for_new_genesis(self):
+        spec = importlib.util.spec_from_file_location(
+            "rehearsal_ceremony", REPOSITORY / "ops/rehearsal/genesis_rehearsal.py"
+        )
+        ceremony = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ceremony)
+        for fail_at in (1, 2):
+            with self.subTest(fail_at=fail_at):
+                self.output.mkdir(exist_ok=True)
+                genesis = self.output / "rehearsal-genesis.json"
+                digest = self.output / "rehearsal-genesis.sha256"
+                genesis.write_bytes(b"old genesis")
+                digest.write_bytes(b"old digest")
+                replace = os.replace
+                calls = 0
+
+                def fail_replace(source, destination):
+                    nonlocal calls
+                    calls += 1
+                    if calls == fail_at:
+                        raise OSError("injected rename failure")
+                    replace(source, destination)
+
+                with mock.patch.object(ceremony.os, "replace", side_effect=fail_replace):
+                    with self.assertRaises(OSError):
+                        ceremony.publish(self.output, b"new genesis")
+                self.assertFalse(digest.exists())
+                self.assertEqual(genesis.read_bytes(), b"old genesis" if fail_at == 1 else b"new genesis")
+                self.assertEqual(sorted(path.name for path in self.output.iterdir()), [genesis.name])
 
     def test_invalid_public_key_shape_is_refused(self):
         records = [public_record(index) for index in range(8)]
