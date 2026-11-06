@@ -2635,39 +2635,16 @@ impl Blockchain {
             })
             .copied()
             .collect();
-        let reports = self.state.liveness.record_epoch(
+        let suspended = self.state.liveness.record_epoch(
             epoch,
             &expected,
             |addr| participated.contains(addr),
             &params,
         );
-        // If liveness slashing is enabled, feed the produced reports through
-        // The canonical `slash_from_report` path (mirroring what
-        // `apply_epoch_close_liveness` does at epoch close). Tests
-        // That drive slashing explicitly via `record_liveness_epoch` therefore
-        // See the same effect.
-        if params.liveness_slashing_enabled {
-            // Same term as `apply_epoch_close_liveness`. Setting `jailed`
-            // without `jail_until` leaves a validator that `advance_epoch`
-            // releases at the next boundary, which is not a term at all.
-            let jail_until = self
-                .state
-                .epoch_index
-                .saturating_add(crate::registry::params::LIVENESS_JAIL_EPOCHS);
-            for report in &reports {
-                let _ = self.state.slash_from_report(report);
-                if let Some(v) = self.state.validators.get_mut(&report.offender) {
-                    if !v.slashed {
-                        // Timed jail, not a permanent slash (
-                        // decision B): see `apply_epoch_close_liveness`.
-                        v.active = false;
-                        v.jailed = true;
-                        v.jail_until = jail_until;
-                    }
-                }
-            }
-        }
-        reports.len()
+        // V-4 / WP-13: absence suspends, it never slashes. The tracker
+        // records the suspension; `apply_epoch_close_liveness` is the path
+        // that also removes the validator from the active set.
+        suspended.len()
     }
 
     /// The relay enqueue the lock and burn doors run.
@@ -2954,14 +2931,20 @@ impl Blockchain {
         let mut charged_fee = false;
         if let Some(reporter) = report.reporter {
             if fee > 0 {
-                let account = self.state.get_or_create(&reporter);
-                if account.balance < fee {
+                // The fee gate looks at the spendable balance, not the raw
+                // balance: vesting-locked funds must not pay consensus fees
+                // (BULGU-020 class, WP-17 item 4).
+                let spendable = self.state.spendable_balance(&reporter);
+                if spendable < fee {
                     return Err(format!(
-                        "insufficient balance for slashing report fee: have {}, need {}",
-                        account.balance, fee
+                        "insufficient spendable balance for slashing report fee: have {}, need {}",
+                        spendable, fee
                     ));
                 }
-                account.balance -= fee;
+                let account = self.state.get_or_create(&reporter);
+                account.balance = account.balance.checked_sub(fee).ok_or_else(|| {
+                    format!("slashing report fee underflow: balance below fee")
+                })?;
                 self.state.mark_dirty(&reporter);
                 charged_fee = true;
             }
@@ -4127,43 +4110,20 @@ impl Blockchain {
             })
             .copied()
             .collect();
-        let reported = state.liveness.record_epoch(
+        let suspended = state.liveness.record_epoch(
             closed_epoch,
             &expected,
             |addr| participated.contains(addr),
             &params,
         );
 
-        // OBSERVE mode by default; only act when slashing is explicitly enabled.
-        if params.liveness_slashing_enabled {
-            let jail_until = state
-                .epoch_index
-                .saturating_add(crate::registry::params::LIVENESS_JAIL_EPOCHS);
-            for report in &reported {
-                let _ = state.slash_from_report(report);
-                if let Some(validator) = state.validators.get_mut(&report.offender) {
-                    if !validator.slashed {
-                        // Absence is a TIMED
-                        // jail. `slashed` stays false, or the release loop
-                        // (`!slashed`) could never bring the validator back.
-                        validator.active = false;
-                        // The term, and the flag the release loop reads.
-                        //
-                        // `AccountState::advance_epoch` releases on
-                        // `jailed && jail_until <= epoch_index`. Cutting the
-                        // stake without setting `jailed` left the offender
-                        // invisible to that loop: a liveness penalty, which
-                        // is a penalty for being absent, became permanent.
-                        // Absence is also what a partition or a failed disk
-                        // looks like, so the punishment outlived the fault
-                        // it was measuring.
-                        //
-                        // `jailed` is hashed into the state root, so the two
-                        // slashing paths also disagreed on the root they
-                        // produced from identical evidence.
-                        validator.jailed = true;
-                        validator.jail_until = jail_until;
-                    }
+        // V-4 / WP-13: absence is a suspension, never a slash. The validator
+        // takes no new duty (`active = false`); its stake is untouched and
+        // `slashed` stays false. `ResumeValidator` lifts it one epoch later.
+        for offender in &suspended {
+            if let Some(validator) = state.validators.get_mut(offender) {
+                if !validator.slashed {
+                    validator.active = false;
                 }
             }
         }

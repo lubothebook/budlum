@@ -1525,15 +1525,15 @@ impl AccountState {
     }
 
     /// Run one epoch's liveness check on the state-level
-    /// `LivenessTracker`. Returns the canonical `SlashingReport`s produced
-    /// This epoch. `participated` is the set of validators that showed the
-    /// Expected participation; everyone else in `validators` is treated as
-    /// An absentee.
+    /// `LivenessTracker`. Returns the validators newly **suspended** this
+    /// Epoch (V-4: absence suspends, it never slashes). `participated` is
+    /// The set of validators that showed the expected participation;
+    /// Everyone else in `validators` is treated as an absentee.
     pub fn record_liveness_epoch(
         &mut self,
         epoch: u64,
         participated: &std::collections::HashSet<Address>,
-    ) -> Vec<crate::registry::evidence::SlashingReport> {
+    ) -> Vec<Address> {
         let params = *self.registry.params();
         // Only members the registry still considers active. A slashed or
         // Jailed validator remains in `self.validators` - that map holds
@@ -2650,7 +2650,7 @@ impl AccountState {
                     )?;
                 }
             }
-            ValidatorTx::ChangeClass { .. } | ValidatorTx::RotateOperatorKey { .. } => {
+            ValidatorTx::ChangeClass { .. } | ValidatorTx::RotateOperatorKey { .. } | ValidatorTx::Resume => {
                 if tx.amount != 0 {
                     return Err(refuse(
                         "validator_tx_shape",
@@ -2880,6 +2880,17 @@ impl AccountState {
         // Validator directory changes requested an epoch ago take effect here.
         self.activate_validator_changes(chain_id);
         self.advance_bud3_epoch();
+
+        // ResumeValidator requests whose epoch has come lift the suspension
+        // (section 7.8.7); the validator re-enters the active set. Absence
+        // itself never slashed (V-4).
+        for resumed in self.liveness.activate_due_resumes(self.epoch_index) {
+            if let Some(v) = self.validators.get_mut(&resumed) {
+                if !v.slashed {
+                    v.active = true;
+                }
+            }
+        }
 
         // Mikoriza weights move only here, at the boundary.
         let shared_security = crate::core::chain_config::shared_security_for_chain_id(chain_id);
@@ -3574,16 +3585,23 @@ impl AccountState {
     /// escrow, relayer-intent escrow and Graft intent escrow are counted for the
     /// same reason.
     pub fn total_bud_committed(&self) -> u128 {
+        // Supply path: checked arithmetic only. Every addend is a u64/u128
+        // total that is itself overflow-checked where it is produced, so a
+        // u128 overflow here means the chain state is already corrupt and
+        // must halt loudly, not saturate (WP-17 item 5).
         self.circulating_supply()
-            .saturating_add(self.total_staked_supply())
-            .saturating_add(self.total_unbonding_supply())
-            .saturating_add(self.total_registry_role_bonded_supply())
-            .saturating_add(self.registry.total_delegation_unbonding_supply())
-            .saturating_add(self.total_external_bonded_supply())
-            .saturating_add(self.proof_market.total_locked_supply())
-            .saturating_add(self.settlement.relayer_policy.total_escrowed_supply())
-            .saturating_add(self.settlement.graft.total_escrowed_supply())
-            .saturating_add(self.total_storage_escrowed_supply())
+            .checked_add(self.total_staked_supply())
+            .and_then(|v| v.checked_add(self.total_unbonding_supply()))
+            .and_then(|v| v.checked_add(self.total_registry_role_bonded_supply()))
+            .and_then(|v| v.checked_add(self.registry.total_delegation_unbonding_supply()))
+            .and_then(|v| v.checked_add(self.total_external_bonded_supply()))
+            .and_then(|v| v.checked_add(self.proof_market.total_locked_supply()))
+            .and_then(|v| {
+                v.checked_add(self.settlement.relayer_policy.total_escrowed_supply())
+            })
+            .and_then(|v| v.checked_add(self.settlement.graft.total_escrowed_supply()))
+            .and_then(|v| v.checked_add(self.total_storage_escrowed_supply()))
+            .expect("committed supply arithmetic overflowed u128")
     }
 
     /// Total $BUD held in storage-deal escrow: the operator bond and the part
@@ -3739,7 +3757,10 @@ impl AccountState {
     /// counter saturates rather than wraps: an overstated burn only closes
     /// headroom, it never opens it.
     pub fn record_destroyed(&mut self, amount: u128) {
-        let total = u128::from(self.burned_total).saturating_add(amount);
+        // Supply path: checked arithmetic, no saturating_add (WP-17 item 5).
+        let total = u128::from(self.burned_total)
+            .checked_add(amount)
+            .expect("burned-supply arithmetic overflowed u128");
         self.burned_total = u64::try_from(total).unwrap_or(u64::MAX);
     }
 

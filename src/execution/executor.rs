@@ -224,11 +224,14 @@ impl Executor {
         };
 
         {
-            let sender_account = state.get_or_create(&tx.from);
-            if sender_account.balance < liquid_cost {
+            // The admission gate looks at the spendable balance, not the raw
+            // balance: a vesting-locked or burn-reserve amount is not a spend
+            // gate bypass (BULGU-020 class, WP-17 item 4).
+            let sender_spendable = state.spendable_balance(&tx.from);
+            if sender_spendable < liquid_cost {
                 return Err(BudlumError::validation(
                     "insufficient_balance",
-                    "Insufficient balance",
+                    "Insufficient spendable balance",
                 ));
             }
         }
@@ -3062,6 +3065,12 @@ impl Executor {
                             .validator_directory
                             .request_quota_increase(owner, *new_quota_bytes, *seq, epoch)
                             .map_err(refuse)?;
+                    }
+                    // ResumeValidator (section 7.8.7): the suspension lifts
+                    // one epoch later via `LivenessTracker::activate_due_resumes`;
+                    // absence itself never slashed (V-4).
+                    ValidatorTx::Resume => {
+                        state.liveness.request_resume(&tx.from, epoch);
                     }
                 }
                 let sender = state.get_or_create(&tx.from);
