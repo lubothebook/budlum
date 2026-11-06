@@ -249,3 +249,14 @@ pub mod validator_classes;
 // The B.U.D. 3.0 storage door end to end.
 #[cfg(test)]
 pub mod bud3_door;
+
+// The section 6.2 vocabulary: a frame, a share, a placement group, a reference
+// counter and a volume, each built from the parts the pipeline produces.
+#[cfg(test)]
+pub mod bud3_types;
+
+// The Ethereum compatibility gateway's surface: section 8.11.2's method table,
+// the refusal of a Merkle-Patricia proof, and the bounds on a stranger's
+// filters.
+#[cfg(test)]
+pub mod eth_gateway;

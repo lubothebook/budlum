@@ -54,6 +54,8 @@ mod gates {
     pub mod bns_names_are_safe_in_an_address_bar;
     pub mod bridge_dual_tree;
     pub mod bud3_forbidden_phrases;
+    pub mod bud3_module_claims;
+    pub mod bud3_proto_is_total;
     pub mod bud_e2e;
     pub mod budscan_parity;
     pub mod budscan_patchset;
@@ -552,6 +554,22 @@ const GATES: &[Gate] = &[
         run: gates::bud3_forbidden_phrases::run,
         run_args: None,
         self_test: gates::bud3_forbidden_phrases::self_test,
+        run_log: None,
+    },
+    Gate {
+        name: "bud3-module-claims-do-not-collide",
+        replaces: None,
+        run: gates::bud3_module_claims::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::bud3_module_claims::self_test,
+    },
+    Gate {
+        name: "bud3-proto-is-total",
+        replaces: None,
+        run: gates::bud3_proto_is_total::run,
+        run_args: None,
+        self_test: gates::bud3_proto_is_total::self_test,
         run_log: None,
     },
     Gate {
