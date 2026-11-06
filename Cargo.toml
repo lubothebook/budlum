@@ -98,6 +98,9 @@ libp2p = { git = "https://github.com/libp2p/rust-libp2p", rev = "38b8a2c0e91bf69
     "gossipsub",
     "kad",
     "request-response",
+    "relay",
+    "dcutr",
+    "autonat",
 ] }
 futures = "0.3"
 tracing = "0.1"

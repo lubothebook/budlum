@@ -41,5 +41,10 @@ rate_limit_per_minute = 600
 [metrics]
 listener = "127.0.0.1:19090"
 
+[relay]
+enabled = false
+max_reservations = 128
+max_circuits = 16
+
 [features]
 pruning = false

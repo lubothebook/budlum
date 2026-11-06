@@ -334,6 +334,43 @@ fn log_prefix(s: &str, max_chars: usize) -> String {
     s.chars().take(max_chars).collect()
 }
 
+/// Returns true if `addr` contains a private / loopback / link-local IP.
+///
+/// On public networks (mainnet/testnet) Kademlia must refuse these: a peer
+/// that advertises `10/8` or `192.168/16` behind NAT would poison the
+/// public DHT and be unreachable. Devnet keeps them for local testing.
+pub fn kademlia_should_refuse(addr: &Multiaddr, is_public_network: bool) -> bool {
+    if !is_public_network {
+        return false;
+    }
+    for proto in addr.iter() {
+        match proto {
+            libp2p::multiaddr::Protocol::Ip4(ip) => {
+                if ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() {
+                    return true;
+                }
+                let o = ip.octets();
+                // Carrier-grade NAT 100.64/10 must not enter the public DHT.
+                if o[0] == 100 && (64..=127).contains(&o[1]) {
+                    return true;
+                }
+            }
+            libp2p::multiaddr::Protocol::Ip6(ip) => {
+                if ip.is_loopback() || ip.is_unspecified() {
+                    return true;
+                }
+                // Unique local fc00::/7 and link-local fe80::/10
+                let seg0 = ip.segments()[0];
+                if (seg0 & 0xfe00) == 0xfc00 || (seg0 & 0xffc0) == 0xfe80 {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Extract IPv4 /24 key from a multiaddr (first 3 octets), if present.
 pub fn ipv4_slash24(addr: &Multiaddr) -> Option<[u8; 3]> {
     for proto in addr.iter() {
@@ -864,6 +901,8 @@ pub struct Node {
     /// Consecutive reconstructions that ended in an error; see
     /// [`REORG_MAX_BACKOFF_SECS`].
     reorg_strikes: Arc<AtomicU32>,
+    /// Network profile for Kademlia private-address filtering and relay gating.
+    pub network: crate::core::chain_config::Network,
 }
 
 /// RAII token releasing [`Node::reorg_in_flight`] when the active reorg task exits.
@@ -2165,6 +2204,7 @@ impl Node {
             reorg_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             reorg_last_completed_at: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             reorg_strikes: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            network: crate::core::chain_config::Network::Devnet,
         })
     }
 
@@ -2265,6 +2305,7 @@ impl Node {
         Ok(node)
     }
     pub fn apply_network_security(&mut self, network: crate::core::chain_config::Network) {
+        self.network = network;
         let security = network.security_config();
         self.max_peers = security.max_peers;
         self.mdns_enabled = security.mdns_enabled && cfg!(feature = "p2p-mdns");
@@ -4540,7 +4581,11 @@ impl Node {
                         }
                         SwarmEvent::Behaviour(BudlumBehaviourEvent::Identify(identify::Event::Received { info, .. })) => {
                             info!("Received identity from {:?}", info.public_key.to_peer_id());
+                            let is_public = matches!(self.network, crate::core::chain_config::Network::Mainnet | crate::core::chain_config::Network::Testnet);
                             for addr in info.listen_addrs {
+                                if kademlia_should_refuse(&addr, is_public) {
+                                    continue;
+                                }
                                 self.swarm.behaviour_mut().kad.add_address(&info.public_key.to_peer_id(), addr);
                             }
                         }

@@ -61,5 +61,13 @@ listener = "127.0.0.1:19090"
 key_file = "./secrets/testnet-validator.key"
 backend = "softhsm"
 
+[relay]
+# Circuit relay for NAT traversal: relay servers must set `enabled = true`.
+# Client-side relay (dialing through a relay) is gated by SecurityConfig
+# `enable_circuit_relay` (false on testnet, true on devnet).
+enabled = false
+max_reservations = 128
+max_circuits = 16
+
 [features]
 pruning = false

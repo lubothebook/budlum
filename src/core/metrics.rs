@@ -109,6 +109,10 @@ pub struct Metrics {
     pub p2p_messages_received: IntCounter,
     pub p2p_gossip_duplicates: IntCounter,
     pub p2p_sync_requests: IntCounter,
+    pub relay_reservations: IntGauge,
+    pub relay_circuits: IntGauge,
+    pub nat_status: IntGauge,
+    pub dcutr_success_total: IntCounter,
     pub mempool_evictions: IntCounter,
     pub mempool_expired_cleanups: IntCounter,
     pub rpc_request_duration_seconds: Histogram,
@@ -456,6 +460,22 @@ impl Metrics {
             "budlum_p2p_sync_requests",
             "P2P sync requests sent or handled",
         )?;
+        let relay_reservations = IntGauge::new(
+            "budlum_relay_reservations",
+            "Active libp2p circuit relay reservations",
+        )?;
+        let relay_circuits = IntGauge::new(
+            "budlum_relay_circuits",
+            "Active libp2p relayed circuits",
+        )?;
+        let nat_status = IntGauge::new(
+            "budlum_nat_status",
+            "NAT traversal status (0=unknown,1=public,2=private,3=relay)",
+        )?;
+        let dcutr_success_total = IntCounter::new(
+            "budlum_dcutr_success_total",
+            "Successful DCUtR hole-punch upgrades",
+        )?;
         let mempool_evictions = IntCounter::new(
             "budlum_mempool_evictions",
             "Transactions evicted from mempool",
@@ -772,6 +792,10 @@ impl Metrics {
         registry.register(Box::new(p2p_messages_received.clone()))?;
         registry.register(Box::new(p2p_gossip_duplicates.clone()))?;
         registry.register(Box::new(p2p_sync_requests.clone()))?;
+        registry.register(Box::new(relay_reservations.clone()))?;
+        registry.register(Box::new(relay_circuits.clone()))?;
+        registry.register(Box::new(nat_status.clone()))?;
+        registry.register(Box::new(dcutr_success_total.clone()))?;
         registry.register(Box::new(mempool_evictions.clone()))?;
         registry.register(Box::new(mempool_expired_cleanups.clone()))?;
         registry.register(Box::new(rpc_request_duration_seconds.clone()))?;
@@ -897,6 +921,10 @@ impl Metrics {
             p2p_messages_received,
             p2p_gossip_duplicates,
             p2p_sync_requests,
+            relay_reservations,
+            relay_circuits,
+            nat_status,
+            dcutr_success_total,
             mempool_evictions,
             mempool_expired_cleanups,
             rpc_request_duration_seconds,

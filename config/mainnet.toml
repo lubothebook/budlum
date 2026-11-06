@@ -87,6 +87,11 @@ backend = "pkcs11"
 # slot_id = 0
 # token_pin_env = "BUDLUM_PKCS11_TOKEN_PIN"
 
+[relay]
+enabled = false
+max_reservations = 128
+max_circuits = 16
+
 [features]
 pruning = false
 # VerifyMerkle and VerifyInference stay closed until the AIR
