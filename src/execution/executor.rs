@@ -212,28 +212,24 @@ impl Executor {
             _ => {}
         }
 
-        let liquid_cost = match tx.tx_type {
-            TransactionType::Unstake
-            | TransactionType::Vote
-            | TransactionType::Undelegate { .. }
-            | TransactionType::WithdrawDelegation { .. }
-            | TransactionType::SetValidatorCommission { .. }
-            | TransactionType::Redelegate { .. }
-            | TransactionType::ClaimRewards { .. } => tx.fee,
-            _ => tx.total_cost(),
-        };
+        let total_cost = tx.checked_liquid_cost().ok_or_else(|| {
+            BudlumError::validation(
+                "transaction_cost_overflow",
+                "Transaction amount plus fee overflows u64",
+            )
+        })?;
 
         {
-            let sender_account = state.get_or_create(&tx.from);
-            if sender_account.balance < liquid_cost {
+            // Combine #66's overflow-checked debit with #67's spendable-balance
+            // gate. Neither locked funds nor a saturated amount can pay a fee.
+            let sender_spendable = state.spendable_balance(&tx.from);
+            if sender_spendable < total_cost {
                 return Err(BudlumError::validation(
                     "insufficient_balance",
-                    "Insufficient balance",
+                    "Insufficient spendable balance",
                 ));
             }
         }
-
-        let total_cost = tx.total_cost();
 
         match &tx.tx_type {
             TransactionType::Transfer => {
@@ -3586,7 +3582,26 @@ impl Executor {
             .map_err(|e| e.message().to_string())
     }
 
+    /// Apply a whole block atomically. A rejected block leaves `state` exactly
+    /// as it was before the call, including effects from transactions earlier
+    /// in the same block.
     pub fn apply_block_checked(
+        state: &mut AccountState,
+        transactions: &[Transaction],
+        block_producer: Option<&Address>,
+    ) -> BudlumResult<()> {
+        let mut candidate = state.clone();
+        Self::apply_block_candidate_checked(&mut candidate, transactions, block_producer)?;
+        *state = candidate;
+        Ok(())
+    }
+
+    /// Apply a block to a disposable candidate owned by the caller.
+    ///
+    /// This method can partially mutate `candidate` before returning an error.
+    /// Callers must discard it on `Err`. Use `apply_block_checked` when the
+    /// caller needs an all-or-nothing update to a live state.
+    pub(crate) fn apply_block_candidate_checked(
         state: &mut AccountState,
         transactions: &[Transaction],
         block_producer: Option<&Address>,
@@ -3650,7 +3665,13 @@ impl Executor {
             // destroyed.
             let destroyed = transactions
                 .iter()
-                .fold(0u128, |acc, tx| acc.saturating_add(u128::from(tx.fee)));
+                .try_fold(0u128, |acc, tx| acc.checked_add(u128::from(tx.fee)))
+                .ok_or_else(|| {
+                    BudlumError::validation(
+                        "burned_supply_overflow",
+                        "destroyed fee total overflowed",
+                    )
+                })?;
             state.record_destroyed(destroyed);
         }
 
@@ -3768,6 +3789,77 @@ mod tests {
     #[test]
     fn ai_exec_dims_accepts_small_model() {
         assert!(check_ai_exec_dims(&[2, 1]).is_ok());
+    }
+
+    #[test]
+    fn a_refused_later_transaction_rolls_back_the_whole_block() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let alice = Address::from([0x11; 32]);
+        let bob = Address::from([0x22; 32]);
+        let carol = Address::from([0x33; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&alice, 100);
+        let root_before = state.calculate_state_root();
+
+        let transfer = |to, amount| {
+            let mut tx = Transaction::new_with_chain_id(
+                alice,
+                to,
+                amount,
+                1,
+                0,
+                vec![],
+                DEFAULT_CHAIN_ID,
+                TransactionType::Transfer,
+            );
+            tx.hash = tx.calculate_hash();
+            tx
+        };
+        let transactions = [transfer(bob, 10), transfer(carol, 100)];
+
+        assert!(Executor::apply_block_checked(&mut state, &transactions, None).is_err());
+        assert_eq!(state.calculate_state_root(), root_before);
+        assert_eq!(state.get_balance(&alice), 100);
+        assert_eq!(state.get_nonce(&alice), 0);
+        assert_eq!(state.get_balance(&bob), 0);
+        assert_eq!(state.get_balance(&carol), 0);
+    }
+
+    #[test]
+    fn an_overflowing_amount_and_fee_is_rejected_before_state_mutation() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let sender = Address::from([0x51; 32]);
+        let recipient = Address::from([0x52; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&sender, u64::MAX);
+        let root_before = state.calculate_state_root();
+
+        let mut tx = Transaction::new_with_chain_id(
+            sender,
+            recipient,
+            u64::MAX,
+            1,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::Transfer,
+        );
+        tx.hash = tx.calculate_hash();
+
+        let error = Executor::apply_transaction_checked(&mut state, &tx).unwrap_err();
+        assert_eq!(error.code(), "transaction_cost_overflow");
+        assert_eq!(state.calculate_state_root(), root_before);
+        assert_eq!(state.get_balance(&sender), u64::MAX);
+        assert_eq!(state.get_balance(&recipient), 0);
+        assert_eq!(state.get_nonce(&sender), 0);
     }
 
     /// A refused governance vote leaves the sender untouched. The
