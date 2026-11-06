@@ -180,22 +180,30 @@ mod rpc_method_coverage {
         }
     }
 
-    /// What a method is missing.
+    /// Which of the two required halves a method **has**. `true` means the
+    /// test exists, not that the test is missing: the field names say what
+    /// they hold so a waiver check cannot invert them by accident.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct Gaps {
-        success: bool,
-        refusal: bool,
+        has_success: bool,
+        has_refusal: bool,
     }
 
-    /// The gaps of every method that has at least one.
+    /// The methods that do not yet have both halves.
     fn gaps(methods: &[String], tests: &BTreeSet<String>) -> BTreeMap<String, Gaps> {
         let mut out = BTreeMap::new();
         for method in methods {
             let stem = method_stem(method);
-            let success = tests.iter().any(|t| is_success_for(t, &stem));
-            let refusal = tests.iter().any(|t| is_refusal_for(t, &stem));
-            if !(success && refusal) {
-                out.insert(method.clone(), Gaps { success, refusal });
+            let has_success = tests.iter().any(|t| is_success_for(t, &stem));
+            let has_refusal = tests.iter().any(|t| is_refusal_for(t, &stem));
+            if !(has_success && has_refusal) {
+                out.insert(
+                    method.clone(),
+                    Gaps {
+                        has_success,
+                        has_refusal,
+                    },
+                );
             }
         }
         out
@@ -240,7 +248,7 @@ mod rpc_method_coverage {
             match baseline.get(method) {
                 None => problems.push(format!(
                     "{method} has no {} test (expected `{stem}_ok` and `{stem}_refused`)",
-                    match (gap.success, gap.refusal) {
+                    match (gap.has_success, gap.has_refusal) {
                         (false, false) => "success and refusal",
                         (false, true) => "success",
                         (true, false) => "refusal",
@@ -252,13 +260,15 @@ mod rpc_method_coverage {
                 }
                 Some(Some(reason)) => {
                     // A reasoned entry waives the refusal only, and only when
-                    // it says so. A success test is still mandatory.
+                    // it says so. A success test is still mandatory: the
+                    // waiver is a statement about the refusal arm, not a
+                    // licence to leave the method untested.
                     if !reason.starts_with(NO_REFUSAL) {
                         problems.push(format!(
                             "{method} is listed with the reason `{reason}`, which is not a `{NO_REFUSAL}` waiver"
                         ));
                     }
-                    if gap.success {
+                    if !gap.has_success {
                         problems.push(format!(
                             "{method} is listed as having no refusal arm but has no success test either; add `{stem}_ok`"
                         ));
@@ -279,7 +289,7 @@ mod rpc_method_coverage {
                 ));
                 continue;
             }
-            if reason.is_none() && missing.get(method).is_some_and(|gap| gap.success) {
+            if reason.is_none() && missing.get(method).is_some_and(|gap| gap.has_success) {
                 problems.push(format!(
                     "{method} has a success test and no refusal test; give it `{}` or a `{NO_REFUSAL}` reason",
                     format!("{}_refused", method_stem(method))
@@ -335,15 +345,15 @@ mod rpc_method_coverage {
         assert_eq!(
             missing.get("bud_beta"),
             Some(&Gaps {
-                success: true,
-                refusal: false
+                has_success: true,
+                has_refusal: false
             })
         );
         assert_eq!(
             missing.get("bud_gamma"),
             Some(&Gaps {
-                success: false,
-                refusal: false
+                has_success: false,
+                has_refusal: false
             })
         );
         assert!(!missing.contains_key("bud_alpha"));
@@ -372,6 +382,48 @@ mod rpc_method_coverage {
                 .into_iter()
                 .collect();
         assert!(compare(&methods, &tests, &wrong_reason).is_err());
+    }
+
+    /// Red-first canary for the inverted waiver check. A `no-refusal:` line
+    /// waives exactly one half: without `alpha_ok` the method is untested and
+    /// the gate must say so. Before the fix `compare` returned `Ok` for this
+    /// shape and refused the shape below, which is the exact inversion.
+    #[test]
+    fn a_no_refusal_waiver_requires_the_success_test() {
+        let methods = vec!["bud_alpha".to_string()];
+        let tests: BTreeSet<String> = ["alpha_refused"].into_iter().map(str::to_string).collect();
+        let reasoned: BTreeMap<String, Option<String>> = [(
+            "bud_alpha".to_string(),
+            Some(format!("{NO_REFUSAL} a read with no failure arm")),
+        )]
+        .into_iter()
+        .collect();
+        let err = compare(&methods, &tests, &reasoned)
+            .expect_err("a waiver cannot stand in for the success test");
+        assert!(err.contains("alpha_ok"), "{err}");
+    }
+
+    /// The other half of the same canary: when the success test is present
+    /// and the method genuinely has no refusal arm, the waiver is accepted.
+    #[test]
+    fn a_no_refusal_waiver_is_accepted_with_a_success_test() {
+        let methods = vec!["bud_alpha".to_string()];
+        let tests: BTreeSet<String> = ["alpha_ok"].into_iter().map(str::to_string).collect();
+        let reasoned: BTreeMap<String, Option<String>> = [(
+            "bud_alpha".to_string(),
+            Some(format!("{NO_REFUSAL} a compile-time constant read")),
+        )]
+        .into_iter()
+        .collect();
+        assert_eq!(compare(&methods, &tests, &reasoned), Ok(()));
+        // A waiver cannot hide a newly added refusal test: with both halves
+        // present the entry is stale and must be deleted.
+        let both: BTreeSet<String> = ["alpha_ok", "alpha_refused"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let err = compare(&methods, &both, &reasoned).expect_err("the entry is stale now");
+        assert!(err.contains("covered now"), "{err}");
     }
 
     #[test]
