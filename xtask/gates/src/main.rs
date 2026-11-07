@@ -53,16 +53,20 @@ mod gates {
     pub mod bns_gate;
     pub mod bns_names_are_safe_in_an_address_bar;
     pub mod bridge_dual_tree;
+    pub mod bud3_custody_proofs;
+    pub mod bud3_forbidden_phrases;
+    pub mod bud3_placement;
+    pub mod bud3_repair_fires;
     pub mod bud_e2e;
-    pub mod budscan_parity;
-    pub mod budscan_patchset;
+    pub mod explorer_parity;
+    pub mod explorer_patchset;
     pub mod capability_modules_are_wired;
     pub mod cargo_vet;
     pub mod chain_id_is_not_hardcoded;
     pub mod ci_workflow_guards;
     pub mod classical_crypto_is_paired;
     pub mod clippy_extra;
-    pub mod coding_audit_samples_the_relationship;
+    pub mod concept_names;
     pub mod consensus_maps_ordered;
     pub mod consensus_state_only_changes_in_blocks;
     pub mod containment_defaults;
@@ -74,6 +78,7 @@ mod gates {
     pub mod docker_toolchain;
     pub mod domain_tags;
     pub mod economy_invariants;
+    pub mod ee_workers_build_with_unwind;
     pub mod every_fuzz_target_is_run;
     pub mod every_opcode_forgery;
     pub mod evidence_provenance;
@@ -88,7 +93,6 @@ mod gates {
     pub mod gates_do_not_panic;
     pub mod gating_flags;
     pub mod geiger;
-    pub mod generated_content;
     pub mod genesis_schema;
     pub mod git_deps_audited;
     pub mod gov_slash_evidence_is_validator_only;
@@ -109,9 +113,12 @@ mod gates {
     pub mod multi_ratio_consensus;
     pub mod named_tests;
     pub mod network_hardening_gate;
+    pub mod nightly_workflows_are_required;
     pub mod no_conflict_markers;
     pub mod no_constant_security_verdicts;
+    pub mod no_float_in_consensus_paths;
     pub mod no_idle_code;
+    pub mod no_legacy_storage;
     pub mod no_new_shell_gates;
     pub mod no_orphan_source_files;
     pub mod no_out_of_block_consensus_writes;
@@ -121,7 +128,6 @@ mod gates {
     pub mod node_classification_gate;
     pub mod one_house_guards;
     pub mod ownerless_dependencies;
-    pub mod paid_content;
     pub mod parallel_execution;
     pub mod pinned_downloads;
     pub mod poa_compliance_gate;
@@ -132,11 +138,13 @@ mod gates {
     pub mod proof_deps_are_exactly_pinned;
     pub mod qr_is_derivative_only;
     pub mod quantum_account;
+    pub mod readme_definition_block_is_verbatim;
+    pub mod readme_has_no_placeholders;
     pub mod readme_no_deny;
     pub mod reduction_claims;
     pub mod refusals_no_mutate;
-    pub mod regen_health_door;
-    pub mod regeneration;
+    pub mod state_recovery_door;
+    pub mod canonical_programs_reproduce;
     pub mod rejection_tests;
     pub mod relay;
     pub mod release_profile_pins;
@@ -154,13 +162,10 @@ mod gates {
     pub mod source_reading;
     pub mod storage_penalties;
     pub mod storage_priced;
-    pub mod storage_proof_boundary;
-    pub mod storage_provider_gate;
     pub mod suppressions_are_justified;
     pub mod tee_trust_boundary_is_structural;
     pub mod test_modules_can_see_what_they_test;
     pub mod the_image_builds_what_the_manifest_declares;
-    pub mod three_is_recipe_only;
     pub mod threshold_rates;
     pub mod timing_safe;
     pub mod transcript_mirrors;
@@ -174,12 +179,12 @@ mod gates {
     pub mod wallet_core_gate;
     pub mod wallet_node_address_agree;
     pub mod wire_fields_are_signed;
+    pub mod workflows_cover_every_workspace;
     pub mod workflows_produce_jobs;
     pub mod zero_address_sender_is_verified;
-    pub mod zero_storage_frozen;
     pub mod zero_tests_witness;
     pub mod zizmor;
-    pub mod zkvm_immune_regeneration;
+    pub mod zkvm_refuses_untrusted_proofs;
 }
 
 /// A gate's plain run: inspect the repo root, return a verdict.
@@ -209,12 +214,12 @@ struct Gate {
 
 const GATES: &[Gate] = &[
     Gate {
-        name: "zkvm-immune-regeneration",
+        name: "zkvm-refuses-untrusted-proofs",
         replaces: None,
-        run: gates::zkvm_immune_regeneration::run,
+        run: gates::zkvm_refuses_untrusted_proofs::run,
         run_log: None,
         run_args: None,
-        self_test: gates::zkvm_immune_regeneration::self_test,
+        self_test: gates::zkvm_refuses_untrusted_proofs::self_test,
     },
     Gate {
         name: "quantum-account",
@@ -321,14 +326,6 @@ const GATES: &[Gate] = &[
         run_log: None,
     },
     Gate {
-        name: "coding-audit-samples-the-relationship",
-        replaces: Some("check-coding-audit-samples-the-relationship.sh"),
-        run: gates::coding_audit_samples_the_relationship::run,
-        run_args: None,
-        self_test: gates::coding_audit_samples_the_relationship::self_test,
-        run_log: None,
-    },
-    Gate {
         name: "content-encryption-bound",
         replaces: Some("check-content-encryption-is-declared-and-bound.sh"),
         run: gates::content_encryption_is_declared_and_bound::run,
@@ -345,19 +342,19 @@ const GATES: &[Gate] = &[
         run_log: None,
     },
     Gate {
-        name: "budscan-name-rule-parity",
+        name: "explorer-parity",
         replaces: None,
-        run: gates::budscan_parity::run,
+        run: gates::explorer_parity::run,
         run_args: None,
-        self_test: gates::budscan_parity::self_test,
+        self_test: gates::explorer_parity::self_test,
         run_log: None,
     },
     Gate {
-        name: "budscan-patchset",
+        name: "explorer-patchset",
         replaces: None,
-        run: gates::budscan_patchset::run,
+        run: gates::explorer_patchset::run,
         run_args: None,
-        self_test: gates::budscan_patchset::self_test,
+        self_test: gates::explorer_patchset::self_test,
         run_log: None,
     },
     Gate {
@@ -545,6 +542,44 @@ const GATES: &[Gate] = &[
         run_log: None,
     },
     Gate {
+        name: "bud3-forbidden-phrases",
+        replaces: None,
+        run: gates::bud3_forbidden_phrases::run,
+        run_args: None,
+        self_test: gates::bud3_forbidden_phrases::self_test,
+        run_log: None,
+    },
+    // The rewritten form of `shard-placement-is-sticky-and-staked`: same
+    // properties, read from the B.U.D. 3.0 placement instead of the legacy
+    // assignment module. The old gate stays until that module is removed.
+    Gate {
+        name: "bud3-placement",
+        replaces: None,
+        run: gates::bud3_placement::run,
+        run_args: None,
+        self_test: gates::bud3_placement::self_test,
+        run_log: None,
+    },
+    Gate {
+        name: "bud3-custody-proofs",
+        replaces: None,
+        run: gates::bud3_custody_proofs::run,
+        run_args: None,
+        self_test: gates::bud3_custody_proofs::self_test,
+        run_log: None,
+    },
+    // The rewritten form of `repair-fires-on-loss`: the trigger and the repair
+    // are read from the B.U.D. 3.0 registry instead of the legacy maintenance
+    // sweep. The old gate stays until that sweep is removed.
+    Gate {
+        name: "bud3-repair-fires",
+        replaces: None,
+        run: gates::bud3_repair_fires::run,
+        run_args: None,
+        self_test: gates::bud3_repair_fires::self_test,
+        run_log: None,
+    },
+    Gate {
         name: "no-unicode-dashes",
         replaces: Some("check-no-unicode-dashes.sh"),
         run: gates::no_unicode_dashes::run,
@@ -617,18 +652,6 @@ const GATES: &[Gate] = &[
         self_test: gates::poa_compliance_gate::self_test,
     },
     Gate {
-        name: "storage-provider",
-        replaces: Some("check-storage-provider-gate.sh"),
-        run: |_| {
-            Err(String::from(
-                "storage-provider reads a cargo test log; pass its path as an argument",
-            ))
-        },
-        run_log: Some(gates::storage_provider_gate::run),
-        run_args: None,
-        self_test: gates::storage_provider_gate::self_test,
-    },
-    Gate {
         name: "network-hardening",
         replaces: Some("check-network-hardening-gate.sh"),
         run: |_| {
@@ -677,20 +700,20 @@ const GATES: &[Gate] = &[
         self_test: gates::domain_tags::self_test,
     },
     Gate {
-        name: "regeneration",
+        name: "canonical-programs-reproduce",
         replaces: None,
-        run: gates::regeneration::run,
+        run: gates::canonical_programs_reproduce::run,
         run_log: None,
         run_args: None,
-        self_test: gates::regeneration::self_test,
+        self_test: gates::canonical_programs_reproduce::self_test,
     },
     Gate {
-        name: "regen-health-door",
+        name: "state-recovery-door",
         replaces: None,
-        run: gates::regen_health_door::run,
+        run: gates::state_recovery_door::run,
         run_log: None,
         run_args: None,
-        self_test: gates::regen_health_door::self_test,
+        self_test: gates::state_recovery_door::self_test,
     },
     Gate {
         name: "relay",
@@ -913,28 +936,12 @@ const GATES: &[Gate] = &[
         self_test: gates::derived_content::self_test,
     },
     Gate {
-        name: "zero-storage-bytes-are-frozen",
-        replaces: Some("check-zero-storage-bytes-are-frozen.sh"),
-        run: gates::zero_storage_frozen::run,
-        run_log: None,
-        run_args: None,
-        self_test: gates::zero_storage_frozen::self_test,
-    },
-    Gate {
         name: "repair-fires-on-loss",
         replaces: Some("check-repair-fires-on-loss.sh"),
         run: gates::repair_fires::run,
         run_log: None,
         run_args: None,
         self_test: gates::repair_fires::self_test,
-    },
-    Gate {
-        name: "storage-proof-production-boundary",
-        replaces: Some("check-storage-proof-production-boundary.sh"),
-        run: gates::storage_proof_boundary::run,
-        run_log: None,
-        run_args: None,
-        self_test: gates::storage_proof_boundary::self_test,
     },
     Gate {
         name: "badges-are-current",
@@ -949,6 +956,14 @@ const GATES: &[Gate] = &[
         self_test: gates::badges_current::self_test,
     },
     Gate {
+        name: "concept-names",
+        replaces: None,
+        run: gates::concept_names::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::concept_names::self_test,
+    },
+    Gate {
         name: "containment-defaults",
         replaces: Some("check-containment-defaults.sh"),
         run: gates::containment_defaults::run,
@@ -957,27 +972,11 @@ const GATES: &[Gate] = &[
         self_test: gates::containment_defaults::self_test,
     },
     Gate {
-        name: "generated-content-is-verifiable",
-        replaces: Some("check-generated-content-is-verifiable.sh"),
-        run: gates::generated_content::run,
-        run_log: None,
-        run_args: None,
-        self_test: gates::generated_content::self_test,
-    },
-    Gate {
         name: "qr-is-derivative-only",
         replaces: None,
         run: gates::qr_is_derivative_only::run,
         run_args: None,
         self_test: gates::qr_is_derivative_only::self_test,
-        run_log: None,
-    },
-    Gate {
-        name: "three-is-recipe-only",
-        replaces: None,
-        run: gates::three_is_recipe_only::run,
-        run_args: None,
-        self_test: gates::three_is_recipe_only::self_test,
         run_log: None,
     },
     Gate {
@@ -1053,14 +1052,6 @@ const GATES: &[Gate] = &[
         self_test: gates::pinned_downloads::self_test,
     },
     Gate {
-        name: "paid-content-cannot-be-read-for-free",
-        replaces: Some("check-paid-content-cannot-be-read-for-free.sh"),
-        run: gates::paid_content::run,
-        run_log: None,
-        run_args: None,
-        self_test: gates::paid_content::self_test,
-    },
-    Gate {
         name: "reduction-claims-state-both-units",
         replaces: Some("check-reduction-claims-state-both-units.sh"),
         run: gates::reduction_claims::run,
@@ -1131,6 +1122,30 @@ const GATES: &[Gate] = &[
         run_log: None,
         run_args: None,
         self_test: gates::gates_are_wired::self_test,
+    },
+    Gate {
+        name: "no-legacy-storage",
+        replaces: None,
+        run: gates::no_legacy_storage::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::no_legacy_storage::self_test,
+    },
+    Gate {
+        name: "readme-definition-block-is-verbatim",
+        replaces: None,
+        run: gates::readme_definition_block_is_verbatim::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::readme_definition_block_is_verbatim::self_test,
+    },
+    Gate {
+        name: "readme-has-no-placeholders",
+        replaces: None,
+        run: gates::readme_has_no_placeholders::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::readme_has_no_placeholders::self_test,
     },
     Gate {
         name: "readme-does-not-deny-shipped-code",
@@ -1378,7 +1393,60 @@ const GATES: &[Gate] = &[
         run_args: None,
         self_test: gates::pq_core_gate::self_test,
     },
+    Gate {
+        name: "no-float-in-consensus-paths",
+        replaces: None,
+        run: gates::no_float_in_consensus_paths::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::no_float_in_consensus_paths::self_test,
+    },
+    Gate {
+        name: "workflows-cover-every-workspace",
+        replaces: None,
+        run: gates::workflows_cover_every_workspace::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::workflows_cover_every_workspace::self_test,
+    },
+    Gate {
+        name: "ee-workers-build-with-unwind",
+        replaces: None,
+        run: gates::ee_workers_build_with_unwind::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::ee_workers_build_with_unwind::self_test,
+    },
+    Gate {
+        name: "nightly-workflows-are-required",
+        replaces: None,
+        run: gates::nightly_workflows_are_required::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::nightly_workflows_are_required::self_test,
+    },
 ];
+
+/// Gates that take extra arguments but whose plain run (no arguments) is a
+/// complete verification. `--all` runs them: leaving `tree-pin` out meant the
+/// aggregate run, the one CI relies on, never checked the budzero tree pins.
+const RUNS_WITHOUT_ARGUMENTS: &[&str] = &["tree-pin"];
+
+/// The gates `--all` runs.
+///
+/// On the run path the gates that take a log path or positional roots are left
+/// out: they cannot run without their argument, and their CI steps call them
+/// directly. A canary takes no argument, so the self-test path keeps them all.
+fn all_selection(self_test: bool) -> Vec<&'static Gate> {
+    GATES
+        .iter()
+        .filter(|g| {
+            self_test
+                || RUNS_WITHOUT_ARGUMENTS.contains(&g.name)
+                || (g.run_log.is_none() && g.run_args.is_none())
+        })
+        .collect()
+}
 
 fn usage() -> String {
     let mut s = String::from(
@@ -1448,10 +1516,7 @@ fn main() {
         // directly. A canary takes no argument, so the self-test path keeps
         // them; filtered there too, `--all --self-test` reported success
         // while about twenty gates had proven nothing.
-        Some(&"--all" | &"--self-test") => GATES
-            .iter()
-            .filter(|g| self_test || (g.run_log.is_none() && g.run_args.is_none()))
-            .collect(),
+        Some(&"--all" | &"--self-test") => all_selection(self_test),
         Some(name) => {
             if let Some(g) = GATES.iter().find(|g| g.name == *name) {
                 vec![g]
@@ -1493,5 +1558,21 @@ fn main() {
             failed.join(", ")
         );
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod all_selection_tests {
+    use super::*;
+
+    /// `budlum-gates --all` must run `tree-pin`, whose plain run
+    /// (no `--pin`) is a verification that needs no argument.
+    #[test]
+    fn all_runs_tree_pin() {
+        let names: Vec<&str> = all_selection(false).iter().map(|g| g.name).collect();
+        assert!(names.contains(&"tree-pin"), "`--all` skips tree-pin");
+        let canaries: Vec<&str> = all_selection(true).iter().map(|g| g.name).collect();
+        assert!(canaries.contains(&"tree-pin"));
+        assert_eq!(canaries.len(), GATES.len(), "every canary runs");
     }
 }

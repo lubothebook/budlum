@@ -138,7 +138,7 @@ add a 16-byte tag, so an object declaring `ClientSide` and shorter than 16 bytes
 is refused. This catches the careless client, not the
 determined liar.
 
-Detail, what is not claimed, and why: `docs/BUD_CONTENT_ENCRYPTION.md`.
+Detail, what is not claimed, and why: `docs/STORAGE_ENCRYPTION.md`.
 Gate: `scripts/check-content-encryption-is-declared-and-bound.sh` (14 canaries).
 
 ## Coding audit: is the parity really parity
@@ -164,7 +164,10 @@ someone holding nothing. Replicated objects are not audited but refused: if ever
 there is no `i`, and saying "passed" would report a check that was never performed.
 
 Detail and probability table: `docs/BUD_STORAGE_ROADMAP.md` Gap 3b.
-Gate: `scripts/check-coding-audit-samples-the-relationship.sh` (13 canaries).
+Gate: none. The `coding-audit-samples-the-relationship` gate was retired by the
+directive's gate inventory, because B.U.D. 3.0 replaces the relationship it
+sampled; the custody proof in `src/storage/bud3/custody.rs` is the check that
+takes its place. The old shell script it named is not in the tree.
 
 ## Roadmap markers
 

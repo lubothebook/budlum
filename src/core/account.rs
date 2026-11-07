@@ -58,11 +58,19 @@ pub struct PendingPoaCompliance {
     pub reason_hash: [u8; 32],
 }
 
+/// One whole BUD atom (`10^-6` BUD) expressed in attoBUD (`10^-18` BUD).
+pub const ATTO_PER_ATOM: u64 = 1_000_000_000_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     pub public_key: Address,
     pub balance: u64,
     pub nonce: u64,
+    /// Sub-atom fractional balance in attoBUD (`10^-18` BUD), strictly below
+    /// [`ATTO_PER_ATOM`] (`10^12`). Enables exact 18-decimal EVM wei and
+    /// 9-decimal SVM lamport accounting on the single BUD ledger.
+    #[serde(default)]
+    pub frac_attos: u64,
 }
 /// Stand-in bytes hashed when a state-root input cannot be serialized.
 ///
@@ -71,12 +79,27 @@ pub struct Account {
 /// once, and a fixed marker keeps the root identical across nodes.
 const STATE_SERIALIZE_FAILED: &[u8] = b"budlum/serialize-failed/account-state";
 
+fn account_leaf_hash(pubkey: &Address, account: &Account) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update([0x00]);
+    h.update(pubkey.0);
+    h.update(account.balance.to_le_bytes());
+    h.update(account.nonce.to_le_bytes());
+    if account.frac_attos != 0 {
+        h.update(b"BDLM_FRAC_ATTOS_V1");
+        h.update(account.frac_attos.to_le_bytes());
+    }
+    h.finalize().into()
+}
+
 impl Account {
     pub fn new(public_key: Address) -> Self {
         Account {
             public_key,
             balance: 0,
             nonce: 0,
+            frac_attos: 0,
         }
     }
     pub fn with_balance(public_key: Address, balance: u64) -> Self {
@@ -84,7 +107,15 @@ impl Account {
             public_key,
             balance,
             nonce: 0,
+            frac_attos: 0,
         }
+    }
+    /// Exact total balance in attoBUD (`balance * 10^12 + frac_attos`).
+    pub(crate) fn bud_amount(
+        &self,
+    ) -> Result<budlum_uel_abi::BudAmount, crate::execution::coordinator::bud_unit::BudUnitError>
+    {
+        crate::execution::coordinator::bud_unit::account_bud_amount(self)
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -466,6 +497,15 @@ pub struct AccountState {
     /// freeze, travel-rule) in consensus state - rooted and snapshotted
     /// with everything else that decides writes.
     pub poa_compliance: crate::registry::PoaComplianceRegistry,
+    /// The validator directory: class, operator key, quota and the
+    /// bond of every mobile validator. Rooted and snapshotted.
+    pub validator_directory: crate::validators::ValidatorDirectory,
+    /// The B.U.D. 3.0 registry: objects, references, shares and audits.
+    /// Rooted and snapshotted.
+    pub bud3_registry: crate::storage::bud3::registry::Bud3Registry,
+    /// Universal Execution Layer namespace key-value store (`ee/*`, `uel/*`).
+    /// Folded into the state root via `execution_root()` once non-empty.
+    pub uel_state: crate::execution::coordinator::commitment::UelNamespaceStore,
     /// Governance-queued compliance freezes/unfreezes awaiting
     /// application (see [`PendingPoaCompliance`]).
     pub pending_poa_freezes: Vec<PendingPoaCompliance>,
@@ -538,6 +578,9 @@ impl AccountState {
             pending_bridge_burns: Vec::new(),
             pending_domain_unfreezes: Vec::new(),
             poa_compliance: crate::registry::PoaComplianceRegistry::new(),
+            validator_directory: crate::validators::ValidatorDirectory::new(),
+            bud3_registry: crate::storage::bud3::registry::Bud3Registry::default(),
+            uel_state: crate::execution::coordinator::commitment::UelNamespaceStore::default(),
             burned_total: 0,
             pending_poa_freezes: Vec::new(),
             pending_poa_unfreezes: Vec::new(),
@@ -601,6 +644,9 @@ impl AccountState {
             pending_bridge_burns: Vec::new(),
             pending_domain_unfreezes: Vec::new(),
             poa_compliance: crate::registry::PoaComplianceRegistry::new(),
+            validator_directory: crate::validators::ValidatorDirectory::new(),
+            bud3_registry: crate::storage::bud3::registry::Bud3Registry::default(),
+            uel_state: crate::execution::coordinator::commitment::UelNamespaceStore::default(),
             burned_total: 0,
             pending_poa_freezes: Vec::new(),
             pending_poa_unfreezes: Vec::new(),
@@ -673,6 +719,9 @@ impl AccountState {
             pending_bridge_burns: Vec::new(),
             pending_domain_unfreezes: Vec::new(),
             poa_compliance: crate::registry::PoaComplianceRegistry::new(),
+            validator_directory: crate::validators::ValidatorDirectory::new(),
+            bud3_registry: crate::storage::bud3::registry::Bud3Registry::default(),
+            uel_state: crate::execution::coordinator::commitment::UelNamespaceStore::default(),
             burned_total: 0,
             pending_poa_freezes: Vec::new(),
             pending_poa_unfreezes: Vec::new(),
@@ -788,6 +837,9 @@ impl AccountState {
             pending_bridge_burns: Vec::new(),
             pending_domain_unfreezes: Vec::new(),
             poa_compliance: snapshot.poa_compliance.clone().unwrap_or_default(),
+            validator_directory: snapshot.validator_directory.clone().unwrap_or_default(),
+            bud3_registry: snapshot.bud3_registry.clone().unwrap_or_default(),
+            uel_state: crate::execution::coordinator::commitment::UelNamespaceStore::default(),
             burned_total: snapshot.burned_total,
             pending_poa_freezes: Vec::new(),
             pending_poa_unfreezes: Vec::new(),
@@ -1420,6 +1472,13 @@ impl AccountState {
         role: crate::registry::role::RoleId,
         amount: u64,
     ) -> Result<u64, crate::registry::RegistryError> {
+        // STORAGE_OPERATOR (5) and CONTENT_VALIDATOR (9) are reserved ids: the
+        // validator who stores content is the validator .
+        if role == crate::registry::role::roles::STORAGE_OPERATOR
+            || role == crate::registry::role::roles::CONTENT_VALIDATOR
+        {
+            return Err(crate::registry::RegistryError::UnsupportedRole { role });
+        }
         let required = self.registry.params().min_stake;
         let available = self.spendable_balance(address);
         if amount < required || available < amount {
@@ -1440,10 +1499,6 @@ impl AccountState {
             }
             roles::ATTESTER => {
                 self.registry.register_attester(*address, amount, epoch)?;
-            }
-            roles::CONTENT_VALIDATOR => {
-                self.registry
-                    .register_content_validator(*address, amount, epoch)?;
             }
             // DeEd participant roles: permissionless
             // seats at the same floor; the artifact bytes live in B.U.D.
@@ -1656,6 +1711,25 @@ impl AccountState {
     /// Primarily useful for persistence/integration tests and diagnostics.
     pub fn dirty_account_count(&self) -> usize {
         self.dirty_accounts.len()
+    }
+
+    /// The smallest fee `tx` can carry and still pass the fee rules of
+    /// [`Self::validate_transaction`]: the flat floor, plus the proportional
+    /// cut on a value transfer, and the escalating proposal fee on a
+    /// governance proposal. `bud_estimateGas` answers with this, so
+    /// the estimate and the admission rule are one function.
+    #[must_use]
+    pub fn required_fee(&self, tx: &Transaction) -> u64 {
+        match tx.tx_type {
+            TransactionType::Transfer => self
+                .registry
+                .params()
+                .required_transfer_fee(tx.amount, self.base_fee),
+            TransactionType::Vote if tx.data.len() > 9 => self
+                .base_fee
+                .max(self.required_governance_proposal_fee(&tx.from)),
+            _ => self.base_fee,
+        }
     }
 
     pub fn required_governance_proposal_fee(&self, proposer: &Address) -> u64 {
@@ -1962,6 +2036,10 @@ impl AccountState {
                 if new_owner == Address::zero() {
                     return Err("BNS transfer new owner cannot be the zero address".into());
                 }
+            }
+            TransactionType::Validator(ref validator_tx) => {
+                self.check_validator_tx(tx, validator_tx)
+                    .map_err(|error| error.to_string())?;
             }
             TransactionType::RegisterConsensusKeys(ref registration) => {
                 if tx.amount != 0 || tx.to != Address::zero() || !tx.data.is_empty() {
@@ -2528,6 +2606,282 @@ impl AccountState {
 
     /// Record consensus participation for the epoch that just completed and
     /// ... [doc continues]
+    /// The non-mutating checks of a validator transaction. Admission
+    /// (`validate_transaction`) and the executor both call it, so the two
+    /// cannot disagree about what a refusal is.
+    ///
+    /// # Errors
+    ///
+    /// A [`crate::validators::ValidatorError`] naming the refused rule.
+    pub fn check_validator_tx(
+        &self,
+        tx: &Transaction,
+        vtx: &crate::validators::ValidatorTx,
+    ) -> Result<(), crate::validators::ValidatorError> {
+        use crate::validators::{ValidatorError, ValidatorTx};
+        let refuse = |code: &'static str, message: &str| ValidatorError {
+            code,
+            message: message.to_string(),
+        };
+        vtx.validate_shape()?;
+        if tx.to != Address::zero() || !tx.data.is_empty() {
+            return Err(refuse(
+                "validator_tx_shape",
+                "a validator transaction needs a zero recipient and empty data",
+            ));
+        }
+        let network = crate::core::chain_config::Network::from_chain_id(tx.chain_id);
+        match vtx {
+            ValidatorTx::Register(registration) => {
+                if registration.owner != tx.from {
+                    return Err(refuse(
+                        "validator_owner_not_sender",
+                        "the owner of a registration must be the sender",
+                    ));
+                }
+                let floor = network.map_or(1, |n| n.class_floor(registration.class));
+                if tx.amount < floor {
+                    return Err(refuse(
+                        "validator_stake_below_class_floor",
+                        &format!(
+                            "{:?} validators bond at least {floor}, the transaction bonds {}",
+                            registration.class, tx.amount
+                        ),
+                    ));
+                }
+                if self.validator_directory.get(&tx.from).is_some()
+                    || self.validators.contains_key(&tx.from)
+                {
+                    return Err(refuse(
+                        "validator_already_registered",
+                        "the owner already has a validator record",
+                    ));
+                }
+                if self.validator_directory.iter().any(|r| {
+                    r.peer_id == registration.peer_id || r.operator_key == registration.operator_key
+                }) {
+                    return Err(refuse(
+                        "validator_peer_or_operator_key_in_use",
+                        "the peer id or the operator key belongs to another validator",
+                    ));
+                }
+                let entry = crate::chain::finality::ValidatorEntry {
+                    address: registration.owner,
+                    stake: 0,
+                    bls_public_key: registration.bls_key.clone(),
+                    pop_signature: registration.bls_pop.clone(),
+                    pq_public_key: Vec::new(),
+                };
+                if !crate::chain::finality::verify_pop(&entry, tx.chain_id) {
+                    return Err(refuse(
+                        "validator_bls_pop_invalid",
+                        "the BLS key or its proof of possession is invalid",
+                    ));
+                }
+                if let Some(seat) = &registration.seat {
+                    Self::check_seat_keys(
+                        &registration.owner,
+                        &registration.bls_key,
+                        &registration.bls_pop,
+                        seat,
+                        tx.chain_id,
+                    )?;
+                }
+            }
+            ValidatorTx::ChangeClass { .. } | ValidatorTx::RotateOperatorKey { .. } => {
+                if tx.amount != 0 {
+                    return Err(refuse(
+                        "validator_tx_shape",
+                        "this validator transaction moves no value",
+                    ));
+                }
+                if self.validator_directory.get(&tx.from).is_none() {
+                    return Err(refuse(
+                        "validator_not_registered",
+                        "only the owner account of a validator may send this",
+                    ));
+                }
+            }
+            ValidatorTx::UpdateCustodyQuota {
+                owner,
+                new_quota_bytes,
+                seq,
+                operator_signature,
+            } => {
+                if tx.amount != 0 {
+                    return Err(refuse(
+                        "validator_tx_shape",
+                        "this validator transaction moves no value",
+                    ));
+                }
+                let record = self.validator_directory.get(owner).ok_or_else(|| {
+                    refuse(
+                        "validator_not_registered",
+                        "the owner has no validator record",
+                    )
+                })?;
+                let message = crate::validators::quota_update_message(
+                    tx.chain_id,
+                    owner,
+                    *new_quota_bytes,
+                    *seq,
+                );
+                crate::crypto::pq::verify_in(
+                    &self.scheme_registry,
+                    crate::crypto::scheme::SchemeId::ML_DSA_65,
+                    &record.operator_key,
+                    &message,
+                    crate::crypto::ctx::VALIDATOR_V1,
+                    operator_signature,
+                )
+                .map_err(|_| {
+                    refuse(
+                        "validator_operator_signature_invalid",
+                        "the operator signature does not verify under the operator key",
+                    )
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    fn check_seat_keys(
+        owner: &Address,
+        bls_key: &[u8],
+        bls_pop: &[u8],
+        seat: &crate::validators::SeatFields,
+        chain_id: u64,
+    ) -> Result<(), crate::validators::ValidatorError> {
+        crate::core::transaction::ConsensusKeyRegistration {
+            scheme_id: crate::chain::finality::BLS_SCHEME_RFC9380_V1.to_string(),
+            vrf_public_key: seat.vrf_key.clone(),
+            bls_public_key: bls_key.to_vec(),
+            pop_signature: bls_pop.to_vec(),
+            pq_public_key: seat.pq_vote_key.clone(),
+        }
+        .validate(*owner, chain_id)
+        .map_err(|message| crate::validators::ValidatorError {
+            code: "validator_seat_keys_invalid",
+            message,
+        })
+    }
+
+    /// Put a Full validator into the consensus set: keys, stake, readiness and
+    /// the leader commitment. The caller has already moved `stake` out of the
+    /// balance (registration) or out of the directory record (class change).
+    ///
+    /// # Errors
+    ///
+    /// A message when the seat keys fail, the leader commitment is refused, or
+    /// the owner is already in the consensus set.
+    pub fn install_full_validator(
+        &mut self,
+        owner: Address,
+        stake: u64,
+        bls_key: &[u8],
+        bls_pop: &[u8],
+        seat: &crate::validators::SeatFields,
+        chain_id: u64,
+    ) -> Result<(), String> {
+        if self.validators.contains_key(&owner) {
+            return Err("the owner is already in the consensus set".into());
+        }
+        Self::check_seat_keys(&owner, bls_key, bls_pop, seat, chain_id).map_err(|e| e.message)?;
+        let floor = crate::core::chain_config::Network::from_chain_id(chain_id)
+            .map_or(1, |n| n.min_stake_full());
+        let epoch = self.epoch_index;
+        self.add_validator_with_floor(owner, stake, floor);
+        let validator = self
+            .validators
+            .get_mut(&owner)
+            .ok_or_else(|| "the validator was not created".to_string())?;
+        validator.vrf_public_key = seat.vrf_key.clone();
+        validator.bls_public_key = bls_key.to_vec();
+        validator.pop_signature = bls_pop.to_vec();
+        validator.pq_public_key = seat.pq_vote_key.clone();
+        validator.active = validator.stake >= floor
+            && validator.is_consensus_ready()
+            && validator.verify_pop_is_valid(chain_id)
+            && !validator.jailed;
+        validator
+            .filiz
+            .get_or_insert_with(Default::default)
+            .register(
+                owner.0,
+                seat.leader_commitment.commitment,
+                seat.leader_commitment.length,
+                epoch,
+            )
+            .map_err(|e| format!("{e:?}"))?;
+        self.sync_validator_registration_with_floor(&owner, floor);
+        self.keys_dirty = true;
+        Ok(())
+    }
+
+    /// The B.U.D. 3.0 epoch step, at the epoch boundary after the index
+    /// moved: expire unpaid objects, close the audit windows that ended,
+    /// settle repairs whose new shares all hold, then draw this epoch's
+    /// audits. The audit seed binds the block entropy and the epoch, so no
+    /// holder knows its audit before the epoch opens.
+    fn advance_bud3_epoch(&mut self) {
+        let epoch = self.epoch_index;
+        let registry = &mut self.bud3_registry;
+        if registry.is_empty() {
+            return;
+        }
+        registry.expire(epoch);
+        registry.close_windows(epoch);
+        registry.settle_repairs();
+        let seed = crate::core::hash::hash_fields_bytes(&[
+            b"BDLM_BUD3_AUDIT_SEED_V1",
+            &self.current_block_entropy,
+            &epoch.to_le_bytes(),
+        ]);
+        registry.open_audits(
+            &seed,
+            epoch,
+            &crate::storage::bud3::registry::AuditParams::TESTNET_DEFAULT,
+        );
+    }
+
+    /// Carry out the validator directory changes whose epoch has come. Called
+    /// at the epoch boundary, after the epoch index moved.
+    fn activate_validator_changes(&mut self, chain_id: u64) {
+        let due = self.validator_directory.activate_due(self.epoch_index);
+        let network = crate::core::chain_config::Network::from_chain_id(chain_id);
+        for (owner, class, seat) in due {
+            if !class.holds_seat() {
+                self.validator_directory
+                    .finish_class_change(&owner, class, 0);
+                continue;
+            }
+            let (Some(seat), Some(record)) = (seat, self.validator_directory.get(&owner).cloned())
+            else {
+                continue;
+            };
+            let floor = network.map_or(1, |n| n.class_floor(class));
+            if record.stake < floor {
+                tracing::warn!(owner = %owner, "class change to Full dropped: the bond is below the Full floor");
+                continue;
+            }
+            match self.install_full_validator(
+                owner,
+                record.stake,
+                &record.bls_key,
+                &record.bls_pop,
+                &seat,
+                chain_id,
+            ) {
+                Ok(()) => self
+                    .validator_directory
+                    .finish_class_change(&owner, class, record.stake),
+                Err(error) => {
+                    tracing::warn!(owner = %owner, %error, "class change to Full dropped");
+                }
+            }
+        }
+    }
+
     pub fn advance_epoch(&mut self, current_timestamp: u128, chain_id: u64) {
         let total_stake = self.get_total_stake();
         let quorum_pct = 33; // 33% stake required for quorum
@@ -2560,6 +2914,10 @@ impl AccountState {
         tracing::info!("Epoch advanced to {}", self.epoch_index);
 
         self.process_unbonding();
+
+        // Validator directory changes requested an epoch ago take effect here.
+        self.activate_validator_changes(chain_id);
+        self.advance_bud3_epoch();
 
         // Mikoriza weights move only here, at the boundary.
         let shared_security = crate::core::chain_config::shared_security_for_chain_id(chain_id);
@@ -3214,9 +3572,62 @@ impl AccountState {
     /// Part of `accounts`, so supply-cap checks must use [`Self::total_bud_committed`]
     /// Instead of this helper alone.
     pub fn circulating_supply(&self) -> u128 {
-        self.accounts
-            .values()
-            .fold(0u128, |acc, a| acc + u128::from(a.balance))
+        let mut atoms = 0u128;
+        let mut frac_sum = 0u128;
+        for a in self.accounts.values() {
+            atoms = atoms.saturating_add(u128::from(a.balance));
+            frac_sum = frac_sum.saturating_add(u128::from(a.frac_attos));
+        }
+        atoms.saturating_add(frac_sum.div_ceil(u128::from(ATTO_PER_ATOM)))
+    }
+
+    /// Exact total committed supply in attoBUD (`10^-18` BUD):
+    /// `sum(balance * 10^12 + frac_attos)` across liquid accounts plus `10^12`
+    /// times all staked, unbonding, role-bonded, and escrowed whole-atom pools.
+    ///
+    /// Convenience: exposed alongside [`Self::total_bud_committed`] for UEL
+    /// conservation checks and compatibility gateways.
+    pub fn total_atto_bud_committed(&self) -> u128 {
+        let liquid_attos = self.accounts.values().fold(0u128, |acc, a| {
+            let acct_attos = a.bud_amount().map_or_else(
+                |_| {
+                    u128::from(a.balance)
+                        .saturating_mul(u128::from(ATTO_PER_ATOM))
+                        .saturating_add(u128::from(a.frac_attos))
+                },
+                |amt| amt.0,
+            );
+            acc.saturating_add(acct_attos)
+        });
+        let non_liquid_atoms = self
+            .total_staked_supply()
+            .saturating_add(self.total_unbonding_supply())
+            .saturating_add(self.total_registry_role_bonded_supply())
+            .saturating_add(self.registry.total_delegation_unbonding_supply())
+            .saturating_add(self.total_external_bonded_supply())
+            .saturating_add(self.proof_market.total_locked_supply())
+            .saturating_add(self.settlement.relayer_policy.total_escrowed_supply())
+            .saturating_add(self.settlement.graft.total_escrowed_supply())
+            .saturating_add(self.total_storage_escrowed_supply());
+        liquid_attos
+            .saturating_add(non_liquid_atoms.saturating_mul(u128::from(ATTO_PER_ATOM)))
+    }
+
+    /// Conservation-preserving transfer of `attos` attoBUD (`10^-18` BUD)
+    /// between two accounts under `ee`'s unit quantum rule.
+    ///
+    /// Convenience: exposed on [`AccountState`] for the execution coordinator
+    /// host bridge and conservation tests.
+    pub fn transfer_atto_bud(
+        &mut self,
+        from: &Address,
+        to: &Address,
+        ee: budlum_uel_abi::EeId,
+        attos: u128,
+    ) -> Result<u64, crate::execution::coordinator::bud_unit::BudUnitError> {
+        crate::execution::coordinator::bud_unit::transfer_atto_bud_in_state(
+            self, from, to, ee, attos,
+        )
     }
 
     /// Total $BUD locked in validator stake, including inactive/jailed validators.
@@ -3251,7 +3662,7 @@ impl AccountState {
     /// Validator unbonding entries, and independently debited role bonds such as
     /// AI_OPERATOR. Excluding role bonds would make a bond look like a supply
     /// Burn and reopen false minting headroom. Delegation exits, proof-market
-    /// escrow, relayer-intent escrow and Graft intent escrow are counted for the
+    /// escrow, relayer-intent escrow and remote app binding intent escrow are counted for the
     /// same reason.
     pub fn total_bud_committed(&self) -> u128 {
         self.circulating_supply()
@@ -3430,8 +3841,8 @@ impl AccountState {
         self.record_destroyed(destroyed);
     }
 
-    /// Slash one application role bond and record the penalty as destroyed
-    ///. Every non-validator role bond counts toward committed supply,
+    /// Slash one application role bond and record the penalty as destroyed.
+    /// Every non-validator role bond counts toward committed supply,
     /// so the penalty is exactly what leaves it.
     ///
     /// # Errors
@@ -3748,14 +4159,7 @@ impl AccountState {
                 self.cached_leaves = self
                     .accounts
                     .par_iter()
-                    .map(|(pubkey, account)| {
-                        let mut h = Sha256::new();
-                        h.update([0x00]);
-                        h.update(pubkey.0);
-                        h.update(account.balance.to_le_bytes());
-                        h.update(account.nonce.to_le_bytes());
-                        h.finalize().into()
-                    })
+                    .map(|(pubkey, account)| account_leaf_hash(pubkey, account))
                     .collect();
             }
             #[cfg(miri)]
@@ -3763,14 +4167,7 @@ impl AccountState {
                 self.cached_leaves = self
                     .accounts
                     .iter()
-                    .map(|(pubkey, account)| {
-                        let mut h = Sha256::new();
-                        h.update([0x00]);
-                        h.update(pubkey.0);
-                        h.update(account.balance.to_le_bytes());
-                        h.update(account.nonce.to_le_bytes());
-                        h.finalize().into()
-                    })
+                    .map(|(pubkey, account)| account_leaf_hash(pubkey, account))
                     .collect();
             }
 
@@ -3815,12 +4212,7 @@ impl AccountState {
             for dirty_key in &self.dirty_accounts {
                 if let Ok(pos) = self.cached_keys.binary_search(dirty_key) {
                     if let Some(account) = self.accounts.get(dirty_key) {
-                        let mut h = Sha256::new();
-                        h.update([0x00]);
-                        h.update(dirty_key.0);
-                        h.update(account.balance.to_le_bytes());
-                        h.update(account.nonce.to_le_bytes());
-                        self.cached_leaves[pos] = h.finalize().into();
+                        self.cached_leaves[pos] = account_leaf_hash(dirty_key, account);
                         affected_indices.insert(pos);
                     }
                 }
@@ -4053,6 +4445,22 @@ impl AccountState {
         if poa_compliance_root != crate::registry::PoaComplianceRegistry::new().root() {
             final_hasher.update(b"poa_compliance_v1");
             final_hasher.update(poa_compliance_root);
+        }
+        // The validator directory folds in once it holds a record, so a chain
+        // that never registered one keeps its pinned roots.
+        if !self.validator_directory.is_empty() {
+            final_hasher.update(b"validator_directory_v1");
+            final_hasher.update(self.validator_directory.root());
+        }
+        // The B.U.D. 3.0 registry folds in once it holds anything, so a chain
+        // that never stored an object keeps its pinned roots.
+        if !self.bud3_registry.is_empty() {
+            final_hasher.update(b"bud3_registry_v1");
+            final_hasher.update(self.bud3_registry.state_root());
+        }
+        if !self.uel_state.is_empty() {
+            final_hasher.update(b"uel_execution_v1");
+            final_hasher.update(self.uel_state.execution_root());
         }
         if !self.external_roots.is_empty() {
             final_hasher.update(b"external_roots_v1");

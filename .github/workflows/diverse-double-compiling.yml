@@ -99,7 +99,7 @@ jobs:
           # No `|| true`. If the gate does not run this job goes red: something
           # unmeasurable cannot be counted green, and a silently skipped stage empties
           # the comparison.
-          (cd xtask/gates && cargo run --release --quiet -- regeneration) > /tmp/proghash.txt 2>&1
+          (cd xtask/gates && cargo run --release --quiet -- canonical-programs-reproduce) > /tmp/proghash.txt 2>&1
           PROGRAM=$(grep -oE "program-hash [0-9a-f]+" /tmp/proghash.txt | tail -1 | awk '{print $2}')
           test -n "${PROGRAM}"
           # The matmul guest is the largest canonical program; its hash is the
@@ -113,7 +113,7 @@ jobs:
           SYSCALL=$(grep -oE "syscall-hash [0-9a-f]+" /tmp/proghash.txt | tail -1 | awk '{print $2}')
           test -n "${SYSCALL}"
           # The canonical-set digest ties the whole canonical program set to
-          # one value; the regeneration gate and the ZKVM verifier must agree
+          # one value; the canonical-programs-reproduce gate and the ZKVM verifier must agree
           # on it, so it is compared across compilers like the other tokens.
           SET=$(grep -oE "canonical-set [0-9a-f]+" /tmp/proghash.txt | tail -1 | awk '{print $2}')
           test -n "${SET}"
@@ -123,7 +123,7 @@ jobs:
           # product), so it cannot be equal across two runs by design; what the
           # two compilers must agree on is every deterministic part of the
           # relay outcome: the canonical-set token, the status word and the
-          # program hash (regeneration is a dependency of relay).
+          # program hash (canonical-programs-reproduce is a dependency of relay).
           (cd xtask/gates && cargo run --release --quiet -- relay) > /tmp/relay.txt 2>&1
           RELAYCANON=$(grep -oE "relay-canonical-set [0-9a-f]+" /tmp/relay.txt | tail -1 | awk '{print $2}')
           RELAYSTATUS=$(grep -oE "relay-status [a-z]+" /tmp/relay.txt | tail -1 | awk '{print $2}')
