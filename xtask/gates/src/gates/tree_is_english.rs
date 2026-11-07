@@ -98,6 +98,14 @@ const ALLOWED_FILES: &[&str] = &[
     // forbids and the scope words it looks for have to be written in
     // Turkish in its lists. The lists are the only Turkish in the file.
     "xtask/gates/src/gates/pq_claims_are_backed.rs",
+    // The concept map names the retired Turkish architecture names (and their
+    // Turkish replacement terms) so the concept-names gate can find them. The
+    // baseline repeats the first old name of each entry as its key. Neither
+    // file can say what it bans in English.
+    "config/naming/concept_map.toml",
+    ".github/concept-names-baseline.txt",
+    "docs/NAMING.md",
+    "xtask/gates/src/gates/bud3_forbidden_phrases.rs",
 ];
 
 /// Path fragments whose contents are a Turkish localisation.
@@ -107,7 +115,10 @@ const ALLOWED_FILES: &[&str] = &[
 /// so that a localisation gains files without the gate having to be edited,
 /// and it is deliberately narrow - only the Turkish locale of the browser,
 /// never a source tree.
-const ALLOWED_DIRS: &[&str] = &["crates/budscan/browser/l10n/tr-TR/"];
+const ALLOWED_DIRS: &[&str] = &[
+    "crates/budlum-explorer/browser/l10n/tr-TR/",
+    "mobile/android/app/src/main/res/values-tr/",
+];
 
 /// The one Turkish word that may appear anywhere: the label on the link to the
 /// Turkish README. Scrubbed before both scans.
@@ -981,7 +992,7 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         clean,
         tmp,
         "l10n",
-        "crates/budscan/browser/l10n/tr-TR/app.ftl",
+        "crates/budlum-explorer/browser/l10n/tr-TR/app.ftl",
         "badge-verified =\n    .value = doğrulandı; kanit dogrulama\n",
     )? {
         let _ = fs::remove_dir_all(tmp);
@@ -997,7 +1008,7 @@ fn exemption_canaries(clean: &Path, tmp: &Path) -> Result<usize, String> {
         clean,
         tmp,
         "l10nspill",
-        "crates/budscan/browser/l10n/en-US/app.ftl",
+        "crates/budlum-explorer/browser/l10n/en-US/app.ftl",
         "badge-verified =\n    .value = doğrulandı; kanit dogrulama\n",
     )? {
         let _ = fs::remove_dir_all(tmp);

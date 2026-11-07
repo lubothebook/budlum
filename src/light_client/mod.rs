@@ -29,6 +29,7 @@ use std::fmt;
 use crate::chain::finality::{FinalityCert, ValidatorSetSnapshot};
 use crate::consensus::qc::QcBlob;
 use crate::core::block::BlockHeader;
+use crate::core::transaction::DEFAULT_CHAIN_ID;
 
 /// A 64-character lowercase hex digest.
 /// A 64-character lowercase hex digest. `const fn` so the trust-anchor check
@@ -762,7 +763,7 @@ mod tests {
     fn make_bls_key(seed: u8) -> BlsKeypair {
         let mut sk_bytes = [0u8; 64];
         sk_bytes[0] = seed + 1;
-        BlsKeypair::from_seed(&sk_bytes)
+        BlsKeypair::from_seed(&sk_bytes).expect("a non-zero test seed")
     }
 
     fn make_bls_snapshot(n: usize, stake_each: u64) -> (ValidatorSetSnapshot, Vec<Scalar>) {
@@ -803,6 +804,7 @@ mod tests {
     ) -> FinalityCert {
         let checkpoint_hash = header.hash.clone();
         let mut agg = FinalityAggregator::new(
+            crate::core::transaction::DEFAULT_CHAIN_ID,
             snapshot.epoch,
             header.index,
             checkpoint_hash.clone(),
@@ -873,6 +875,7 @@ mod tests {
             agg_sig_bls: Vec::new(),
             bitmap: vec![1],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
         let err = client
             .verify_checkpoint(&header, &cert, &snapshot)

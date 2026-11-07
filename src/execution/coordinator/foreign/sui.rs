@@ -1,0 +1,126 @@
+//! Foreign Sui transaction envelope decoder and classical alias derivation (`WP-50`).
+//!
+//! WIRING: unwired - staged for post-launch T-Expansion Move Sui activation (WP-50).
+
+use crate::execution::coordinator::alias::AccountQuantumClass;
+use sha3::{Digest, Sha3_256};
+
+/// Public testnet chain id where Foreign::Sui stays height-gated closed.
+pub const PUBLIC_TESTNET_CHAIN_ID: u64 = 45_261;
+
+/// Default Sui foreign envelope activation height (`u64::MAX` = closed on public testnet).
+pub const SUI_FOREIGN_ACTIVATION_HEIGHT: u64 = u64::MAX;
+
+/// Sui signature scheme flag: pure Ed25519 (`0x00`).
+pub const SUI_SIG_FLAG_ED25519: u8 = 0x00;
+
+/// Sui signature scheme flag: Secp256k1 ECDSA (`0x01`).
+pub const SUI_SIG_FLAG_SECP256K1: u8 = 0x01;
+
+/// Decoded Foreign::Sui transaction envelope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedSuiEnvelope {
+    pub sender_sui_address: [u8; 32],
+    pub canonical_alias: [u8; 32],
+    pub gas_budget: u64,
+    pub payload_bcs: Vec<u8>,
+    pub quantum_class: AccountQuantumClass,
+}
+
+/// Derives the 32-byte Sui address and canonical Budlum foreign alias from `(flag, pubkey)`.
+///
+/// WIRING: exposed for post-launch T-Expansion activation.
+pub fn derive_sui_foreign_alias(
+    scheme_flag: u8,
+    pubkey: &[u8],
+) -> Result<([u8; 32], [u8; 32]), &'static str> {
+    let expected_len = match scheme_flag {
+        SUI_SIG_FLAG_ED25519 => 32,
+        SUI_SIG_FLAG_SECP256K1 => 33,
+        _ => return Err("unsupported_sui_signature_flag"),
+    };
+    if pubkey.len() != expected_len {
+        return Err("invalid_sui_pubkey_length");
+    }
+    let mut sui_hasher = Sha3_256::new();
+    sui_hasher.update([scheme_flag]);
+    sui_hasher.update(pubkey);
+    let sui_addr: [u8; 32] = sui_hasher.finalize().into();
+
+    let mut alias_hasher = Sha3_256::new();
+    alias_hasher.update(b"BDLM_UEL_SUI_ALIAS_V1");
+    alias_hasher.update(sui_addr);
+    let alias: [u8; 32] = alias_hasher.finalize().into();
+    Ok((sui_addr, alias))
+}
+
+/// Decodes a Foreign::Sui wire envelope `[flag(1) || pubkey || gas_budget_le64(8) || payload_bcs]`,
+/// enforcing the height gate on public testnet `45261`.
+///
+/// WIRING: exposed for post-launch T-Expansion activation.
+pub fn decode_sui_foreign_tx(
+    chain_id: u64,
+    block_height: u64,
+    activation_height: u64,
+    raw: &[u8],
+) -> Result<DecodedSuiEnvelope, &'static str> {
+    if chain_id == PUBLIC_TESTNET_CHAIN_ID && block_height < activation_height {
+        return Err("sui_foreign_lane_closed_on_testnet");
+    }
+    let Some(&flag) = raw.first() else {
+        return Err("empty_sui_envelope");
+    };
+    let pk_len = match flag {
+        SUI_SIG_FLAG_ED25519 => 32,
+        SUI_SIG_FLAG_SECP256K1 => 33,
+        _ => return Err("unsupported_sui_signature_flag"),
+    };
+    if raw.len() < 1 + pk_len + 8 + 1 {
+        return Err("truncated_sui_envelope");
+    }
+    let pubkey = raw.get(1..1 + pk_len).ok_or("truncated_sui_envelope")?;
+    let (sui_addr, alias) = derive_sui_foreign_alias(flag, pubkey)?;
+    let gas_slice = raw
+        .get(1 + pk_len..1 + pk_len + 8)
+        .ok_or("truncated_gas_budget")?;
+    let gas_bytes: [u8; 8] = gas_slice.try_into().map_err(|_| "truncated_gas_budget")?;
+    let gas_budget = u64::from_le_bytes(gas_bytes);
+    if gas_budget == 0 {
+        return Err("zero_sui_gas_budget");
+    }
+    let payload_slice = raw.get(1 + pk_len + 8..).ok_or("truncated_sui_envelope")?;
+    Ok(DecodedSuiEnvelope {
+        sender_sui_address: sui_addr,
+        canonical_alias: alias,
+        gas_budget,
+        payload_bcs: payload_slice.to_vec(),
+        quantum_class: AccountQuantumClass::Classical,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sui_envelope_is_closed_on_testnet_and_marks_accounts_classical() {
+        let mut raw = vec![SUI_SIG_FLAG_ED25519];
+        raw.extend_from_slice(&[0x33; 32]);
+        raw.extend_from_slice(&50_000_u64.to_le_bytes());
+        raw.extend_from_slice(b"SUI\0module_call");
+
+        assert_eq!(
+            decode_sui_foreign_tx(
+                PUBLIC_TESTNET_CHAIN_ID,
+                10,
+                SUI_FOREIGN_ACTIVATION_HEIGHT,
+                &raw,
+            ),
+            Err("sui_foreign_lane_closed_on_testnet")
+        );
+
+        let decoded = decode_sui_foreign_tx(999, 10, 0, &raw).expect("decodes once active");
+        assert_eq!(decoded.quantum_class, AccountQuantumClass::Classical);
+        assert_eq!(decoded.gas_budget, 50_000);
+    }
+}

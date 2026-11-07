@@ -22,6 +22,8 @@ pub mod regression_canaries;
 pub mod bench_performance;
 #[cfg(test)]
 pub mod block_reward;
+#[cfg(test)]
+pub mod audit_lane_a;
 // State-machine sharding (Whitepaper v1.3): block-level shards commitment
 // production/validation and atomic cross-shard transfers.
 #[cfg(test)]
@@ -102,7 +104,7 @@ pub mod private_transfer_fee_market;
 #[cfg(test)]
 pub mod prover;
 #[cfg(test)]
-pub mod regeneration_recovery;
+pub mod state_recovery;
 #[cfg(test)]
 pub mod relayer_liveness;
 // chain relayer proof cryptographic verification + M5 budlumxyz fee + M4 BNS fee
@@ -228,7 +230,92 @@ pub mod consensus_bypass_locks;
 pub mod block_clock;
 #[cfg(test)]
 pub mod real_chain_fixtures;
-// Effect-asserting locks for the slashing matrix and the overflow rule
-//.
+// Effect-asserting locks for the slashing matrix and the overflow rule.
 #[cfg(test)]
 pub mod refusal_locks;
+
+// Regression locks for fixes already in the tree, one module per area.
+#[cfg(test)]
+pub mod regression_ai_storage;
+#[cfg(test)]
+pub mod regression_bridge;
+#[cfg(test)]
+pub mod regression_chain;
+#[cfg(test)]
+pub mod regression_ops_crypto;
+
+// Validator classes and the single registration door.
+#[cfg(test)]
+pub mod validator_classes;
+
+// The B.U.D. 3.0 storage door end to end.
+#[cfg(test)]
+pub mod bud3_door;
+
+// WP-35: the conformance catalog and the execution limits agree with the code.
+#[cfg(test)]
+pub mod conformance_locks;
+
+// The persistence move is behaviour-neutral.
+#[cfg(test)]
+pub mod persistence_move;
+
+// Instant Duty Handover and Disaster Recovery Mode suite.
+#[cfg(test)]
+pub mod alert_rules_reference_existing_metrics;
+
+// WP-17 state transition, vesting, staking, governance, sharding, and V2 snapshot suite.
+#[cfg(test)]
+pub mod wp17_state_hardening;
+// Section 6.2 shared B.U.D. 3.0 vocabulary.
+#[cfg(test)]
+pub mod bud3_types;
+// WP-41 item 6 and WP-20 item 13: the readiness and storage-health series,
+// read back out of a real Prometheus scrape.
+#[cfg(test)]
+pub mod readiness_metrics;
+
+// WP-41 item 6: the alert rules name metrics the node exports, and every
+// mandatory alert exists.
+
+// WP-41 item 8: the backup drill covers the paths the node persists now, and
+// the restore it performs refuses a target that is not empty.
+#[cfg(test)]
+pub mod backup_covers_persisted_paths;
+
+// WP-41 item 7: every alert the node raises has a first-check row in the
+// operator runbook, and no row outlives its rule.
+#[cfg(test)]
+pub mod alerts_have_runbook_entries;
+
+// WP-41 item 5: the public TLS edge fronts the ports the services bind, and
+// never an unauthenticated listener.
+#[cfg(test)]
+pub mod caddy_edges_match_the_services;
+
+// WP-41 item 6: the scrape topology reaches every exporter the alert rules
+// read, and the rule file is mounted where the config expects it.
+#[cfg(test)]
+pub mod scrape_topology_covers_the_rules;
+
+// WP-41 item 4: the compose stacks name the services and ports the launch
+// runs, and both scrape with the same pinned Prometheus.
+#[cfg(test)]
+pub mod compose_topology_matches_services;
+
+// IP-20: B.U.D. 3.0 custody, repair and placement - the tests the card names
+// (T17, T26, T34-T40) and the §11.7 penalties behind them.
+#[cfg(test)]
+pub mod bud3_custody_and_repair;
+
+// WP-44 domains, cross-domain bridge, settlement, and testnet feature-matrix locks.
+#[cfg(test)]
+pub mod wp44_domains_bridge_settlement;
+
+// WP-48 Independent Review 2 security, conservation, and privilege-boundary suite.
+#[cfg(test)]
+pub mod wp48_review2_security;
+
+// WP-46 rehearsal genesis, topology, and T-1..T-4 / T-7 protocol drills.
+#[cfg(test)]
+pub mod wp46_ceremony_and_drills;

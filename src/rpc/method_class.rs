@@ -269,6 +269,11 @@ const METHOD_CLASSES: &[MethodClass] = &[
     row("bud_aiAgentRanking", Public, Read),
     row("bud_getStatus", Public, Read),
     row("bud_getValidatorSet", Public, Read),
+    row("bud_getValidator", Public, Read),
+    row("bud_storageGetObject", Public, Read),
+    row("bud_storageGetCustody", Public, Read),
+    row("bud_listRelays", Public, Read),
+    row("bud_listGateways", Public, Read),
     row("bud_getDomainInfo", Public, Read),
     row("bud_getQuantumAlarm", Public, Read),
     row("bud_getSlashingHistory", Public, Read),
@@ -276,9 +281,51 @@ const METHOD_CLASSES: &[MethodClass] = &[
     row("bud_identityResolve", Public, Read),
     row("bud_identityCredential", Public, Read),
     row("bud_identityVerifyPresentation", Public, Read),
+    row("bud_getCharter", Public, Read),
+    row("bud_getAssetClass", Public, Read),
+    row("bud_getAsset", Public, Read),
     // WebSocket subscriptions: read-only feeds (src/rpc/subscriptions.rs).
     row("bud_subscribe", Public, Read),
     row("bud_unsubscribe", Public, Read),
+    // The Solana JSON-RPC compatibility gateway (WP-31, 1/N). Section 8.11.3
+    // names the methods; `src/rpc/compat/solana/mod.rs` says what each one
+    // answers. A row here is a node or chain read or a refusal that names the
+    // Budlum door, so nothing in this namespace changes consensus state.
+    row("getHealth", Public, Read),
+    row("getVersion", Public, Read),
+    row("getGenesisHash", Public, Refused),
+    row("getSlot", Public, Read),
+    row("getBlockHeight", Public, Read),
+    row("getEpochInfo", Public, Refused),
+    row("getLatestBlockhash", Public, Refused),
+    row("isBlockhashValid", Public, Refused),
+    row("getBalance", Public, Refused),
+    row("getAccountInfo", Public, Refused),
+    row("getMultipleAccounts", Public, Refused),
+    row("getProgramAccounts", Public, Refused),
+    row("getTokenAccountsByOwner", Public, Refused),
+    row("getTokenAccountBalance", Public, Refused),
+    row("getTokenSupply", Public, Refused),
+    row("getMinimumBalanceForRentExemption", Public, Refused),
+    row("getFeeForMessage", Public, Refused),
+    row("getRecentPrioritizationFees", Public, Refused),
+    row("sendTransaction", Public, Refused),
+    row("simulateTransaction", Public, Refused),
+    row("getSignatureStatuses", Public, Refused),
+    row("getSignaturesForAddress", Public, Refused),
+    row("getTransaction", Public, Refused),
+    row("getBlock", Public, Refused),
+    row("requestAirdrop", Public, Refused),
+    row("accountSubscribe", Public, Refused),
+    row("accountUnsubscribe", Public, Read),
+    row("signatureSubscribe", Public, Refused),
+    row("signatureUnsubscribe", Public, Read),
+    row("slotSubscribe", Public, Read),
+    row("slotUnsubscribe", Public, Read),
+    row("logsSubscribe", Public, Refused),
+    row("logsUnsubscribe", Public, Read),
+    row("programSubscribe", Public, Refused),
+    row("programUnsubscribe", Public, Read),
 ];
 
 /// Check that the methods a server registers are exactly the classified
@@ -303,6 +350,13 @@ pub fn check_served_methods<'a>(
             "{name} has a row in METHOD_CLASSES but is not served"
         ));
     }
+    // A compatibility gateway answers a foreign namespace. Its table is the
+    // second classification: a method there must be in the gateway table, and
+    // a method the gateway marks pending must not be served at all
+    // (`src/rpc/compat/solana/mod.rs`).
+    if let Err(problem) = crate::rpc::compat::solana::check_served(registered.iter().copied()) {
+        problems.push(problem);
+    }
     if problems.is_empty() {
         Ok(())
     } else {
@@ -312,7 +366,7 @@ pub fn check_served_methods<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{check_served_methods, Listener, METHOD_CLASSES};
+    use super::{check_served_methods, Effect, Listener, METHOD_CLASSES};
     use std::collections::BTreeSet;
 
     /// The method names `api.rs` declares, read from its source: each
@@ -399,6 +453,84 @@ mod tests {
             gated, marked,
             "a handler calls require_operator without an Operator row, or the reverse"
         );
+    }
+
+    /// BLG-030: no method may change consensus state outside block execution.
+    ///
+    /// The finding is that the public listener could change consensus state:
+    /// an RPC call wrote a registry row, a finality view or a state root that
+    /// the node's peers did not share, and the two nodes then disagreed about
+    /// the tip without either of them having produced a block. The class table
+    /// is the fix - `Effect` has no variant for such a write, and every writer
+    /// that remains is either a signed transaction handed to the mempool
+    /// (`TxSubmit`), a node-local action (`LocalAdmin`), a read (`Read`) or a
+    /// refusal that names a transaction door (`Refused`).
+    ///
+    /// Canary: add an `Effect` variant that mutates consensus state directly,
+    /// or classify a `bud_lockBridgeTransfer`-shaped name as `Read`, and the
+    /// assertions here fail.
+    #[test]
+    fn blg_030_no_effect_can_change_consensus_state_outside_a_block() {
+        // The whole variant set, spelled out. A new variant is added here
+        // first, and the comment on it must say which of the four legitimate
+        // effects it is. There is deliberately no `StateWrite` to add.
+        let legitimate_effects = [Effect::Read, Effect::TxSubmit, Effect::Refused, Effect::LocalAdmin];
+        for effect in legitimate_effects {
+            match effect {
+                // Reads change nothing.
+                Effect::Read => {}
+                // A write reaches consensus only by being executed in a block.
+                Effect::TxSubmit => {}
+                // The call is refused and names the door that does the write.
+                Effect::Refused => {}
+                // Node-local state no peer has to agree on.
+                Effect::LocalAdmin => {}
+            }
+        }
+        // Every row's effect must be one the match above knows. The comparison
+        // is by `Debug` name so the test names the offending class instead of
+        // pointing at a line number.
+        let known: Vec<String> = legitimate_effects
+            .iter()
+            .map(|effect| format!("{effect:?}"))
+            .collect();
+        for row in METHOD_CLASSES {
+            let used = format!("{:?}", row.effect);
+            assert!(
+                known.contains(&used),
+                "{} uses the effect {used}, which is outside the four legitimate ones",
+                row.name
+            );
+        }
+        // And each of the four is actually used, so the table is not
+        // degenerate: a surface with no TxSubmit row would mean the mempool is
+        // unreachable, and one with no Refused row would mean no writer was
+        // moved to a door.
+        for effect in legitimate_effects {
+            let name = format!("{effect:?}");
+            assert!(
+                METHOD_CLASSES.iter().any(|row| format!("{:?}", row.effect) == name),
+                "no row is classified as {name}"
+            );
+        }
+
+        // Rows whose name says they write are `Refused`, `TxSubmit` or
+        // `LocalAdmin` - never `Read`: a handler named `bud_lock*` that reads
+        // would be a name that lies about its effect.
+        const WRITE_VERBS: &[&str] = &[
+            "bud_lock", "bud_mint", "bud_burn", "bud_unlock", "bud_register", "bud_submit",
+            "bud_bond", "bud_slash", "bud_set", "bud_schedule",
+        ];
+        for row in METHOD_CLASSES {
+            if WRITE_VERBS.iter().any(|verb| row.name.starts_with(verb)) {
+                assert_ne!(
+                    row.effect,
+                    Effect::Read,
+                    "{} names a write but is classified as a read",
+                    row.name
+                );
+            }
+        }
     }
 
     #[test]

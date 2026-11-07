@@ -7,7 +7,7 @@ on:
     # Run on the normal protected bases and on stacked continuation bases.
     # `arena/**` covers this repository's generated continuation branches;
     # `consensus-of-consensuses` keeps upstream stack covered.
-    branches: [main, fix/architecture-tip-adlari, consensus-of-consensuses, 'arena/**']
+    branches: [main, consensus-of-consensuses, 'arena/**']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -182,6 +182,17 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --lib --verbose 2>&1 | tee /tmp/libtests.log
+      - name: Database backup retention tests
+        if: always() && steps.rust.outcome == 'success'
+        run: |
+          set -euo pipefail
+          cargo test --bin budlum-core 2>&1 | tee /tmp/node-tests.log
+          for name in zero_retention_refuses_backup_without_deleting_existing_files retention_uses_numeric_timestamps_and_preserves_current_and_unknown_files backup_refuses_concurrent_writer_without_pruning backup_returns_a_verified_existing_snapshot; do
+            grep -Eq "${name} \.\.\. ok" /tmp/node-tests.log || {
+              echo "::error::backup regression $name did not pass"
+              exit 1
+            }
+          done
       - name: Public service admission tests
         if: always() && steps.rust.outcome == 'success'
         run: |
@@ -457,7 +468,7 @@ jobs:
       # Every step below invokes the same binary, and until now the first one that
       # invoked it was a canary: a build failure in `xtask/gates` (its own workspace,
       # so no other job's clippy covers it) was reported as "the gate found a defect"
-      # in six jobs at once - measured on 2026-09-10, where Budscan's canary flipped
+      # in six jobs at once - measured on 2026-09-10, where budlum-explorer's canary flipped
       # success -> exit 101 while its own Format and Clippy steps stayed green, which
       # proves nothing about this crate. A build step of its own names the real cause;
       # the surface below puts rustc's lines in annotations because the log host is
@@ -597,6 +608,26 @@ jobs:
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- generated-content-is-verifiable 2>&1 | tee -a /tmp/gate-out.log
           exit "${PIPESTATUS[0]}"
+      - name: B.U.D. 3.0 wire contract is total canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-proto-is-total --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: B.U.D. 3.0 wire contract is total
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-proto-is-total 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: EE workers build with unwind canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- ee-workers-build-with-unwind --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: EE workers build with unwind
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- ee-workers-build-with-unwind 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
       - name: QR is derivative only canary
         if: always() && steps.build.outcome == 'success'
         run: |
@@ -707,6 +738,56 @@ jobs:
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-upstream-brands 2>&1 | tee -a /tmp/gate-out.log
           exit "${PIPESTATUS[0]}"
+      - name: Rust syntax gate canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- rust-syntax-is-parseable --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: Every Rust file parses cleanly
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- rust-syntax-is-parseable 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: No-float gate canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-float-in-consensus-paths --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: No floating point on the consensus path
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-float-in-consensus-paths 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: Workspace coverage gate canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- workflows-cover-every-workspace --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: Every workspace is built by a workflow
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- workflows-cover-every-workspace 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: Nightly workflow gate canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- nightly-workflows-are-required --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: Required nightly workflows are present and binding
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- nightly-workflows-are-required 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: No-legacy-storage gate canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-legacy-storage --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: No unbaselined legacy storage identifiers remain
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-legacy-storage 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
       - name: Repair trigger canary
         if: always() && steps.build.outcome == 'success'
         run: |
@@ -738,34 +819,19 @@ jobs:
         run: |
           cargo clippy --manifest-path crates/ai-inference/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path crates/ai-inference/Cargo.toml
-      # The B.U.D. core (bud/) was in the same silent hole: bud-core with 103 modules
-      # -- ALL of B.U.D. 1.0/2.0/3.0 -- was built by no CI job,
-      # because it is not a member of the root workspace and no step pointed
-      # was not looked at. Measured: `clippy --features bud3 --all-targets -D warnings`
-      # -> 91 violations, among them real nested bugs (an if with identical branches,
-      # a lost Vec capacity, a misplaced cfg gate).
-      #
-      # All three configurations run because the versions are split by feature:
-      # default (bud2) and bud3 compile different module sets, while no-default
-      # what falls outside both. Skipping a configuration is exactly the
-      # would hide the "a 3.0 module leaked into the 2.0 build" bug found this
-      # would leave behind.
-      # `cargo fmt --all` scans the root workspace; because `bud/` is not a member of it
-      # there was no formatting check in this tree. Measured: 119
-      # 103 of the files had drifted from rustfmt output. Formatting does not change
-      # behaviour, but an unchecked tree becomes unreadable over time and
-      # telling a real change from noise gets harder. The tree was fixed once
-      # (`2c95cfe2`); this step prevents it drifting back.
-      - name: B.U.D. core is formatted
+      - name: The codec crate is formatted
         if: always() && steps.build.outcome == 'success'
-        run: cargo fmt --manifest-path bud/Cargo.toml --all -- --check
-      - name: B.U.D. core builds and its tests pass
+        run: cargo fmt --manifest-path crates/bud-codec/Cargo.toml --all -- --check
+      - name: The codec crate builds and its tests pass
         if: always() && steps.build.outcome == 'success'
         run: |
-          cargo clippy --manifest-path bud/Cargo.toml --all-targets -- -D warnings
-          cargo clippy --manifest-path bud/Cargo.toml --features bud3 --all-targets -- -D warnings
-          cargo clippy --manifest-path bud/Cargo.toml --no-default-features --all-targets -- -D warnings
-          cargo test --manifest-path bud/Cargo.toml --features bud3
+          cargo clippy --manifest-path crates/bud-codec/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path crates/bud-codec/Cargo.toml
+      - name: Execution worker workspace builds and its tests pass
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo clippy --manifest-path execution/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path execution/Cargo.toml
       # `slice[i]` stops the process under the release profile (panic = abort); that is
       # the same liveness class as `unwrap`. 66 files in the tree carry this debt and
       # most of them in index-heavy parsers (RLP/MPT/erasure), and converting those to iterators
@@ -1258,14 +1324,12 @@ jobs:
           cargo build --manifest-path crates/wallet-core/Cargo.toml --lib --release \
             --target wasm32-unknown-unknown --features wasm
 
-  # ============================ Budscan (web3 tarayici cekirdegi) ============================
-  budscan:
-    # Budscan does not link against `budlum-core` and duplicates two definitions: the name rule
-    # and ContentId. Copies can diverge silently and their divergence is a silent
-    # results (the explorer accepts a name the chain does not; or
-    # the explorer says a byte verified while the chain computes a different identity).
-    # `budscan-name-rule-parity` turns those two silences into noise.
-    name: Budscan (explorer core + patch layer)
+  # ============================ Mobile core (WP-11) ============================
+  mobile-core:
+    # The mobile validator core is its own crate so a phone does not link
+    # budlum-core. Root `cargo test --lib` never runs it. Without this job a
+    # break in custody proofs, presence, quota or relay switch stays green.
+    name: Mobile core (WP-11)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1279,31 +1343,159 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: budscan
-          workspaces: budscan
+          shared-key: mobile-core
+          workspaces: mobile/core
+      - name: Format
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path mobile/core/Cargo.toml --all -- --check
+      - name: Clippy
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo clippy --manifest-path mobile/core/Cargo.toml --all-targets -- -D warnings
+      - name: Tests
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo test --manifest-path mobile/core/Cargo.toml
+
+  mobile-core-targets:
+    # WP-11 job 2 names five phone targets and the card's test
+    # `mobile_core_builds_for_all_targets` is this job. A host-only build hides
+    # a target break (a pointer-width assumption on armv7, a dependency with no
+    # Android or iOS support) until somebody tries a phone build. The library
+    # is built as an rlib, so no NDK or Xcode linker is involved; linking is
+    # the bindings' job. armv7 is a compile check only, as the card says.
+    name: mobile_core_builds_for_all_targets (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+          - x86_64-linux-android
+          - aarch64-apple-ios
+          - aarch64-apple-ios-sim
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: rust
+        name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-09-12
+        with:
+          toolchain: "1.97.1"
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: mobile-core-${{ matrix.target }}
+          workspaces: mobile/core
+      - name: Build the library for the target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --manifest-path mobile/core/Cargo.toml --locked --lib --target "$TARGET"
+
+  mobile-ffi:
+    # WP-11 job 2: the Kotlin and Swift bindings of the mobile core come from
+    # mobile/ffi. Besides format, clippy and tests, the job builds the shared
+    # library and generates both bindings from it with the pinned generator,
+    # so a type UniFFI cannot express fails here and not in the app builds.
+    # The phone targets are type-checked only: linking the cdylib needs the
+    # NDK and Xcode, which belong to the app jobs (WP-36, WP-38).
+    name: Mobile FFI bindings (WP-11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: rust
+        name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-09-12
+        with:
+          toolchain: "1.97.1"
+          components: clippy, rustfmt
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android, aarch64-apple-ios, aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: mobile-ffi
+          workspaces: mobile/ffi
+      - name: Format
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path mobile/ffi/Cargo.toml --all -- --check
+      - name: Clippy
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo clippy --manifest-path mobile/ffi/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - name: Tests
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo test --manifest-path mobile/ffi/Cargo.toml --locked
+      - name: Generate the Kotlin and Swift bindings
+        if: always() && steps.rust.outcome == 'success'
+        working-directory: mobile/ffi
+        run: |
+          set -euo pipefail
+          cargo build --locked --lib
+          lib=target/debug/libbudlum_mobile_ffi.so
+          for language in kotlin swift; do
+            cargo run --locked --features cli --bin uniffi-bindgen -- \
+              generate --library "$lib" --language "$language" \
+              --out-dir "target/bindings/$language"
+          done
+          grep -rq "class MobileNode" target/bindings/kotlin
+          grep -rq "class MobileNode" target/bindings/swift
+      - name: Type-check the phone targets
+        if: always() && steps.rust.outcome == 'success'
+        run: |
+          set -euo pipefail
+          for target in aarch64-linux-android armv7-linux-androideabi x86_64-linux-android \
+            aarch64-apple-ios aarch64-apple-ios-sim; do
+            cargo check --manifest-path mobile/ffi/Cargo.toml --locked --lib --target "$target"
+          done
+
+  # ============================ Budlum Explorer (web3 browser core) ============================
+  budlum-explorer:
+    # budlum-explorer does not link against `budlum-core` and duplicates two definitions: the name rule
+    # and ContentId. Copies can diverge silently and their divergence is a silent
+    # results (the explorer accepts a name the chain does not; or
+    # the explorer says a byte verified while the chain computes a different identity).
+    # `explorer-name-rule-parity` turns those two silences into noise.
+    name: Budlum Explorer (explorer core + patch layer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: rust
+        name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-09-12
+        with:
+          toolchain: "1.97.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: budlum-explorer
+          workspaces: budlum-explorer
       - name: Clippy (pedantic, -D warnings)
         if: always() && steps.rust.outcome == 'success'
-        run: cargo clippy --manifest-path crates/budscan/Cargo.toml --all-targets -- -D warnings
-      - name: budscan testleri
+        run: cargo clippy --manifest-path crates/budlum-explorer/Cargo.toml --all-targets -- -D warnings
+      - name: budlum-explorer tests
         if: always() && steps.rust.outcome == 'success'
-        run: cargo test --manifest-path crates/budscan/Cargo.toml
-      - name: budscan own canaries
+        run: cargo test --manifest-path crates/budlum-explorer/Cargo.toml
+      - name: budlum-explorer own canaries
         if: always() && steps.rust.outcome == 'success'
         # The binary runs its own internal canaries: a schema never becomes a name, an empty
         # proof does not say `verified`, a dangling patch does not pass the check.
-        run: cargo run --manifest-path crates/budscan/Cargo.toml --bin budscan -- self-test
+        run: cargo run --manifest-path crates/budlum-explorer/Cargo.toml --bin budlum-explorer -- self-test
       - name: Gate canary (proof it is not vacuous)
         if: always() && steps.rust.outcome == 'success'
         run: |
           set -euo pipefail
-          cargo run --release --manifest-path xtask/gates/Cargo.toml -- budscan-name-rule-parity --self-test
-          cargo run --release --manifest-path xtask/gates/Cargo.toml -- budscan-patchset --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- explorer-name-rule-parity --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- explorer-patchset --self-test
       - name: Name rule and ContentId parity
         if: always() && steps.rust.outcome == 'success'
-        run: cargo run --release --manifest-path xtask/gates/Cargo.toml -- budscan-name-rule-parity
+        run: cargo run --release --manifest-path xtask/gates/Cargo.toml -- explorer-name-rule-parity
       - name: Patch layer (list=disk, no foreign brand)
         if: always() && steps.rust.outcome == 'success'
-        run: cargo run --release --manifest-path xtask/gates/Cargo.toml -- budscan-patchset
+        run: cargo run --release --manifest-path xtask/gates/Cargo.toml -- explorer-patchset
 
   # ============================ Standalone crates: bpqs and note-packing ============================
   standalone-crates:
@@ -1350,7 +1542,7 @@ jobs:
   # ============================  / Bolum 4 (BNS gate) ============================
       - name: Format
         if: always() && steps.rust.outcome == 'success'
-        run: cargo fmt --manifest-path crates/budscan/Cargo.toml --all -- --check
+        run: cargo fmt --manifest-path crates/budlum-explorer/Cargo.toml --all -- --check
   bns-gate:
     #  Section 4 module separation: BNS has its own CI gate (the B.U.D. gate pattern).
     # Name canary: if a test is deleted or renamed the gate FAILs.
@@ -1464,15 +1656,17 @@ jobs:
           # which cargo-deny discovers on its own.
           - { name: root, manifest: "./Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: budzero, manifest: "budzero/Cargo.toml", config: "" }
-          - { name: bud, manifest: "bud/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: fuzz, manifest: "fuzz/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: ai-inference, manifest: "crates/ai-inference/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: bpqs, manifest: "crates/bpqs/Cargo.toml", config: "--config .quality/deny.toml" }
-          - { name: budscan, manifest: "crates/budscan/Cargo.toml", config: "--config .quality/deny.toml" }
+          - { name: budlum-explorer, manifest: "crates/budlum-explorer/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: note-packing, manifest: "crates/note-packing/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: wallet-core, manifest: "crates/wallet-core/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: xtask-gates, manifest: "xtask/gates/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: xtask-tools, manifest: "xtask/tools/Cargo.toml", config: "--config .quality/deny.toml" }
+          - { name: budlum-types, manifest: "crates/budlum-types/Cargo.toml", config: "--config .quality/deny.toml" }
+          - { name: mobile-core, manifest: "mobile/core/Cargo.toml", config: "--config .quality/deny.toml" }
+          - { name: mobile-ffi, manifest: "mobile/ffi/Cargo.toml", config: "--config .quality/deny.toml" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1503,15 +1697,17 @@ jobs:
         include:
           - { name: root, manifest: "./Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: budzero, manifest: "budzero/Cargo.toml", config: "" }
-          - { name: bud, manifest: "bud/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: fuzz, manifest: "fuzz/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: ai-inference, manifest: "crates/ai-inference/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: bpqs, manifest: "crates/bpqs/Cargo.toml", config: "--config .quality/deny.toml" }
-          - { name: budscan, manifest: "crates/budscan/Cargo.toml", config: "--config .quality/deny.toml" }
+          - { name: budlum-explorer, manifest: "crates/budlum-explorer/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: note-packing, manifest: "crates/note-packing/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: wallet-core, manifest: "crates/wallet-core/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: xtask-gates, manifest: "xtask/gates/Cargo.toml", config: "--config .quality/deny.toml" }
           - { name: xtask-tools, manifest: "xtask/tools/Cargo.toml", config: "--config .quality/deny.toml" }
+          - { name: budlum-types, manifest: "crates/budlum-types/Cargo.toml", config: "--config .quality/deny.toml" }
+          - { name: mobile-core, manifest: "mobile/core/Cargo.toml", config: "--config .quality/deny.toml" }
+          - { name: mobile-ffi, manifest: "mobile/ffi/Cargo.toml", config: "--config .quality/deny.toml" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1672,28 +1868,6 @@ jobs:
             cargo +nightly-2026-10-09 fuzz run "$t" -- -max_total_time=60 -timeout=25 -print_final_stats=1
           done
           echo "All fuzz targets clean."
-      - name: B.U.D. format fuzz (60s)
-        # bud/ is its own crate with its own fuzz/ directory, so cargo-fuzz
-        # has to run from bud/.
-        working-directory: bud
-        # The use-after-scope opt-out is scoped to this step only: ASan
-        # aborts inside vendored zstd 1.5.7 C code (zstd_opt.c reading its
-        # own getAllMatchesFns dispatch table, a global whose shadow is
-        # nevertheless f8 stack-use-after-scope poisoned - an
-        # instrumentation artifact in third-party C, no bud frame involved;
-        # bud itself is forbid(unsafe_code) and zstd is ASan-fuzzed
-        # upstream). The runtime option covers the Rust/LLVM objects, but
-        # a 2026-10-20 quick-fuzz run still aborted in the GCC-instrumented
-        # C objects: GCC emits that lifetime poisoning at compile time and
-        # does not honour detect_stack_use_after_scope=0 for it. The
-        # matching -fno-sanitize-address-use-after-scope CFLAGS entry is
-        # therefore also required; cc appends it after its default
-        # -fsanitize=address, so every other ASan check (heap/stack/global
-        # overflow, use-after-free) stays enabled for this target.
-        env:
-          ASAN_OPTIONS: detect_stack_use_after_scope=0
-          CFLAGS_x86_64_unknown_linux_gnu: -fno-sanitize-address-use-after-scope
-        run: cargo +nightly-2026-10-09 fuzz run fuzz_bud_format -- -max_total_time=60 -timeout=25 -print_final_stats=1
       - name: Crash artifact (varsa)
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -2037,6 +2211,8 @@ jobs:
         run: cargo clippy --release --manifest-path xtask/gates/Cargo.toml --all-targets -- -D warnings
       - name: Rust gates rustfmt
         run: cargo fmt --manifest-path xtask/gates/Cargo.toml --check
+      - name: Rust gates unit tests (concept-names canary and ratchet tests included)
+        run: cargo test --release --manifest-path xtask/gates/Cargo.toml
       # xtask/tools is its own workspace and runs five CI tools (audit-guard,
       # step-reachability, audit-deps, generate-sbom, the smoke tools). Its
       # lints are pedantic-deny and its unit tests (the committed FSF document
@@ -2087,7 +2263,7 @@ jobs:
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- pq-ctx-is-bound
       # The tree is written in English. Turkish is allowed in exactly three
       # places: README.tr.md, a Turkish localisation directory whose strings are
-      # what the Turkish user reads, and the word "Türkçe" as the label on the
+      # what the Turkish user reads, and the word "Turkce" as the label on the
       # link that points at that README. The translation is unfinished, so the gate ratchets
       # off .github/turkish-baseline.txt: counts only go down, and a count that
       # is higher than what is actually in the file also fails, so finishing
@@ -2115,6 +2291,28 @@ jobs:
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-unicode-dashes --self-test
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-unicode-dashes
+      # WP-20 item 12, G-2: the placement path selects a bucket with integer
+      # comparison and no floating point. Two nodes whose FPUs disagree would
+      # place the same segment on different validators and split the state
+      # root, which is why the table is computed off-chain and only read here.
+      - name: bud3 placement gate + canary
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-placement --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-placement
+      # §6.10: the repair path has to be reachable, not merely present. Every
+      # limb of it - the threshold, the assignment, the verification, the 1%
+      # report - is a function somebody can leave with no caller.
+      - name: bud3 repair fires gate + canary
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-repair-fires --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-repair-fires
+      # §6.11.2: a custody proof is checked against the stored symbol root,
+      # not against a root the holder supplies, and a bad proof in a batch
+      # leaves none of that batch applied.
+      - name: bud3 custody proofs gate + canary
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-custody-proofs --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-custody-proofs
       # BudZero proofs are STARKs and rest on a hash only. A Groth16, KZG or
       # BN254 crate in any manifest, or a verifier arm for the external labels,
       # would put a pairing assumption on a verification path.
@@ -2308,6 +2506,25 @@ jobs:
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- storage-is-priced-by-size --self-test
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- storage-is-priced-by-size
+      # Section 11.5 prices storage in **physical** bytes. The two numbers that
+      # are easy to mistake for it are the content length the uploader started
+      # from and the symbol count the fountain produced. Pricing either one
+      # charges for bytes nobody holds, or prices the same object differently
+      # after every repair. The fee module keeps the inputs apart by name and
+      # this step keeps the distinction from being edited out.
+      - name: is the B.U.D. 3.0 fee priced in physical bytes + canary
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-fee-uses-physical-bytes --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-fee-uses-physical-bytes
+      # The endowment pays symbol bytes times the presence multiplier, pays a
+      # share nothing for a window it missed, and sends what it could not
+      # distribute to the network security pool. Each rule is one line of code
+      # that a later edit can delete without any test in the tree noticing, so
+      # the shape of all three is held here.
+      - name: do custody rewards follow audits and presence + canary
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-custody-rewards --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-custody-rewards
       # Two entry points take a manifest an untrusted caller built.
       # Registration (now the `StorageTx::RegisterManifest` door) ran
       # `validate_untrusted`; `open_deal` ran
@@ -2517,12 +2734,12 @@ jobs:
       # assumptions go stale. If they diverge, the value written to the allowlist and
       # the value the verifier computes from the proof differ: either every honest
       # proof is refused, or a program not on the list counts as being on it.
-      # The gate REGENERATES the value with an independent Keccak-256; it does not
-      # soyledigine inanmaz.
-      - name: regeneration (canonical code regenerated, convergent) + canary
+      # The gate reproduces the value with an independent Keccak-256; it does not
+      # trust what the code claims.
+      - name: canonical-programs-reproduce (canonical code reproduced, convergent) + canary
         run: |
-          cargo run --release --manifest-path xtask/gates/Cargo.toml -- regeneration --self-test
-          cargo run --release --manifest-path xtask/gates/Cargo.toml -- regeneration
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- canonical-programs-reproduce --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- canonical-programs-reproduce
       # Relay: ships the regeneration consensus (tokens + proof-side canonical
       # set + signed relay-status.json) to external consumers. Runs after
       # regeneration because it consumes its output line; the proof-side
@@ -2616,3 +2833,48 @@ jobs:
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- genesis-schema --self-test
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- genesis-schema
+
+  budlum-types:
+    # The shared wire types carry their own lock file and are not a member of the
+    # root package, so `cargo test --lib` at the root never runs their tests. The
+    # node re-exports `budlum_types::Address`, which means a break here is a break
+    # in the address every account is named by. Same reason as standalone-crates.
+    name: Shared types (budlum-types)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: rust
+        name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-09-12
+        with:
+          toolchain: "1.97.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: budlum-types
+          workspaces: |
+            crates/budlum-types
+      - name: Format
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path crates/budlum-types/Cargo.toml --all -- --check
+      - name: Clippy
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo clippy --manifest-path crates/budlum-types/Cargo.toml --all-targets -- -D warnings
+      - name: Tests
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo test --manifest-path crates/budlum-types/Cargo.toml
+
+  rehearsal-ceremony-preflight:
+    name: Rehearsal ceremony input and output checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the rehearsal shell script
+        run: bash -n ops/rehearsal/genesis_rehearsal.sh
+      - name: Test public operator records and genesis output
+        run: python3 -m unittest discover -s ops/rehearsal/tests -p 'test_*.py' -v

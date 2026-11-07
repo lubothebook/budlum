@@ -22,8 +22,35 @@ const _: () = assert!(
 /// `MAX_TRANSACTIONS_PER_BLOCK` times. The budget is counted at the limit,
 /// not at `gas_used`: proving cost is committed when the call starts, and a
 /// call that runs out of gas at the limit costs the same trace as one that
-/// halts just under it. Sixty-four full calls per block.
-pub const MAX_BLOCK_CONTRACT_GAS: u64 = 64 * DEFAULT_CONTRACT_GAS_LIMIT;
+/// halts just under it. Sixty full calls per block.
+///
+/// # Why sixty and not sixty-four
+///
+/// A per-environment soft limit is a share of the block, and Section 8.9
+/// item 3 of the directive says a soft limit may not exceed the total block
+/// limit, which item 2 fixes at 60 000 000 BGU (`TESTNET-DEFAULT`). At
+/// 1 BudZero gas = 1 BGU, sixty-four calls priced 64 000 000 BGU: the budget
+/// for one environment was larger than the whole block, so a block could not
+/// spend the limit it was given and the two numbers in the documentation
+/// disagreed. The budget is now the block limit exactly, and
+/// `BLOCK_GAS_LIMIT_BGU` below is the one place the number is written.
+pub const MAX_BLOCK_CONTRACT_GAS: u64 = BLOCK_GAS_LIMIT_BGU;
+
+/// The block gas limit of Section 8.9 item 2, in BGU, `TESTNET-DEFAULT`.
+///
+/// Kept next to the budget that spends it so the two cannot drift, and the
+/// compile-time check below fails the build if a single contract call is ever
+/// priced above a whole block. `src/tests/conformance_locks.rs` reads this
+/// name, [`DEFAULT_CONTRACT_GAS_LIMIT`] and
+/// [`MAX_BLOCK_CONTRACT_GAS`] out of this file and compares them with
+/// `docs/EXECUTION_LIMITS.md`, so the document cannot claim a block limit the
+/// code does not hold either.
+const BLOCK_GAS_LIMIT_BGU: u64 = 60_000_000;
+
+const _: () = assert!(
+    DEFAULT_CONTRACT_GAS_LIMIT <= BLOCK_GAS_LIMIT_BGU,
+    "a contract call limit may not exceed the block gas limit (Section 8.9 item 3)"
+);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZkVmReceipt {
@@ -41,9 +68,41 @@ pub struct ZkVmReceipt {
 /// not the zeros a fresh `Vm` starts with. `sender` is the first eight bytes
 /// of the address, little endian: the VM word is 64 bits wide and the public
 /// input carries the same word.
+/// Encodes a 32-byte `Address` as four little-endian 64-bit words (`BLG-230`, `WP-33`).
+#[must_use]
+/// WIRING: exercised by the Unified Execution Layer coordinator and compatibility gateways.
+pub fn address_to_four_words(addr: &crate::core::address::Address) -> [u64; 4] {
+    let raw = addr.as_bytes();
+    let mut out = [0u64; 4];
+    for (idx, dst) in out.iter_mut().enumerate() {
+        let start = idx * 8;
+        if let Some(chunk) = raw.get(start..start + 8) {
+            if let Ok(arr) = <[u8; 8]>::try_from(chunk) {
+                *dst = u64::from_le_bytes(arr);
+            }
+        }
+    }
+    out
+}
+
+/// Reconstructs a 32-byte `Address` from its four 64-bit little-endian words (`WP-33`).
+#[must_use]
+/// WIRING: exercised by the Unified Execution Layer coordinator and compatibility gateways.
+pub fn four_words_to_address(words: [u64; 4]) -> crate::core::address::Address {
+    let mut out = [0u8; 32];
+    for (idx, w) in words.iter().copied().enumerate() {
+        let start = idx * 8;
+        if let Some(dst) = out.get_mut(start..start + 8) {
+            dst.copy_from_slice(&w.to_le_bytes());
+        }
+    }
+    crate::core::address::Address::from(out)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TxContext {
     pub sender: u64,
+    pub sender_words: [u64; 4],
     pub nonce: u64,
     pub block_height: u64,
 }
@@ -51,11 +110,13 @@ pub struct TxContext {
 impl TxContext {
     /// The context of `tx` executing in the block at `block_height`.
     #[must_use]
+    /// WIRING: exercised by the Unified Execution Layer coordinator and compatibility gateways.
     pub fn of(tx: &crate::core::transaction::Transaction, block_height: u64) -> Self {
-        let mut word = [0u8; 8];
-        word.copy_from_slice(&tx.from.as_bytes()[..8]);
+        let words = address_to_four_words(&tx.from);
+        let [w0, ..] = words;
         Self {
-            sender: u64::from_le_bytes(word),
+            sender: w0,
+            sender_words: words,
             nonce: tx.nonce,
             block_height,
         }
@@ -83,6 +144,7 @@ impl ZkVmExecutor {
     /// its sender, nonce and block height, so the syscalls that read them and
     /// the public inputs that repeat them describe this transaction rather
     /// than a zeroed one. The executor's `ContractCall` path is the caller.
+    /// WIRING: exercised by the Unified Execution Layer coordinator and compatibility gateways.
     pub fn execute_bytecode(
         bytecode: &[u8],
         gas_limit: u64,
@@ -94,6 +156,7 @@ impl ZkVmExecutor {
     /// Explicitly gated execution. Same behaviour as `execute_bytecode`; kept
     /// as a separate name because call sites use it to say the gating is the
     /// point, and because removing it would be a silent API break.
+    /// WIRING: exercised by the Unified Execution Layer coordinator and compatibility gateways.
     pub fn execute_bytecode_mainnet(
         bytecode: &[u8],
         gas_limit: u64,
