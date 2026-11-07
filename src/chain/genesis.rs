@@ -582,7 +582,7 @@ impl GenesisConfig {
             let network = crate::core::chain_config::Network::from_chain_id(self.chain_id);
             return Err(format!(
                 "Genesis reward_pool.enabled is true on {:?} (chain {}), which has no reward-pool schedule in \
-                 the binary; a mainnet schedule is Ayaz's decision (D-04)",
+                 the binary; a mainnet schedule is an open governance decision",
                 network, self.chain_id
             ));
         }
@@ -813,6 +813,7 @@ impl GenesisConfig {
             storage_root: None,
             shards_root: None,
             witness_root: None,
+            seat_participation: None,
         };
 
         block.tx_root = block.calculate_tx_root();
@@ -1818,6 +1819,7 @@ mod tests {
                 agg_sig_bls: vec![],
                 bitmap: vec![],
                 set_hash: snapshot.set_hash.clone(),
+                seat_table_version: 0,
             };
             let status = if kind == "PoS" {
                 crate::domain::PoSFinalityAdapter.verify_finality(
@@ -2128,7 +2130,10 @@ mod mainnet_genesis_tests {
         let error = genesis
             .validate_reward_pool_flag()
             .expect_err("a mainnet pool has no schedule to pay from");
-        assert!(error.contains("D-04"), "error names the decision: {error}");
+        assert!(
+            error.contains("governance decision"),
+            "error names the decision: {error}"
+        );
     }
 
     #[test]

@@ -17,7 +17,7 @@ use crate::cross_domain::message::{CrossDomainMessage, CrossDomainMessageParams}
 use crate::cross_domain::MessageKind;
 use crate::registry::evidence::{SlashingProof, SlashingReport};
 use crate::registry::role::roles;
-use crate::storage::db::Storage;
+use crate::persistence::db::Storage;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -651,10 +651,10 @@ fn liveness_slash_applied_through_blockchain_flow() {
         assert_eq!(bc.record_liveness_epoch(e, &present), 0);
     }
     assert_eq!(bc.record_liveness_epoch(k, &present), 1);
-    // A liveness fault is a timed jail: the validator
-    // leaves the active set but is not slashed, so its release is possible.
-    let jailed = bc.state.validators.get(&v).expect("still a validator");
-    assert!(jailed.jailed && !jailed.active && !jailed.slashed);
+    // V-4 / WP-13: absence suspends (`active = false`) without slashing or jailing.
+    let suspended = bc.state.validators.get(&v).expect("still a validator");
+    assert!(!suspended.active && !suspended.slashed && !suspended.jailed);
+    assert!(bc.state.liveness.is_suspended(&v));
 }
 
 #[test]
@@ -676,7 +676,9 @@ fn liveness_counter_resets_on_participation() {
 }
 
 #[test]
-fn liveness_slash_uses_configured_rate() {
+fn liveness_absence_never_cuts_stake() {
+    // V-4 / WP-13: whatever the old liveness ratio was configured to, absence
+    // suspends and leaves the stake exactly where it was.
     let mut bc = fresh_chain();
     enable_liveness_slashing(&mut bc);
     let v = addr(0x23);
@@ -684,20 +686,14 @@ fn liveness_slash_uses_configured_rate() {
     bc.state.add_validator(v, stake);
     bc.state.sync_validator_registration(&v);
     let k = bc.state.registry.params().liveness_max_missed_epochs;
-    let rate = bc.state.registry.params().liveness_slash_ratio_fixed;
-    // Computed by the same function production uses, not by a second copy of
-    // the expression. A test that recomputes the formula by hand agrees with
-    // production only until one of the two changes, and B35 was exactly that:
-    // five copies, two spellings of the narrowing, and a mirror test that
-    // compared them only where they happened to agree.
-    let expected_penalty = crate::core::chain_config::slash_penalty(stake, rate);
 
     let none: HashSet<Address> = HashSet::new();
     for e in 1..=k {
         bc.record_liveness_epoch(e, &none);
     }
     let member = bc.state.registry.get(&v, roles::VALIDATOR).unwrap();
-    assert_eq!(member.stake, stake - expected_penalty);
+    assert_eq!(member.stake, stake, "absence must never slash the stake");
+    assert!(bc.state.liveness.is_suspended(&v));
 }
 
 #[test]

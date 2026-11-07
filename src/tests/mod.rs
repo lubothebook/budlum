@@ -102,7 +102,7 @@ pub mod private_transfer_fee_market;
 #[cfg(test)]
 pub mod prover;
 #[cfg(test)]
-pub mod regeneration_recovery;
+pub mod state_recovery;
 #[cfg(test)]
 pub mod relayer_liveness;
 // chain relayer proof cryptographic verification + M5 budlumxyz fee + M4 BNS fee
@@ -228,7 +228,65 @@ pub mod consensus_bypass_locks;
 pub mod block_clock;
 #[cfg(test)]
 pub mod real_chain_fixtures;
-// Effect-asserting locks for the slashing matrix and the overflow rule
-//.
+// Effect-asserting locks for the slashing matrix and the overflow rule.
 #[cfg(test)]
 pub mod refusal_locks;
+
+// Regression locks for fixes already in the tree, one module per area.
+#[cfg(test)]
+pub mod regression_ai_storage;
+#[cfg(test)]
+pub mod regression_bridge;
+#[cfg(test)]
+pub mod regression_chain;
+#[cfg(test)]
+pub mod regression_ops_crypto;
+
+// Validator classes and the single registration door.
+#[cfg(test)]
+pub mod validator_classes;
+
+// The B.U.D. 3.0 storage door end to end.
+#[cfg(test)]
+pub mod bud3_door;
+
+// M0 live-verification regression locks (WP-01, WP-02).
+#[cfg(test)]
+pub mod audit_lane_a;
+#[cfg(test)]
+pub mod audit_lane_b;
+#[cfg(test)]
+pub mod audit_lane_c;
+#[cfg(test)]
+pub mod audit_lane_d;
+// The persistence move is behaviour-neutral.
+#[cfg(test)]
+pub mod persistence_move;
+
+// Section 6.2 shared B.U.D. 3.0 vocabulary.
+#[cfg(test)]
+pub mod bud3_types;
+
+// WP-17 state transition, governance, staking, and V2 snapshot locks.
+#[cfg(test)]
+pub mod wp17_state_hardening;
+
+// WP-44 domains, bridge, settlement, and testnet feature-matrix locks.
+#[cfg(test)]
+pub mod wp44_domains_bridge_settlement;
+
+// WP-41 operational readiness, alerts, edge, backup, and topology locks.
+#[cfg(test)]
+pub mod alert_rules_reference_existing_metrics;
+#[cfg(test)]
+pub mod alerts_have_runbook_entries;
+#[cfg(test)]
+pub mod backup_covers_persisted_paths;
+#[cfg(test)]
+pub mod caddy_edges_match_the_services;
+#[cfg(test)]
+pub mod compose_topology_matches_services;
+#[cfg(test)]
+pub mod readiness_metrics;
+#[cfg(test)]
+pub mod scrape_topology_covers_the_rules;

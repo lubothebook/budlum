@@ -64,29 +64,81 @@ fn check_ai_exec_dims(dims: &[u16]) -> Result<(), String> {
 }
 
 fn privacy_transfers_enabled(chain_id: u64) -> bool {
-    // Allowlist, not a denylist.
-    //
-    // `PrivateTransferSubmit` reaches `note_registry.apply_transfer`, which
-    // takes the nullifier the submitter hands it: the binding check
-    // `nullifier == derive_nullifier(commitment, proof)` only runs when
-    // `apply_transfer_with_proofs` is called with proofs, and nothing in the
-    // tree calls it that way. So today a transfer proves who signed the
-    // transaction, never that the signer owns the note; value conservation and
-    // membership are unwired too. That is survivable on the two networks where
-    // the notes are worth nothing.
-    //
-    // The old test was `chain_id != Mainnet`, which answers "is this not the
-    // one network we care about" instead of "is this a network where losing the
-    // notes costs nothing". Every id nobody has claimed yet - a second mainnet,
-    // a public testnet that grows real value - came back enabled.
+    // PTP-1 ownership, membership and value-conservation proofs are not live.
+    // Submitter-supplied nullifier proofs do not establish those properties.
+    // The public testnet must refuse the surface just like mainnet.
     chain_id
         == crate::core::chain_config::Network::Devnet
             .chain_id()
             .value()
-        || chain_id
-            == crate::core::chain_config::Network::Testnet
-                .chain_id()
-                .value()
+}
+
+/// Until the verification findings and both VL-1 conditions have evidence,
+/// the on-chain AI verification layer is a devnet-only surface (KR-27).
+fn check_ai_layer(chain_id: u64) -> BudlumResult<()> {
+    if chain_id
+        != crate::core::chain_config::Network::Devnet
+            .chain_id()
+            .value()
+    {
+        return Err(BudlumError::validation(
+            "ai_layer_closed_on_testnet",
+            "the on-chain AI verification layer is closed on this network until its verification findings and VL-1 conditions are satisfied",
+        ));
+    }
+    Ok(())
+}
+
+fn is_ai_layer_tx(tx_type: &TransactionType) -> bool {
+    match tx_type {
+        TransactionType::AiModelRegister(_)
+        | TransactionType::AiInferenceRequest(_)
+        | TransactionType::AiInferenceResult(_)
+        | TransactionType::AiFeeReclaim(_)
+        | TransactionType::AiModelDeactivate(_)
+        | TransactionType::AiModelReactivate(_)
+        | TransactionType::AiRequestCancel(_)
+        | TransactionType::AiDisputeSlash { .. }
+        | TransactionType::AiAgentPayment(_)
+        | TransactionType::AiAgentPaymentRelease(_)
+        | TransactionType::AiAgentPaymentReclaim(_)
+        | TransactionType::AiAttachExecutionProof { .. }
+        | TransactionType::AiOperatorBond
+        | TransactionType::AiOperatorUnbond
+        | TransactionType::AiOperatorWithdraw => true,
+        // A generic role transaction must not reopen AI verifier admission.
+        TransactionType::RoleBond { role }
+        | TransactionType::RoleUnbond { role }
+        | TransactionType::RoleWithdraw { role } => matches!(
+            crate::registry::role::RoleId(*role),
+            crate::registry::role::roles::AI_VERIFIER | crate::registry::role::roles::AI_OPERATOR
+        ),
+        // Data-market transactions are not AI verification transactions.
+        _ => false,
+    }
+}
+
+/// The same feature boundary applies to admission, precheck and execution.
+/// Refuse before creating an account, taking a fee or touching note state.
+pub(crate) fn check_transaction_features(
+    chain_id: u64,
+    tx_type: &TransactionType,
+) -> BudlumResult<()> {
+    if matches!(
+        tx_type,
+        TransactionType::PrivateTransferSubmit(_) | TransactionType::PrivacyNoteInsert(_)
+    ) && !privacy_transfers_enabled(chain_id)
+    {
+        return Err(BudlumError::validation(
+            // Preserve the existing refusal code used by RPC clients.
+            "privacy_mainnet_disabled",
+            "private transfers and note insertion are closed on this network until ownership, value-conservation and membership proofs are wired",
+        ));
+    }
+    if is_ai_layer_tx(tx_type) {
+        check_ai_layer(chain_id)?;
+    }
+    Ok(())
 }
 
 impl Executor {
@@ -167,6 +219,8 @@ impl Executor {
         state: &mut AccountState,
         tx: &Transaction,
     ) -> BudlumResult<()> {
+        check_transaction_features(tx.chain_id, &tx.tx_type)?;
+
         // The zero address is not a sender: only the canonical genesis
         // transaction may originate from it, and it is rejected everywhere
         // but the genesis block by `validate_and_add_block`. Accepting any
@@ -212,28 +266,25 @@ impl Executor {
             _ => {}
         }
 
-        let liquid_cost = match tx.tx_type {
-            TransactionType::Unstake
-            | TransactionType::Vote
-            | TransactionType::Undelegate { .. }
-            | TransactionType::WithdrawDelegation { .. }
-            | TransactionType::SetValidatorCommission { .. }
-            | TransactionType::Redelegate { .. }
-            | TransactionType::ClaimRewards { .. } => tx.fee,
-            _ => tx.total_cost(),
-        };
+        let total_cost = tx.checked_admission_cost().ok_or_else(|| {
+            BudlumError::validation(
+                "transaction_cost_overflow",
+                "Transaction amount plus fee overflows u64",
+            )
+        })?;
 
         {
-            let sender_account = state.get_or_create(&tx.from);
-            if sender_account.balance < liquid_cost {
+            // The admission gate looks at the spendable balance, not the raw
+            // balance: a vesting-locked or burn-reserve amount is not a spend
+            // gate bypass (BLG-020 class, WP-17 item 4).
+            let sender_spendable = state.spendable_balance(&tx.from);
+            if sender_spendable < total_cost {
                 return Err(BudlumError::validation(
                     "insufficient_balance",
-                    "Insufficient balance",
+                    "Insufficient spendable balance",
                 ));
             }
         }
-
-        let total_cost = tx.total_cost();
 
         match &tx.tx_type {
             TransactionType::Transfer => {
@@ -246,6 +297,15 @@ impl Executor {
                         ),
                     ));
                 }
+                // Preflight the credit before the sender debit and nonce
+                // increment. A receiver overflow must not leave a partial
+                // transaction in callers that execute directly.
+                state.get_balance(&tx.to).checked_add(tx.amount).ok_or_else(|| {
+                    BudlumError::validation(
+                        "balance_overflow",
+                        "Receiver balance overflow: transfer would exceed u64::MAX",
+                    )
+                })?;
                 let sender = state.get_or_create(&tx.from);
                 // Checked arithmetic for critical
                 // Balance paths. Sender sub is safe (balance check above),
@@ -280,6 +340,17 @@ impl Executor {
                         "Slashed validators cannot add stake",
                     ));
                 }
+                // Compute the top-up before the liquid debit and nonce
+                // increment. An overflowing stake is rejected without a
+                // partially applied transaction.
+                let next_stake = state
+                    .get_validator(&tx.from)
+                    .map(|validator| {
+                        validator.stake.checked_add(tx.amount).ok_or_else(|| {
+                            BudlumError::validation("stake_overflow", "stake overflow")
+                        })
+                    })
+                    .transpose()?;
                 // Vesting gate: staking moves value
                 // out of the account exactly like a transfer; the locked
                 // team-vesting portion is not spendable. Read before the
@@ -305,7 +376,7 @@ impl Executor {
                 let validator = state.get_validator_mut(&tx.from);
 
                 if let Some(v) = validator {
-                    v.stake = v.stake.checked_add(stake_amount).ok_or_else(|| {
+                    v.stake = next_stake.ok_or_else(|| {
                         BudlumError::validation("stake_overflow", "stake overflow")
                     })?;
                     // `!v.jailed` is not decoration: a liveness-fault jail is
@@ -451,7 +522,7 @@ impl Executor {
                         "Claiming rewards requires zero amount, recipient, and data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the reward claim fee",
@@ -714,28 +785,27 @@ impl Executor {
                         "Only eligible validators can vote in governance",
                     ));
                 }
-                let sender_acc = state.get_or_create(&tx.from);
-                sender_acc.balance = sender_acc.balance.checked_sub(tx.fee).ok_or_else(|| {
-                    BudlumError::validation("balance_underflow", "balance underflow")
-                })?;
-                sender_acc.nonce = sender_acc.nonce.saturating_add(1);
-
                 if tx.to != Address::zero() {
                     if let Some(target) = state.get_validator_mut(&tx.to) {
                         if tx.amount > 0 {
-                            target.votes_for += 1;
+                            target.votes_for = target.votes_for.saturating_add(1);
                         } else {
-                            target.votes_against += 1;
+                            target.votes_against = target.votes_against.saturating_add(1);
                         }
                     }
                 } else if !tx.data.is_empty() && tx.data.len() >= 9 {
                     if tx.data.len() == 9 {
-                        let vote_for = tx.data[0] != 0;
+                        let vote_for = tx.data.first().copied().unwrap_or(0) != 0;
                         let mut id_bytes = [0u8; 8];
-                        id_bytes.copy_from_slice(&tx.data[1..9]);
+                        if let Some(slice) = tx.data.get(1..9) {
+                            id_bytes.copy_from_slice(slice);
+                        }
                         let proposal_id = u64::from_le_bytes(id_bytes);
 
-                        let voter_stake = state.get_validator(&tx.from).map_or(0, |v| v.stake);
+                        let voter_stake = state
+                            .get_validator(&tx.from)
+                            .filter(|v| v.is_eligible(state.epoch_index))
+                            .map_or(0, |v| v.stake);
                         if voter_stake == 0 {
                             return Err(BudlumError::validation(
                                 "governance_voter_not_validator",
@@ -743,19 +813,27 @@ impl Executor {
                             ));
                         }
 
-                        if let Some(proposal) = state.governance.find_proposal_mut(proposal_id) {
-                            proposal
-                                .add_vote(tx.from, voter_stake, vote_for, state.epoch_index)
-                                .map_err(|e| {
-                                    BudlumError::validation("governance_vote_failed", e)
-                                })?;
-                        }
+                        let proposal = state
+                            .governance
+                            .find_proposal_mut(proposal_id)
+                            .ok_or_else(|| {
+                                BudlumError::validation(
+                                    "governance_proposal_not_found",
+                                    "Governance proposal does not exist",
+                                )
+                            })?;
+                        proposal
+                            .add_vote(tx.from, voter_stake, vote_for, state.epoch_index)
+                            .map_err(|e| BudlumError::validation("governance_vote_failed", e))?;
                     } else {
                         let mut duration_bytes = [0u8; 8];
-                        duration_bytes.copy_from_slice(&tx.data[0..8]);
+                        if let Some(slice) = tx.data.get(0..8) {
+                            duration_bytes.copy_from_slice(slice);
+                        }
                         let duration = u64::from_le_bytes(duration_bytes);
+                        let payload = tx.data.get(8..).unwrap_or(&[]);
                         let p_type: crate::core::governance::ProposalType =
-                            serde_json::from_slice(&tx.data[8..]).map_err(|e| {
+                            serde_json::from_slice(payload).map_err(|e| {
                                 BudlumError::validation(
                                     "governance_proposal_invalid",
                                     e.to_string(),
@@ -773,7 +851,10 @@ impl Executor {
                             })?;
                         }
 
-                        let proposer_stake = state.get_validator(&tx.from).map_or(0, |v| v.stake);
+                        let proposer_stake = state
+                            .get_validator(&tx.from)
+                            .filter(|v| v.is_eligible(state.epoch_index))
+                            .map_or(0, |v| v.stake);
                         if proposer_stake == 0 {
                             return Err(BudlumError::validation(
                                 "governance_proposer_not_validator",
@@ -793,6 +874,12 @@ impl Executor {
                             })?;
                     }
                 }
+
+                let sender_acc = state.get_or_create(&tx.from);
+                sender_acc.balance = sender_acc.balance.checked_sub(tx.fee).ok_or_else(|| {
+                    BudlumError::validation("balance_underflow", "balance underflow")
+                })?;
+                sender_acc.nonce = sender_acc.nonce.saturating_add(1);
             }
             TransactionType::ContractCall => {
                 // The VM runs for this transaction: its sender, nonce and the
@@ -807,6 +894,9 @@ impl Executor {
                     && receipt.events[0] == 0x00A1_00A1
                     && receipt.events.len() >= 4
                 {
+                    // An ordinary ContractCall can emit an inference request.
+                    // Apply the same policy before touching escrow or grants.
+                    check_ai_layer(tx.chain_id)?;
                     let mut model_id = [0u8; 32];
                     model_id[0..8].copy_from_slice(&receipt.events[1].to_le_bytes());
                     let max_fee = receipt.events[2];
@@ -868,10 +958,18 @@ impl Executor {
                     // this balance. Checking the escrow alone let the escrow
                     // be deducted and the fee debit then fail, leaving a
                     // half-applied transaction in the callers' state.
-                    if sender_balance < max_fee.saturating_add(tx.fee) {
+                    let required_balance = max_fee.checked_add(tx.fee).ok_or_else(|| {
+                        BudlumError::validation(
+                            "ai_escrow_cost_overflow",
+                            "AI max_fee escrow plus transaction fee overflowed u64",
+                        )
+                    })?;
+                    if sender_balance < required_balance {
                         return Err(BudlumError::validation(
                             "ai_insufficient_balance_for_escrow",
-                            format!("Insufficient balance for max_fee escrow: have {sender_balance}, need {max_fee}"),
+                            format!(
+                                "Insufficient balance for max_fee escrow plus fee: have {sender_balance}, need {required_balance}"
+                            ),
                         ));
                     }
                     // Previously the error was silently swallowed
@@ -2448,12 +2546,6 @@ impl Executor {
                 sender.nonce = sender.nonce.saturating_add(1);
             }
             TransactionType::PrivacyNoteInsert(commitment) => {
-                if !privacy_transfers_enabled(tx.chain_id) {
-                    return Err(BudlumError::validation(
-                        "privacy_mainnet_disabled",
-                        "privacy note insertion is disabled on mainnet until full proof verification is wired",
-                    ));
-                }
                 // The same boundary `PrivateTransferSubmit::validate_shape`
                 // holds: only a packed field element is a note.
                 if !crate::privacy::is_note_hash(commitment) {
@@ -2473,12 +2565,6 @@ impl Executor {
                 sender.nonce = sender.nonce.saturating_add(1);
             }
             TransactionType::PrivateTransferSubmit(sub) => {
-                if !privacy_transfers_enabled(tx.chain_id) {
-                    return Err(BudlumError::validation(
-                        "privacy_mainnet_disabled",
-                        "private transfers are disabled on mainnet until ownership, value-conservation, and membership proofs are wired",
-                    ));
-                }
                 sub.validate_shape()
                     .map_err(|e| BudlumError::validation("private_transfer_shape", e))?;
                 if !sub.verify_digest_matches() {
@@ -2992,6 +3078,120 @@ impl Executor {
                 })?;
                 sender.nonce = sender.nonce.saturating_add(1);
             }
+            TransactionType::Validator(validator_tx) => {
+                use crate::validators::ValidatorTx;
+                // One set of checks for admission and execution.
+                state
+                    .check_validator_tx(tx, validator_tx)
+                    .map_err(|e| BudlumError::validation(e.code, e.message))?;
+                let refuse = |e: crate::validators::ValidatorError| {
+                    BudlumError::validation(e.code, e.message)
+                };
+                let epoch = state.epoch_index;
+                if state.spendable_balance(&tx.from) < total_cost {
+                    return Err(BudlumError::validation(
+                        "validator_vesting_locked",
+                        format!(
+                            "the bond exceeds the spendable balance (vesting-locked funds cannot be bonded): need {total_cost}"
+                        ),
+                    ));
+                }
+                let network = crate::core::chain_config::Network::from_chain_id(tx.chain_id);
+                match validator_tx {
+                    ValidatorTx::Register(registration) => {
+                        let floor = network.map_or(1, |n| n.class_floor(registration.class));
+                        state
+                            .validator_directory
+                            .register(registration, tx.amount, floor, epoch)
+                            .map_err(refuse)?;
+                        if let Some(seat) = &registration.seat {
+                            state
+                                .install_full_validator(
+                                    registration.owner,
+                                    tx.amount,
+                                    &registration.bls_key,
+                                    &registration.bls_pop,
+                                    seat,
+                                    tx.chain_id,
+                                )
+                                .map_err(|message| {
+                                    BudlumError::validation("validator_seat_install", message)
+                                })?;
+                        }
+                    }
+                    ValidatorTx::ChangeClass { new_class, seat } => {
+                        let full_floor = network.map_or(1, |n| n.min_stake_full());
+                        state
+                            .validator_directory
+                            .request_class_change(
+                                &tx.from,
+                                *new_class,
+                                seat.clone(),
+                                full_floor,
+                                epoch,
+                            )
+                            .map_err(refuse)?;
+                    }
+                    ValidatorTx::RotateOperatorKey { new_operator_key } => {
+                        state
+                            .validator_directory
+                            .request_operator_rotation(&tx.from, new_operator_key.clone(), epoch)
+                            .map_err(refuse)?;
+                    }
+                    ValidatorTx::UpdateCustodyQuota {
+                        owner,
+                        new_quota_bytes,
+                        seq,
+                        ..
+                    } => {
+                        state
+                            .validator_directory
+                            .request_quota_increase(owner, *new_quota_bytes, *seq, epoch)
+                            .map_err(refuse)?;
+                    }
+                    // ResumeValidator (section 7.8.7): the suspension lifts
+                    // one epoch later via `LivenessTracker::activate_due_resumes`;
+                    // absence itself never slashed (V-4).
+                    ValidatorTx::Resume => {
+                        state.liveness.request_resume(&tx.from, epoch);
+                    }
+                }
+                let sender = state.get_or_create(&tx.from);
+                sender.balance = sender.balance.checked_sub(total_cost).ok_or_else(|| {
+                    BudlumError::validation("balance_underflow", "balance underflow")
+                })?;
+                sender.nonce = sender.nonce.saturating_add(1);
+            }
+            TransactionType::StorageV3(storage_tx) => {
+                // The storage door moves no value: the signed amount is zero
+                // and only the fee is charged. The registry refuses before it
+                // writes, so a refusal leaves the state as it was.
+                if tx.amount != 0 {
+                    return Err(BudlumError::validation(
+                        "storage_v3_amount_nonzero",
+                        "a StorageTx v3 transaction carries no amount",
+                    ));
+                }
+                if state.spendable_balance(&tx.from) < total_cost {
+                    return Err(BudlumError::validation(
+                        "insufficient_balance",
+                        format!("the fee exceeds the spendable balance: need {total_cost}"),
+                    ));
+                }
+                let epoch = state.epoch_index;
+                crate::storage::bud3::tx::apply(
+                    &mut state.bud3_registry,
+                    *tx.from.as_bytes(),
+                    storage_tx.as_ref().clone(),
+                    epoch,
+                )
+                .map_err(|e| BudlumError::validation("storage_v3_refused", format!("{e:?}")))?;
+                let sender = state.get_or_create(&tx.from);
+                sender.balance = sender.balance.checked_sub(total_cost).ok_or_else(|| {
+                    BudlumError::validation("balance_underflow", "balance underflow")
+                })?;
+                sender.nonce = sender.nonce.saturating_add(1);
+            }
             TransactionType::RoleBond { role } => {
                 // The verifier family's production
                 // registration door. The bond is the signed amount; the role
@@ -3027,7 +3227,7 @@ impl Executor {
                         "a relayed cross-domain message requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the cross-domain relay fee",
@@ -3070,7 +3270,7 @@ impl Executor {
                         "a role unbond requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the role unbond fee",
@@ -3095,7 +3295,7 @@ impl Executor {
                         "a role withdraw requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the role withdraw fee",
@@ -3123,7 +3323,7 @@ impl Executor {
                         "a bridge burn takes its amount from the transfer row; it cannot carry one",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the bridge burn fee",
@@ -3202,7 +3402,7 @@ impl Executor {
                         "registering a cross-domain message moves no value",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the cross-domain message fee",
@@ -3237,7 +3437,7 @@ impl Executor {
                         "a storage transaction records commitments; it cannot carry value",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the storage transaction fee",
@@ -3271,7 +3471,7 @@ impl Executor {
                         "an external-domain transaction requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the external-domain transaction fee",
@@ -3304,7 +3504,7 @@ impl Executor {
                         "a settlement transaction requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the settlement transaction fee",
@@ -3335,7 +3535,7 @@ impl Executor {
                         "a bridge transaction requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the bridge transaction fee",
@@ -3364,7 +3564,7 @@ impl Executor {
                         "a canary commit requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the canary commit fee",
@@ -3393,7 +3593,7 @@ impl Executor {
                         "a Filiz registration requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the Filiz registration fee",
@@ -3429,7 +3629,7 @@ impl Executor {
                         "a canary reveal requires zero amount, zero recipient and empty data",
                     ));
                 }
-                if state.get_balance(&tx.from) < tx.fee {
+                if state.spendable_balance(&tx.from) < tx.fee {
                     return Err(BudlumError::validation(
                         "insufficient_balance_for_fee",
                         "insufficient balance for the canary reveal fee",
@@ -3478,13 +3678,56 @@ impl Executor {
             .map_err(|e| e.message().to_string())
     }
 
+    /// Check the nonce against the candidate state at the block boundary.
+    /// This remains mandatory when a stored block has pruned witnesses and
+    /// therefore skips signature-oriented transaction admission.
+    fn check_block_transaction_nonce(
+        state: &AccountState,
+        tx: &Transaction,
+    ) -> BudlumResult<()> {
+        let expected = state.get_nonce(&tx.from);
+        if tx.nonce != expected {
+            return Err(BudlumError::validation(
+                "invalid_nonce",
+                format!("invalid nonce: expected {expected}, got {}", tx.nonce),
+            ));
+        }
+        tx.nonce.checked_add(1).ok_or_else(|| {
+            BudlumError::validation(
+                "nonce_exhausted",
+                "transaction sender has exhausted the nonce space",
+            )
+        })?;
+        Ok(())
+    }
+
+    /// Apply a whole block atomically. A rejected block leaves `state` exactly
+    /// as it was before the call, including effects from transactions earlier
+    /// in the same block.
     pub fn apply_block_checked(
+        state: &mut AccountState,
+        transactions: &[Transaction],
+        block_producer: Option<&Address>,
+    ) -> BudlumResult<()> {
+        let mut candidate = state.clone();
+        Self::apply_block_candidate_checked(&mut candidate, transactions, block_producer)?;
+        *state = candidate;
+        Ok(())
+    }
+
+    /// Apply a block to a disposable candidate owned by the caller.
+    ///
+    /// This method can partially mutate `candidate` before returning an error.
+    /// Callers must discard it on `Err`. Use `apply_block_checked` when the
+    /// caller needs an all-or-nothing update to a live state.
+    pub(crate) fn apply_block_candidate_checked(
         state: &mut AccountState,
         transactions: &[Transaction],
         block_producer: Option<&Address>,
     ) -> BudlumResult<()> {
         Self::check_block_contract_gas(transactions)?;
         for tx in transactions {
+            Self::check_block_transaction_nonce(state, tx)?;
             Self::apply_transaction_checked(state, tx)?;
         }
         if let Some(producer) = block_producer {
@@ -3660,6 +3903,268 @@ mod tests {
     #[test]
     fn ai_exec_dims_accepts_small_model() {
         assert!(check_ai_exec_dims(&[2, 1]).is_ok());
+    }
+
+    #[test]
+    fn blg_020_refused_later_transaction_rolls_back_block() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let alice = Address::from([0x11; 32]);
+        let bob = Address::from([0x22; 32]);
+        let carol = Address::from([0x33; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&alice, 100);
+        let root_before = state.calculate_state_root();
+
+        let transfer = |to, amount, nonce| {
+            let mut tx = Transaction::new_with_chain_id(
+                alice,
+                to,
+                amount,
+                1,
+                nonce,
+                vec![],
+                DEFAULT_CHAIN_ID,
+                TransactionType::Transfer,
+            );
+            tx.hash = tx.calculate_hash();
+            tx
+        };
+        let transactions = [transfer(bob, 10, 0), transfer(carol, 100, 1)];
+
+        assert!(Executor::apply_block_checked(&mut state, &transactions, None).is_err());
+        assert_eq!(state.calculate_state_root(), root_before);
+        assert_eq!(state.get_balance(&alice), 100);
+        assert_eq!(state.get_nonce(&alice), 0);
+        assert_eq!(state.get_balance(&bob), 0);
+        assert_eq!(state.get_balance(&carol), 0);
+    }
+
+    #[test]
+    fn blg_113_block_nonce_failures_are_atomic() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let sender = Address::from([0x31; 32]);
+        let recipient = Address::from([0x32; 32]);
+        let transfer = |nonce, amount| {
+            let mut tx = Transaction::new_with_chain_id(
+                sender,
+                recipient,
+                amount,
+                1,
+                nonce,
+                vec![],
+                DEFAULT_CHAIN_ID,
+                TransactionType::Transfer,
+            );
+            tx.hash = tx.calculate_hash();
+            tx
+        };
+
+        let mut stale_state = AccountState::new();
+        stale_state.add_balance(&sender, 100);
+        let stale_root = stale_state.calculate_state_root();
+        let error = Executor::apply_block_checked(
+            &mut stale_state,
+            &[transfer(0, 10), transfer(0, 1)],
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), "invalid_nonce");
+        assert_eq!(stale_state.calculate_state_root(), stale_root);
+        assert_eq!(stale_state.get_balance(&sender), 100);
+        assert_eq!(stale_state.get_balance(&recipient), 0);
+        assert_eq!(stale_state.get_nonce(&sender), 0);
+
+        let mut exhausted_state = AccountState::new();
+        exhausted_state.add_balance(&sender, 100);
+        exhausted_state.get_or_create(&sender).nonce = u64::MAX;
+        let exhausted_root = exhausted_state.calculate_state_root();
+        let error = Executor::apply_block_checked(
+            &mut exhausted_state,
+            &[transfer(u64::MAX, 1)],
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), "nonce_exhausted");
+        assert_eq!(exhausted_state.calculate_state_root(), exhausted_root);
+        assert_eq!(exhausted_state.get_balance(&sender), 100);
+        assert_eq!(exhausted_state.get_balance(&recipient), 0);
+        assert_eq!(exhausted_state.get_nonce(&sender), u64::MAX);
+    }
+
+    #[test]
+    fn blg_197_amount_fee_overflow_is_rejected_before_mutation() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let sender = Address::from([0x51; 32]);
+        let recipient = Address::from([0x52; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&sender, u64::MAX);
+        let root_before = state.calculate_state_root();
+
+        let mut tx = Transaction::new_with_chain_id(
+            sender,
+            recipient,
+            u64::MAX,
+            1,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::Transfer,
+        );
+        tx.hash = tx.calculate_hash();
+
+        let error = Executor::apply_transaction_checked(&mut state, &tx).unwrap_err();
+        assert_eq!(error.code(), "transaction_cost_overflow");
+        assert_eq!(state.calculate_state_root(), root_before);
+        assert_eq!(state.get_balance(&sender), u64::MAX);
+        assert_eq!(state.get_balance(&recipient), 0);
+        assert_eq!(state.get_nonce(&sender), 0);
+    }
+
+    #[test]
+    fn blg_197_receiver_overflow_is_rejected_before_state_mutation() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let sender = Address::from([0x55; 32]);
+        let recipient = Address::from([0x56; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&sender, 2);
+        state.add_balance(&recipient, u64::MAX);
+        let root_before = state.calculate_state_root();
+        let mut tx = Transaction::new_with_chain_id(
+            sender,
+            recipient,
+            1,
+            1,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::Transfer,
+        );
+        tx.hash = tx.calculate_hash();
+
+        let error = Executor::apply_transaction_checked(&mut state, &tx).unwrap_err();
+        assert_eq!(error.code(), "balance_overflow");
+        assert_eq!(state.calculate_state_root(), root_before);
+        assert_eq!(state.get_balance(&sender), 2);
+        assert_eq!(state.get_balance(&recipient), u64::MAX);
+        assert_eq!(state.get_nonce(&sender), 0);
+    }
+
+    #[test]
+    fn blg_197_stake_overflow_is_rejected_before_state_mutation() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let sender = Address::from([0x57; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&sender, 2);
+        state.add_validator(sender, u64::MAX);
+        let root_before = state.calculate_state_root();
+        let mut tx = Transaction::new_with_chain_id(
+            sender,
+            Address::zero(),
+            1,
+            1,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::Stake,
+        );
+        tx.hash = tx.calculate_hash();
+
+        let error = Executor::apply_transaction_checked(&mut state, &tx).unwrap_err();
+        assert_eq!(error.code(), "stake_overflow");
+        assert_eq!(state.calculate_state_root(), root_before);
+        assert_eq!(state.get_balance(&sender), 2);
+        assert_eq!(state.get_nonce(&sender), 0);
+        assert_eq!(state.get_validator(&sender).unwrap().stake, u64::MAX);
+    }
+
+    #[test]
+    fn blg_197_fee_only_vote_ignores_amount_overflow() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let sender = Address::from([0x53; 32]);
+        let target = Address::from([0x54; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&sender, 1);
+        let mut tx = Transaction::new_with_chain_id(
+            sender,
+            target,
+            u64::MAX,
+            1,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::Vote,
+        );
+        tx.hash = tx.calculate_hash();
+
+        Executor::apply_transaction_checked(&mut state, &tx)
+            .expect("a vote spends its fee, not its vote-weight amount");
+        assert_eq!(state.get_balance(&sender), 0);
+        assert_eq!(state.get_nonce(&sender), 1);
+    }
+
+    #[test]
+    fn blg_100_fee_only_execution_gate_rejects_vesting_locked_balance() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let sender = Address::from([0x61; 32]);
+        let validator = Address::from([0x62; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&sender, 100);
+        state.team_vesting = Some((
+            sender,
+            crate::tokenomics::VestingSchedule {
+                total: 100,
+                start_epoch: 0,
+                cliff_epochs: 10,
+                duration_epochs: 100,
+            },
+        ));
+        assert_eq!(state.spendable_balance(&sender), 0);
+        let root_before = state.calculate_state_root();
+        let mut tx = Transaction::new_with_chain_id(
+            sender,
+            Address::zero(),
+            0,
+            1,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::ClaimRewards { validator },
+        );
+        tx.hash = tx.calculate_hash();
+
+        let error = Executor::apply_transaction_checked(&mut state, &tx).unwrap_err();
+        assert_eq!(error.code(), "insufficient_balance_for_fee");
+        assert_eq!(state.calculate_state_root(), root_before);
+        assert_eq!(state.get_balance(&sender), 100);
+        assert_eq!(state.get_nonce(&sender), 0);
     }
 
     /// A refused governance vote leaves the sender untouched. The
@@ -3911,6 +4416,69 @@ mod tests {
         assert!(state.get_validator(&team).is_none());
     }
 
+    /// BLG-020: an arm that charges only a fee still reads the spendable
+    /// balance. The vesting-locked funds of the team account do not pay a
+    /// fee, so the arm refuses at the fee gate and not later, for another
+    /// reason.
+    #[test]
+    fn a_fee_only_arm_refuses_vesting_locked_funds_at_the_fee_gate() {
+        use crate::core::account::AccountState;
+        use crate::core::address::Address;
+        use crate::core::transaction::{Transaction, TransactionType, DEFAULT_CHAIN_ID};
+        use crate::execution::executor::Executor;
+
+        let team = Address::from([7u8; 32]);
+        let mut state = AccountState::new();
+        state.add_balance(&team, 5_000);
+        state.team_vesting = Some((
+            team,
+            crate::tokenomics::VestingSchedule {
+                total: 5_000,
+                start_epoch: 0,
+                cliff_epochs: 10,
+                duration_epochs: 100,
+            },
+        ));
+        assert_eq!(state.spendable_balance(&team), 0);
+
+        let mut tx = Transaction::new_with_chain_id(
+            team,
+            Address::zero(),
+            0,
+            1,
+            0,
+            vec![],
+            DEFAULT_CHAIN_ID,
+            TransactionType::ClaimRewards {
+                validator: Address::from([8u8; 32]),
+            },
+        );
+        tx.hash = tx.calculate_hash();
+        let err = Executor::apply_transaction_checked(&mut state, &tx)
+            .expect_err("a locked fee must be refused");
+        assert_eq!(
+            err.code(),
+            "insufficient_balance_for_fee",
+            "unexpected error: {err}"
+        );
+        assert_eq!(state.get_balance(&team), 5_000);
+    }
+
+    /// BLG-020, the class: no money gate in the executor reads the raw
+    /// balance of the sender. A raw read skips the vesting lock.
+    #[test]
+    fn no_executor_gate_reads_the_raw_sender_balance() {
+        let src = include_str!("executor.rs");
+        let production = src
+            .split("#[cfg(test)]\nmod tests {")
+            .next()
+            .unwrap_or(src);
+        assert!(
+            !production.contains("get_balance(&tx.from) <"),
+            "a fee or cost gate compares the raw balance; read `spendable_balance`"
+        );
+    }
+
     #[test]
     fn verifier_fee_split_pays_remainder_to_first_verifiers() {
         let mut state = crate::core::account::AccountState::new();
@@ -3992,7 +4560,7 @@ mod tests {
 
         assert!(!privacy_transfers_enabled(mainnet), "mainnet must stay off");
         assert!(privacy_transfers_enabled(devnet), "devnet must stay on");
-        assert!(privacy_transfers_enabled(testnet), "testnet must stay on");
+        assert!(!privacy_transfers_enabled(testnet), "testnet must stay off");
 
         for unclaimed in [1u64, 42, 1337, 45263, u64::MAX] {
             assert!(
@@ -4000,6 +4568,17 @@ mod tests {
                 "chain id {unclaimed} has no ownership proof wired; the surface must stay off"
             );
         }
+    }
+
+    #[test]
+    fn testnet_privacy_is_disabled_until_ptp1() {
+        let testnet = crate::core::chain_config::Network::Testnet
+            .chain_id()
+            .value();
+        assert!(
+            !privacy_transfers_enabled(testnet),
+            "a public testnet must not enable unproven private transfers"
+        );
     }
 
     #[test]
