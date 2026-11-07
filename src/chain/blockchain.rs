@@ -485,6 +485,23 @@ impl Blockchain {
         }
     }
 
+    fn checked_replay_prefix(chain: &[Block], position: usize) -> Result<&[Block], String> {
+        let block = chain
+            .get(position)
+            .ok_or_else(|| format!("block position {position} is outside the stored chain"))?;
+        let expected_index = u64::try_from(position)
+            .map_err(|_| format!("block position {position} exceeds the chain index range"))?;
+        if block.index != expected_index {
+            return Err(format!(
+                "block at position {position} declares index {}",
+                block.index
+            ));
+        }
+        chain
+            .get(..position)
+            .ok_or_else(|| format!("block position {position} has no valid replay prefix"))
+    }
+
     fn snapshot_trusted_signers_from_state(state: &AccountState) -> Vec<[u8; 32]> {
         state
             .validators
@@ -877,8 +894,17 @@ impl Blockchain {
             }
         }
 
-        for block in chain_vec.iter().skip(start_index) {
-            let preceding = &chain_vec[..block.index as usize];
+        for (position, block) in chain_vec.iter().enumerate().skip(start_index) {
+            let preceding = match Self::checked_replay_prefix(&chain_vec, position) {
+                Ok(prefix) => prefix,
+                Err(error) => {
+                    error!("Corrupted persisted chain: {error}. Refusing startup.");
+                    #[cfg(not(test))]
+                    std::process::exit(1);
+                    #[cfg(test)]
+                    panic!("Corrupted persisted chain: {error}");
+                }
+            };
             state = match Self::apply_block_effects(&state, block, preceding) {
                 Ok(mut next_state) => {
                     // Startup replay must reconstruct exactly the same state
@@ -1596,10 +1622,9 @@ impl Blockchain {
     /// Derived from the chain prefix on every read, never stored. The
     /// previous `settlement_finality_hashes` field had no production
     /// writer at all, so the settlement root folded into the state root
-    /// was always the empty-tree root (F-7, dead-feature illusion). Wiring
-    /// a writer that appended on finality-certificate arrival would have
-    /// traded the dead input for a consensus race: two honest nodes that
-    /// finalized the same checkpoint at different moments would fold
+    /// was always the empty-tree root. A writer that appended on finality-certificate
+    /// arrival would trade the dead input for a consensus race: two honest nodes
+    /// that finalized the same checkpoint at different moments would fold
     /// different windows into the same block's state root and split.
     /// Burial depth is a pure function of the blocks both nodes already
     /// hold, so every node derives the same window for the same tip.
@@ -8366,6 +8391,20 @@ mod tests {
         assert_eq!(bc.state.external_roots.get(&1), Some(&root2));
     }
 
+    #[test]
+    fn persisted_chain_replay_refuses_an_out_of_position_block_index() {
+        let genesis = Block::new_with_chain_id(0, String::new(), vec![], 45262);
+        let next = Block::new_with_chain_id(1, genesis.hash.clone(), vec![], 45262);
+        let chain = vec![genesis, next];
+        assert_eq!(Blockchain::checked_replay_prefix(&chain, 1).unwrap().len(), 1);
+
+        let mut malformed = chain.clone();
+        malformed[1].index = u64::MAX;
+        let error = Blockchain::checked_replay_prefix(&malformed, 1).unwrap_err();
+        assert!(error.contains("declares index"));
+        assert!(Blockchain::checked_replay_prefix(&chain, 2).is_err());
+    }
+
     /// A snapshot that is ahead of the stored chain must not stay
     /// as the replay base. Startup falls back to the genesis state.
     #[test]
@@ -8731,7 +8770,7 @@ mod tests {
         }
     }
 
-    /// F-7: the settlement finality window is a pure function of the chain
+    /// The settlement finality window is a pure function of the chain
     /// prefix. A checkpoint enters only once it is buried a finality
     /// horizon deep, and leaves once it is older than the settled-row
     /// retention; the genesis height, non-checkpoint heights and malformed
@@ -9724,7 +9763,7 @@ mod tests {
             .expect("peer must accept a self-produced mainnet block");
     }
 
-    /// Audit 2026-09-09, F-3: an operator sealing global headers must not
+    /// An operator sealing global headers must not
     /// fork the node. The last sealed header is node-local operator state;
     /// hashing it into the state root made the producer's root irreproducible
     /// by unsealed peers (and inconsistent with the reorg paths, which
