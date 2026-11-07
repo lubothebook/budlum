@@ -188,12 +188,15 @@ rayon = "1.10"
 bud-isa = { path = "budzero/bud-isa" }
 bud-vm = { path = "budzero/bud-vm" }
 bud-proof = { path = "budzero/bud-proof" }
-bud-node = { path = "budzero/bud-node" }
 # The node indexes commitments and nullifiers by the bytes the wallet packed.
 # That packing had three independent copies, one here, one in the wallet and
 # one in the zkVM state layer, and nothing forced them to stay equal. They now
 # read one definition.
 budlum-note-packing = { path = "crates/note-packing" }
+# The Universal Execution Layer ABI (directive 8.3, WP-09): the interface, wire
+# types, framing and socket transport between the Execution Coordinator in this
+# process and the `budlum-ee-*` worker binaries.
+budlum-uel-abi = { path = "crates/uel-abi" }
 # In-tree, feature-gated (2026-09-19 user decision: no separate repository).
 budlum-bpqs = { path = "crates/bpqs", optional = true }
 
@@ -268,14 +271,6 @@ harness = false
 [[bench]]
 name = "ratio_rayon"
 path = "benches/micro/ratio_rayon.rs"
-harness = false
-
-# Parity-row throughput and the generate-to-reference roundtrip, printed by
-# the CI step `Erasure parity rows rayon vs serial throughput`; its numbers
-# belong to the host that ran the step, so nothing in the tree pins them.
-[[bench]]
-name = "erasure_rows"
-path = "benches/micro/erasure_rows.rs"
 harness = false
 
 # Domain throughput/latency benchmarks (criterion.rs)

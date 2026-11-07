@@ -546,6 +546,12 @@ pub const MIN_SUPPORTED_STATE_SNAPSHOT_SCHEMA_VERSION: u32 = 2;
 /// verifies, so a node that dropped a `Disabled` mark would accept signatures
 /// the chain refuses; at 10 and below the field cannot affect the digest.
 ///
+/// Schema 13 carries and digests the validator directory (WP-08): the class,
+/// operator key, quota and mobile bond of every registered validator. It is
+/// folded into the state root, so a restore that dropped it would restore a
+/// root that no peer computes. At 12 and below the field cannot affect the
+/// digest and a snapshot without it restores an empty directory.
+///
 /// Schema 12 carries and digests the reward-pool flag (testnet item 8). It
 /// decides whether the epoch transition pays from the pre-funded pool, which
 /// moves balances: a node that dropped the flag would either pay rewards the
@@ -553,7 +559,7 @@ pub const MIN_SUPPORTED_STATE_SNAPSHOT_SCHEMA_VERSION: u32 = 2;
 /// next epoch boundary. At 11 and below the field cannot affect the digest,
 /// and a snapshot without it restores the network profile's answer - what the
 /// chain did before the flag existed.
-pub const CURRENT_STATE_SNAPSHOT_SCHEMA_VERSION: u32 = 12;
+pub const CURRENT_STATE_SNAPSHOT_SCHEMA_VERSION: u32 = 13;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateSnapshotV2MigrationReport {
@@ -649,8 +655,6 @@ pub struct StateSnapshotV2 {
     #[serde(default)]
     pub governance: Option<crate::core::governance::GovernanceState>,
     #[serde(default)]
-    pub storage_registry: Option<crate::domain::storage_deal::StorageRegistry>,
-    #[serde(default)]
     pub ai_registry: Option<crate::ai::registry::AiRegistry>,
     #[serde(default)]
     pub note_registry: Option<crate::privacy::L1NoteRegistry>,
@@ -697,6 +701,10 @@ pub struct StateSnapshotV2 {
     /// profile's answer, which is what a chain that predates the flag did.
     #[serde(default)]
     pub reward_pool_enabled: Option<bool>,
+    /// The validator directory (schema-13 bump). `None` reads as empty, which
+    /// is what a chain that predates the validator door had.
+    #[serde(default)]
+    pub validator_directory: Option<crate::validators::ValidatorDirectory>,
     /// Proof tasks and unpaid receipts.
     ///
     /// `#[serde(default)]` like its neighbours: a snapshot taken before this
@@ -924,7 +932,6 @@ impl StateSnapshotV2 {
             marketplace: Some(account_state.marketplace.clone()),
             budlumxyz: Some(account_state.budlumxyz.clone()),
             governance: Some(account_state.governance.clone()),
-            storage_registry: Some(account_state.storage_registry.clone()),
             ai_registry: Some(account_state.ai_registry.clone()),
             note_registry: Some(account_state.note_registry.clone()),
             bridge_state: Some(account_state.bridge_state.clone()),
@@ -937,6 +944,7 @@ impl StateSnapshotV2 {
             settlement: Some(account_state.settlement.clone()),
             scheme_registry: Some(SchemeRegistrySnapshot::of(&account_state.scheme_registry)),
             reward_pool_enabled: Some(account_state.reward_pool_enabled),
+            validator_directory: Some(account_state.validator_directory.clone()),
             proof_market: Some(account_state.proof_market.clone()),
             identity: Some(account_state.identity.clone()),
             vault: Some(account_state.vault.clone()),
@@ -1075,7 +1083,6 @@ impl StateSnapshotV2 {
             hash_opt_serializable(&mut hasher, &self.marketplace);
             hash_opt_serializable(&mut hasher, &self.budlumxyz);
             hash_opt_serializable(&mut hasher, &self.governance);
-            hash_opt_serializable(&mut hasher, &self.storage_registry);
             hash_opt_serializable(&mut hasher, &self.ai_registry);
             // The private-note registry, which holds `spent_nullifiers`.
             //
@@ -1172,6 +1179,10 @@ impl StateSnapshotV2 {
         // Schema 12: the reward-pool flag, gated the same way.
         if self.schema_version >= 12 {
             hash_opt_serializable(&mut hasher, &self.reward_pool_enabled);
+        }
+        // Schema 13: the validator directory, gated the same way.
+        if self.schema_version >= 13 {
+            hash_opt_serializable(&mut hasher, &self.validator_directory);
         }
 
         hasher.finalize().into()
@@ -2475,7 +2486,6 @@ mod tests {
         "marketplace",
         "hub",
         "governance",
-        "storage_registry",
         "ai_registry",
         "note_registry",
         "bridge_state",
@@ -2530,6 +2540,9 @@ mod tests {
 
     /// Only the keys of the schema-12 change.
     const SCHEMA12_KEYS: &[&str] = &["reward_pool_enabled"];
+
+    /// Only the keys of the schema-13 change.
+    const SCHEMA13_KEYS: &[&str] = &["validator_directory"];
 
     /// Fields rooted in schema-2: known to the old release too, and not a single byte
     /// the fields it must not lose. `snapshot_hash` is deliberately outside:
@@ -2611,6 +2624,7 @@ mod tests {
             agg_sig_bls: vec![1, 2, 3],
             bitmap: vec![0u8],
             set_hash: "set".into(),
+            seat_table_version: 0,
         }
     }
 
@@ -2663,7 +2677,6 @@ mod tests {
             "marketplace",
             "hub",
             "governance",
-            "storage_registry",
             "ai_registry",
             "note_registry",
             "bridge_state",
@@ -2687,6 +2700,8 @@ mod tests {
             "scheme_registry",
             // the reward-pool flag (schema-12 bump: default-filled AND digested)
             "reward_pool_enabled",
+            // validator directory (schema-13 bump: default-filled AND digested)
+            "validator_directory",
             // identity registry (schema-5 bump: default-filled AND digested)
             "identity",
             // vault folder registry (schema-6 bump: same discipline)
@@ -2729,6 +2744,7 @@ mod tests {
                 SCHEMA10_KEYS,
                 SCHEMA11_KEYS,
                 SCHEMA12_KEYS,
+                SCHEMA13_KEYS,
             ]
             .concat(),
             2,
@@ -2746,6 +2762,7 @@ mod tests {
             SCHEMA10_KEYS,
             SCHEMA11_KEYS,
             SCHEMA12_KEYS,
+            SCHEMA13_KEYS,
         ]
         .concat()
         {
@@ -2775,7 +2792,6 @@ mod tests {
                 && restored.marketplace.is_none()
                 && restored.budlumxyz.is_none()
                 && restored.governance.is_none()
-                && restored.storage_registry.is_none()
                 && restored.ai_registry.is_none()
                 && restored.note_registry.is_none()
                 && restored.bridge_state.is_none()
@@ -2861,6 +2877,7 @@ mod tests {
                 SCHEMA10_KEYS,
                 SCHEMA11_KEYS,
                 SCHEMA12_KEYS,
+                SCHEMA13_KEYS,
             ]
             .concat(),
             3,
@@ -2876,6 +2893,7 @@ mod tests {
             SCHEMA10_KEYS,
             SCHEMA11_KEYS,
             SCHEMA12_KEYS,
+            SCHEMA13_KEYS,
         ]
         .concat()
         {
@@ -2919,7 +2937,6 @@ mod tests {
             "marketplace",
             "hub",
             "governance",
-            "storage_registry",
             "ai_registry",
             "note_registry",
             "bridge_state",
@@ -2967,6 +2984,7 @@ mod tests {
                 SCHEMA10_KEYS,
                 SCHEMA11_KEYS,
                 SCHEMA12_KEYS,
+                SCHEMA13_KEYS,
             ]
             .concat(),
             4,
@@ -2981,6 +2999,7 @@ mod tests {
             SCHEMA10_KEYS,
             SCHEMA11_KEYS,
             SCHEMA12_KEYS,
+            SCHEMA13_KEYS,
         ]
         .concat()
         {

@@ -1845,6 +1845,7 @@ mod tests {
             agg_sig_bls: vec![],
             bitmap: vec![],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
         let pos = PoSFinalityAdapter
             .verify_finality(
@@ -2344,6 +2345,7 @@ mod tests {
                 agg_sig_bls: vec![],
                 bitmap: vec![],
                 set_hash: snapshot.set_hash.clone(),
+                seat_table_version: 0,
             };
             let err = adapter
                 .verify_finality(
@@ -2396,6 +2398,7 @@ mod tests {
                 agg_sig_bls: vec![],
                 bitmap: vec![],
                 set_hash: snapshot.set_hash.clone(),
+                seat_table_version: 0,
             };
             let err = adapter
                 .verify_finality(
@@ -2441,6 +2444,7 @@ mod tests {
             agg_sig_bls: vec![],
             bitmap: vec![],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
         let status = PoSFinalityAdapter
             .verify_finality(
@@ -2500,6 +2504,7 @@ mod tests {
             agg_sig_bls: vec![],
             bitmap: vec![],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
         let status = BftFinalityAdapter::default()
             .verify_finality(
@@ -2551,6 +2556,7 @@ mod tests {
             agg_sig_bls: vec![],
             bitmap: vec![],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
         assert!(matches!(
             adapter
@@ -2574,6 +2580,7 @@ mod tests {
             agg_sig_bls: vec![],
             bitmap: vec![],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
         assert!(matches!(
             adapter
@@ -2615,6 +2622,7 @@ mod tests {
             agg_sig_bls: vec![],
             bitmap,
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         }
     }
 
@@ -2767,15 +2775,13 @@ mod tests {
         // Bridge off, for the same reason as the PoS twin above.
         let mut domain = default_domain(
             5,
-            ConsensusKind::StorageAttestation(crate::domain::StorageDomainParams::default()),
+            ConsensusKind::StorageAttestation,
             45262,
             crate::domain::types::STORAGE_ATTESTATION_ADAPTER,
             0,
         );
         domain.bridge_enabled = false;
-        let mut commitment = commitment(ConsensusKind::StorageAttestation(
-            crate::domain::StorageDomainParams::default(),
-        ));
+        let mut commitment = commitment(ConsensusKind::StorageAttestation);
         commitment.domain_id = 5;
 
         let kp = KeyPair::generate().unwrap();
@@ -2800,6 +2806,7 @@ mod tests {
             agg_sig_bls: vec![],
             bitmap: vec![0b1],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
 
         let err = adapter
@@ -2843,19 +2850,12 @@ mod tests {
         let adapter = StorageAttestationFinalityAdapter;
         let mut domain = default_domain(
             5,
-            crate::domain::ConsensusKind::StorageAttestation(crate::domain::StorageDomainParams {
-                min_operator_bond: 100,
-                chunk_size: 1024,
-                challenge_interval: 10,
-                ..Default::default()
-            }),
+            crate::domain::ConsensusKind::StorageAttestation,
             45262,
             crate::domain::types::STORAGE_ATTESTATION_ADAPTER,
             0,
         );
-        let mut commitment = commitment(crate::domain::ConsensusKind::StorageAttestation(
-            crate::domain::StorageDomainParams::default(),
-        ));
+        let mut commitment = commitment(crate::domain::ConsensusKind::StorageAttestation);
         commitment.domain_id = 5;
 
         assert!(matches!(
@@ -2931,6 +2931,7 @@ mod tests {
             agg_sig_bls: vec![],
             bitmap: vec![0b011],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
         (cert, snapshot, keys)
     }

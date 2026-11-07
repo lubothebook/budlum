@@ -60,18 +60,12 @@ pub struct Metrics {
     pub pending_poa_freeze_rows: IntGauge,
     /// Governance PoA unfreeze requests waiting for block-end application.
     pub pending_poa_unfreeze_rows: IntGauge,
-    /// B.U.D. boost share waiting for storage-operator distribution.
-    pub pending_bud_boost_atoms: IntGauge,
     pub block_propagation_seconds: Histogram,
     pub mempool_sender_count: IntGauge,
     pub peer_connection_quality: IntGauge,
     pub consensus_round_seconds: Histogram,
     pub finality_lag: IntGauge,
     pub storage_db_size_bytes: IntGauge,
-    /// Content chunks retained by the durable B.U.D. content store.
-    pub content_store_chunks: IntGauge,
-    /// Bytes retained by the durable B.U.D. content store.
-    pub content_store_bytes: IntGauge,
     pub storage_write_seconds: Histogram,
     pub storage_read_seconds: Histogram,
     pub settlement_commitments_total: IntCounter,
@@ -160,16 +154,6 @@ pub struct Metrics {
     pub poa_compliance_frozen_accounts: IntGauge,
     /// Rows in the storage reallocation ticket map. Settled tickets leave it
     /// after `REALLOCATION_RECORD_RETENTION_EPOCHS`; a gauge that only ever
-    /// rises means the sweep is not running.
-    pub storage_reallocation_rows: IntGauge,
-    /// Content manifests retained in the B.U.D. storage registry.
-    pub storage_manifest_rows: IntGauge,
-    /// Storage deals retained in the B.U.D. storage registry.
-    pub storage_deal_rows: IntGauge,
-    /// Retrieval challenges retained in the B.U.D. storage registry.
-    pub storage_challenge_rows: IntGauge,
-    /// Challenge results retained in the B.U.D. storage registry.
-    pub storage_result_rows: IntGauge,
     pub ai_requests_total: IntCounter,
     pub ai_outcomes_finalized: IntCounter,
     /// AI models retained in the state-rooted registry.
@@ -239,6 +223,14 @@ pub struct Metrics {
     /// counter lives in the facade (it has no dependency on the node), and
     /// [`Metrics::encode`] folds it into this series before every scrape.
     pub pq_verifier_disagreement: IntCounter,
+    /// Active circuit-relay reservations held on this node.
+    pub relay_reservations: IntGauge,
+    /// Active relayed circuits currently open on this node.
+    pub relay_circuits: IntGauge,
+    /// AutoNAT reachability status (0 = unknown, 1 = public, 2 = private).
+    pub nat_status: IntGauge,
+    /// Cumulative relayed circuits upgraded to direct connections via DCUtR.
+    pub dcutr_success_total: IntCounter,
 }
 
 impl Metrics {
@@ -336,10 +328,6 @@ impl Metrics {
             "budlum_pending_poa_unfreeze_rows",
             "Governance PoA unfreeze requests waiting for block-end application",
         )?;
-        let pending_bud_boost_atoms = IntGauge::new(
-            "budlum_pending_bud_boost_atoms",
-            "B.U.D. boost share waiting for storage-operator distribution",
-        )?;
         let block_propagation_seconds = Histogram::with_opts(HistogramOpts::new(
             "budlum_block_propagation_seconds",
             "Observed block propagation time in seconds",
@@ -359,14 +347,6 @@ impl Metrics {
         let storage_db_size_bytes = IntGauge::new(
             "budlum_storage_db_size_bytes",
             "Approximate storage size in bytes",
-        )?;
-        let content_store_chunks = IntGauge::new(
-            "budlum_content_store_chunks",
-            "Content chunks retained by the durable B.U.D. content store",
-        )?;
-        let content_store_bytes = IntGauge::new(
-            "budlum_content_store_bytes",
-            "Bytes retained by the durable B.U.D. content store",
         )?;
         let storage_write_seconds = Histogram::with_opts(HistogramOpts::new(
             "budlum_storage_write_seconds",
@@ -473,6 +453,10 @@ impl Metrics {
         // Domain metrics.
         let bridge_transfers_total = IntCounter::new(
             "budlum_bridge_transfers_total",
+            "budlum_relay_reservations",
+            "budlum_relay_circuits",
+            "budlum_nat_status",
+            "budlum_dcutr_success_total",
             "Total bridge transfers processed",
         )?;
         let bridge_amount_locked = IntGauge::new(
@@ -554,26 +538,6 @@ impl Metrics {
         let poa_compliance_frozen_accounts = IntGauge::new(
             "budlum_poa_compliance_frozen_accounts",
             "Accounts frozen by the PoA compliance registry",
-        )?;
-        let storage_reallocation_rows = IntGauge::new(
-            "budlum_storage_reallocation_rows",
-            "Rows in the storage reallocation ticket map (settled tickets are swept after the retention window)",
-        )?;
-        let storage_manifest_rows = IntGauge::new(
-            "budlum_storage_manifest_rows",
-            "Content manifests retained in the B.U.D. storage registry",
-        )?;
-        let storage_deal_rows = IntGauge::new(
-            "budlum_storage_deal_rows",
-            "Storage deals retained in the B.U.D. storage registry",
-        )?;
-        let storage_challenge_rows = IntGauge::new(
-            "budlum_storage_challenge_rows",
-            "Retrieval challenges retained in the B.U.D. storage registry",
-        )?;
-        let storage_result_rows = IntGauge::new(
-            "budlum_storage_result_rows",
-            "Challenge results retained in the B.U.D. storage registry",
         )?;
         let ai_requests_total = IntCounter::new(
             "budlum_ai_requests_total",
@@ -715,6 +679,22 @@ impl Metrics {
             "budlum_rpc_rate_limited_total",
             "Total RPC requests rejected due to rate limiting",
         )?;
+        let relay_reservations = IntGauge::new(
+            "budlum_relay_reservations",
+            "Active circuit-relay reservations held on this node",
+        )?;
+        let relay_circuits = IntGauge::new(
+            "budlum_relay_circuits",
+            "Active relayed circuits open on this node",
+        )?;
+        let nat_status = IntGauge::new(
+            "budlum_nat_status",
+            "AutoNAT reachability status (0 unknown, 1 public, 2 private)",
+        )?;
+        let dcutr_success_total = IntCounter::new(
+            "budlum_dcutr_success_total",
+            "Total relayed connections upgraded to direct connections via DCUtR",
+        )?;
 
         registry.register(Box::new(chain_height.clone()))?;
         registry.register(Box::new(account_rows.clone()))?;
@@ -741,15 +721,12 @@ impl Metrics {
         registry.register(Box::new(pending_domain_unfreeze_rows.clone()))?;
         registry.register(Box::new(pending_poa_freeze_rows.clone()))?;
         registry.register(Box::new(pending_poa_unfreeze_rows.clone()))?;
-        registry.register(Box::new(pending_bud_boost_atoms.clone()))?;
         registry.register(Box::new(block_propagation_seconds.clone()))?;
         registry.register(Box::new(mempool_sender_count.clone()))?;
         registry.register(Box::new(peer_connection_quality.clone()))?;
         registry.register(Box::new(consensus_round_seconds.clone()))?;
         registry.register(Box::new(finality_lag.clone()))?;
         registry.register(Box::new(storage_db_size_bytes.clone()))?;
-        registry.register(Box::new(content_store_chunks.clone()))?;
-        registry.register(Box::new(content_store_bytes.clone()))?;
         registry.register(Box::new(storage_write_seconds.clone()))?;
         registry.register(Box::new(storage_read_seconds.clone()))?;
         registry.register(Box::new(settlement_commitments_total.clone()))?;
@@ -798,11 +775,6 @@ impl Metrics {
         registry.register(Box::new(poa_admission_domains.clone()))?;
         registry.register(Box::new(poa_admitted_authorities.clone()))?;
         registry.register(Box::new(poa_compliance_frozen_accounts.clone()))?;
-        registry.register(Box::new(storage_reallocation_rows.clone()))?;
-        registry.register(Box::new(storage_manifest_rows.clone()))?;
-        registry.register(Box::new(storage_deal_rows.clone()))?;
-        registry.register(Box::new(storage_challenge_rows.clone()))?;
-        registry.register(Box::new(storage_result_rows.clone()))?;
         registry.register(Box::new(ai_requests_total.clone()))?;
         registry.register(Box::new(ai_outcomes_finalized.clone()))?;
         registry.register(Box::new(ai_model_rows.clone()))?;
@@ -838,6 +810,10 @@ impl Metrics {
         registry.register(Box::new(slashing_events_total.clone()))?;
         registry.register(Box::new(pq_verifier_disagreement.clone()))?;
         registry.register(Box::new(rpc_rate_limited_total.clone()))?;
+        registry.register(Box::new(relay_reservations.clone()))?;
+        registry.register(Box::new(relay_circuits.clone()))?;
+        registry.register(Box::new(nat_status.clone()))?;
+        registry.register(Box::new(dcutr_success_total.clone()))?;
 
         Ok(Metrics {
             registry: Arc::new(registry),
@@ -866,15 +842,12 @@ impl Metrics {
             pending_domain_unfreeze_rows,
             pending_poa_freeze_rows,
             pending_poa_unfreeze_rows,
-            pending_bud_boost_atoms,
             block_propagation_seconds,
             mempool_sender_count,
             peer_connection_quality,
             consensus_round_seconds,
             finality_lag,
             storage_db_size_bytes,
-            content_store_chunks,
-            content_store_bytes,
             storage_write_seconds,
             storage_read_seconds,
             settlement_commitments_total,
@@ -924,11 +897,6 @@ impl Metrics {
             poa_admission_domains,
             poa_admitted_authorities,
             poa_compliance_frozen_accounts,
-            storage_reallocation_rows,
-            storage_manifest_rows,
-            storage_deal_rows,
-            storage_challenge_rows,
-            storage_result_rows,
             ai_requests_total,
             ai_outcomes_finalized,
             ai_model_rows,
@@ -963,6 +931,10 @@ impl Metrics {
             identity_revoked_rows,
             slashing_events_total,
             pq_verifier_disagreement,
+            relay_reservations,
+            relay_circuits,
+            nat_status,
+            dcutr_success_total,
         })
     }
 
@@ -973,6 +945,12 @@ impl Metrics {
         let seen = crate::crypto::pq::verifier_disagreements();
         self.pq_verifier_disagreement
             .inc_by(seen.saturating_sub(self.pq_verifier_disagreement.get()));
+        let (res_n, circ_n, nat_v, dcutr_n) = crate::network::relay::snapshot_metrics();
+        self.relay_reservations.set(res_n);
+        self.relay_circuits.set(circ_n);
+        self.nat_status.set(nat_v);
+        self.dcutr_success_total
+            .inc_by(dcutr_n.saturating_sub(self.dcutr_success_total.get()));
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
         let mut buffer = Vec::new();
@@ -1034,7 +1012,6 @@ mod tests {
             "budlum_pending_domain_unfreeze_rows",
             "budlum_pending_poa_freeze_rows",
             "budlum_pending_poa_unfreeze_rows",
-            "budlum_pending_bud_boost_atoms",
             "budlum_mempool_size",
             "budlum_mempool_bytes",
             "budlum_mempool_sender_count",
@@ -1059,14 +1036,7 @@ mod tests {
             "budlum_poa_admission_domains",
             "budlum_poa_admitted_authorities",
             "budlum_poa_compliance_frozen_accounts",
-            "budlum_storage_reallocation_rows",
-            "budlum_storage_manifest_rows",
-            "budlum_storage_deal_rows",
-            "budlum_storage_challenge_rows",
-            "budlum_storage_result_rows",
             "budlum_storage_db_size_bytes",
-            "budlum_content_store_chunks",
-            "budlum_content_store_bytes",
             "budlum_p2p_peers_connected",
             "budlum_p2p_gossip_duplicates",
             "budlum_p2p_sync_requests",

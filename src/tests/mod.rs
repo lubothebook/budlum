@@ -35,8 +35,6 @@ pub mod sharding_e2e;
 // permissionless, whitelist and data-sovereignty invariants (plan section 0.5
 // + acceptance criteria).
 #[cfg(test)]
-pub mod bud_e2e;
-#[cfg(test)]
 pub mod byzantine_settlement;
 #[cfg(test)]
 pub mod chaos;
@@ -45,10 +43,7 @@ pub mod distributed_settlement;
 #[cfg(test)]
 pub mod fork_choice_locks;
 #[cfg(test)]
-pub mod manifest_commitment_locks;
-#[cfg(test)]
 pub mod multi_consensus_locks;
-pub mod operator_kill_chaos;
 // P01 consensus-round behaviour and the P01 negative-validation batch. The file
 // existed and no `mod` declared it, so rustc never read it: 558 lines of round
 // tests that grepped like live coverage and ran nowhere.
@@ -116,8 +111,6 @@ pub mod relayer_worker_locks;
 #[cfg(test)]
 pub mod settlement_prod;
 #[cfg(test)]
-pub mod storage_tx_door;
-#[cfg(test)]
 pub mod tokenomics;
 pub mod tokenomics_proptest;
 #[cfg(test)]
@@ -140,8 +133,6 @@ pub mod consensus_expanded;
 pub mod consensus_lock_order_loom;
 #[cfg(test)]
 pub mod constitution_engine;
-#[cfg(test)]
-pub mod hard_prune;
 #[cfg(test)]
 pub mod load_test;
 #[cfg(test)]
@@ -232,3 +223,21 @@ pub mod real_chain_fixtures;
 //.
 #[cfg(test)]
 pub mod refusal_locks;
+
+// WP-01..04 live-verification regression tests, one module per lane.
+#[cfg(test)]
+pub mod audit_lane_a;
+#[cfg(test)]
+pub mod audit_lane_b;
+#[cfg(test)]
+pub mod audit_lane_c;
+#[cfg(test)]
+pub mod audit_lane_d;
+
+// WP-08: validator classes and the single registration door.
+#[cfg(test)]
+pub mod validator_classes;
+
+// The section 6.2 vocabulary.
+#[cfg(test)]
+pub mod bud3_types;

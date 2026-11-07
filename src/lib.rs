@@ -30,6 +30,7 @@ pub mod gateway;
 pub mod light_client;
 pub mod mempool;
 pub mod network;
+pub mod persistence;
 pub mod pollen;
 pub mod privacy;
 pub mod prover;
@@ -44,6 +45,7 @@ pub mod sharding;
 pub mod socialfi;
 pub mod storage;
 pub mod tokenomics;
+pub mod validators;
 // The V5 command-line wallet; its keys are ML-DSA-87.
 #[cfg(feature = "wallet-ml-dsa")]
 pub mod wallet;

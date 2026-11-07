@@ -18,7 +18,7 @@ mod tests {
         let db_path_str = db_path.to_str().unwrap();
 
         let alice = Address::from([0xAA; 32]);
-        let cid = crate::storage::content_id::ContentId([0x42; 32]);
+        let cid = crate::storage::bud3::content_id::ContentId::referenced([0x42; 32]);
 
         // 1. Initial setup and durable block creation. Direct state writes
         //    below are intentionally not the persistence contract; transaction
@@ -97,7 +97,7 @@ mod tests {
         // Create keypair for Alice
         let alice_keypair = crate::crypto::primitives::KeyPair::generate().unwrap();
         let alice = Address::from(alice_keypair.public_key_bytes());
-        let cid = crate::storage::content_id::ContentId([0xEE; 32]);
+        let cid = crate::storage::bud3::content_id::ContentId::referenced([0xEE; 32]);
         // Funding must be part of canonical genesis so restart replay starts
         // From the same state. Direct in-memory add_balance creates a block
         // That cannot be replayed from the persisted default genesis.
@@ -185,7 +185,7 @@ use crate::consensus::pow::PoWEngine;
 use crate::core::address::Address;
 use crate::core::transaction::{Transaction, TransactionType};
 use crate::registry::role::roles;
-use crate::storage::db::Storage;
+use crate::persistence::db::Storage;
 
 /// Sled's file-lock release is not guaranteed to be synchronous with the
 /// Previous owner's `drop` under CI scheduling (os error 11 / WouldBlock
@@ -194,12 +194,12 @@ use crate::storage::db::Storage;
 /// Practice; 100 x 25ms is generous, then the final open reports the error.
 fn reopen_storage(path: &str) -> Storage {
     for _ in 0..100 {
-        if let Ok(storage) = crate::storage::db::Storage::new(path) {
+        if let Ok(storage) = crate::persistence::db::Storage::new(path) {
             return storage;
         }
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
-    crate::storage::db::Storage::new(path).expect("storage reopen timed out after 2.5s")
+    crate::persistence::db::Storage::new(path).expect("storage reopen timed out after 2.5s")
 }
 use std::sync::Arc;
 use tempfile::tempdir;
