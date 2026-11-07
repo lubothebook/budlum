@@ -1,11 +1,11 @@
 //! The closed-circuit source check.
 //!
 //! The principle: the source kinds AI inference layer can read form a closed set (a Pollen
-//! grant, a B.U.D. StorageDeal, or SocialFi). The permission **rules** are
+//! grant, a B.U.D. stored content, or SocialFi). The permission **rules** are
 //! queried from the chain and are not copied here (the decision; the "the
 //! second copy is the worst copy" principle from budlum).
 
-use ai_core::dataset::{SourceKind, SourceRef};
+use ai_core::dataset::{SourceError, SourceKind, SourceRef};
 
 /// Data layer errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +18,8 @@ pub enum DataError {
         expected: SourceKind,
         got: SourceKind,
     },
+    /// Closed-circuit source failed identity or grant-epoch validation (`BLG-160`).
+    InvalidSource(SourceError),
     /// The SHA-256 verification failed - no data flows.
     HashMismatch { detail: String },
 }
@@ -26,10 +28,12 @@ pub enum DataError {
 ///
 /// # Errors
 ///
-/// `NotClosedLoop` when the source kind is not one of the three channels.
+/// `InvalidSource` when `content_id` is zero or a data-market grant has zero
+/// remaining epochs.
 pub fn assert_closed_loop(source: &SourceRef) -> Result<(), DataError> {
+    source.validate().map_err(DataError::InvalidSource)?;
     match source.kind {
-        SourceKind::PollenGrant | SourceKind::StorageDeal | SourceKind::SocialRef => Ok(()),
+        SourceKind::PollenGrant | SourceKind::StoredContent | SourceKind::SocialRef => Ok(()),
     }
 }
 
@@ -41,14 +45,14 @@ pub fn assert_closed_loop(source: &SourceRef) -> Result<(), DataError> {
 pub fn reject_unknown_source(raw_kind: u8) -> Result<SourceKind, DataError> {
     match raw_kind {
         0 => Ok(SourceKind::PollenGrant),
-        1 => Ok(SourceKind::StorageDeal),
+        1 => Ok(SourceKind::StoredContent),
         2 => Ok(SourceKind::SocialRef),
         other => Err(DataError::NotClosedLoop { found: other }),
     }
 }
 
 /// Require the source to be a specific closed-circuit kind (for example a
-/// training plan may accept only sets sourced from a `StorageDeal`).
+/// training plan may accept only sets sourced from stored content).
 ///
 /// # Errors
 ///
@@ -72,7 +76,7 @@ mod tests {
     #[test]
     fn all_three_closed_loop_kinds_pass() {
         assert!(assert_closed_loop(&SourceRef::pollen_grant([1; 32], 2)).is_ok());
-        assert!(assert_closed_loop(&SourceRef::storage_deal([1; 32])).is_ok());
+        assert!(assert_closed_loop(&SourceRef::stored_content([1; 32])).is_ok());
         assert!(assert_closed_loop(&SourceRef::social([1; 32])).is_ok());
     }
 
@@ -91,14 +95,27 @@ mod tests {
 
     #[test]
     fn require_source_enforces_exact_kind() {
-        let grant = SourceRef::pollen_grant([1; 32], 1);
+        let mut grant = SourceRef::pollen_grant([1; 32], 1);
         assert!(require_source(&grant, SourceKind::PollenGrant).is_ok());
         assert_eq!(
-            require_source(&grant, SourceKind::StorageDeal),
+            require_source(&grant, SourceKind::StoredContent),
             Err(DataError::UnexpectedSource {
-                expected: SourceKind::StorageDeal,
+                expected: SourceKind::StoredContent,
                 got: SourceKind::PollenGrant
             })
+        );
+        grant.grant_epochs_remaining = Some(0);
+        assert_eq!(
+            assert_closed_loop(&grant),
+            Err(DataError::InvalidSource(SourceError::ExpiredOrMissingGrant))
+        );
+    }
+
+    #[test]
+    fn blg_160_assert_closed_loop_refuses_zero_id_and_expired_grant() {
+        assert_eq!(
+            assert_closed_loop(&SourceRef::storage_deal([0u8; 32])),
+            Err(DataError::InvalidSource(SourceError::ZeroContentId))
         );
     }
 }

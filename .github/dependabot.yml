@@ -102,13 +102,17 @@ updates:
   # covered by any entry above. None of them depends on bincode, so no ignore is needed.
   - package-ecosystem: "cargo"
     directories:
-      - "/bud"
+      - "/crates/bud-codec"
+      - "/crates/budlum-types"
+      - "/mobile/core"
+      - "/mobile/ffi"
       - "/crates/ai-inference"
       - "/crates/bpqs"
-      - "/crates/budscan"
+      - "/crates/budlum-explorer"
       - "/crates/note-packing"
       - "/crates/wallet-core"
       - "/xtask/gates"
+      - "/xtask/release"
       - "/xtask/tools"
     schedule:
       interval: "weekly"

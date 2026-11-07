@@ -21,7 +21,7 @@
 //! schema, not here.
 
 use super::quantum_account::QuantumAccount;
-use crate::storage::pact_binding::PactRegistry;
+use crate::account_abstraction::pact_binding::PactRegistry;
 use std::collections::BTreeMap;
 
 /// Registry errors.
@@ -102,6 +102,9 @@ impl std::fmt::Display for QuantumAccountRegistryError {
 
 impl std::error::Error for QuantumAccountRegistryError {}
 
+/// Convenience: upper bound on live quantum accounts in [`QuantumAccountRegistry`].
+pub const MAX_QUANTUM_ACCOUNTS: usize = 100_000;
+
 /// The registry of quantum accounts.
 #[derive(Debug, Clone, Default)]
 pub struct QuantumAccountRegistry {
@@ -142,6 +145,12 @@ impl QuantumAccountRegistry {
         if self.accounts.contains_key(&account.address) {
             return Err(QuantumAccountRegistryError::AlreadyRegistered {
                 address: account.address,
+            });
+        }
+        if self.accounts.len() >= MAX_QUANTUM_ACCOUNTS {
+            return Err(QuantumAccountRegistryError::InvalidAccount {
+                address: account.address,
+                reason: format!("quantum account registry full ({MAX_QUANTUM_ACCOUNTS})"),
             });
         }
         self.accounts.insert(account.address, account);
@@ -429,7 +438,7 @@ mod tests {
     /// An account carrying a real pact set must be registrable.
     #[test]
     fn an_account_bound_to_its_pact_set_registers() {
-        use crate::storage::pact_binding::Pact;
+        use crate::account_abstraction::pact_binding::Pact;
         use sha3::{Digest, Sha3_256};
 
         let payload = b"tarif";
@@ -484,7 +493,7 @@ mod tests {
     /// A pact registry with a stale root must not be accepted.
     #[test]
     fn a_pact_registry_with_a_stale_root_is_refused() {
-        use crate::storage::pact_binding::Pact;
+        use crate::account_abstraction::pact_binding::Pact;
 
         let mut pacts = PactRegistry::new();
         pacts
@@ -517,8 +526,15 @@ mod tests {
         assert!(matches!(
             registry
                 .update(&[1u8; 32], |a| a.nonce += 1)
-                .expect_err("bilinmeyen adres"),
+                .expect_err("unknown address"),
             QuantumAccountRegistryError::NotRegistered { .. }
         ));
+    }
+
+    #[test]
+    fn quantum_account_registry_cap_is_positive_and_bounded() {
+        const { assert!(MAX_QUANTUM_ACCOUNTS == 100_000) };
+        let registry = QuantumAccountRegistry::new();
+        assert!(registry.len() < MAX_QUANTUM_ACCOUNTS);
     }
 }

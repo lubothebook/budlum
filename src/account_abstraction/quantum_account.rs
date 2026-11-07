@@ -339,9 +339,9 @@ impl RecoveryProposal {
     }
 }
 
-/// The PACT binding type lives in `src/storage/pact_binding.rs`.
+/// The PACT binding type lives in `src/account_abstraction/pact_binding.rs`.
 ///
-/// There used to be a second `PactBinding` definition here: the same five fields, the same 128-byte
+/// There used to be a second commitment-binding definition here: the same five fields, the same 128-byte
 /// budget check, the same `verify_commitment`. `storage::Pact` is a superset of it -
 /// it also carries `id` and `mod_flag`, and binds to a root through
 /// `PactRegistry`.
@@ -351,7 +351,7 @@ impl RecoveryProposal {
 /// `is_residual_only` did not exist on this side, so it could not tell a pure-production PACT
 /// from a residual-only one. The copy was removed; the single definition
 /// is used from outside.
-pub use crate::storage::pact_binding::{Pact, PactRegistry};
+pub use crate::account_abstraction::pact_binding::{Pact, PactRegistry};
 
 /// One guardian's vote on a recovery proposal: the guardian's ML-DSA-87
 /// public key, the digest of the proposal it approves, and its signature
@@ -824,5 +824,49 @@ mod tests {
         // an empty guardian set or a threshold outside the set is refused
         assert!(BftGuardianFinality::finalize(honest.clone(), &[], 1, &proposal).is_err());
         assert!(BftGuardianFinality::finalize(honest, &guardians, 4, &proposal).is_err());
+    }
+
+    #[test]
+    fn blg_025_quantum_account_refuses_duplicate_guardians_and_stale_root() {
+        let mut g1 = [0u8; ML_DSA_87_PUBLIC_KEY_LEN];
+        g1[0] = 1;
+        let mut g2 = [0u8; ML_DSA_87_PUBLIC_KEY_LEN];
+        g2[0] = 2;
+        let mut owner = [0u8; ML_DSA_87_PUBLIC_KEY_LEN];
+        owner[0] = 9;
+
+        let valid_guardians = vec![g1, g2];
+        let mut account = QuantumAccount {
+            address: QuantumAccount::address_from_public_key(&owner),
+            pq_public_key: owner,
+            storage_root: [0u8; 32],
+            pact_root: [0u8; 32],
+            guardian_root: QuantumAccount::guardian_root(&valid_guardians),
+            guardians: valid_guardians,
+            multisig_threshold: 2,
+            recovery_threshold: 2,
+            timelock_blocks: 10,
+            nonce: 0,
+            balance: 1_000,
+            storage_bytes: 0,
+        };
+        assert!(account.validate_all().is_ok());
+
+        let mut dup = account.clone();
+        dup.guardians = vec![g1, g1];
+        dup.guardian_root = QuantumAccount::guardian_root(&dup.guardians);
+        assert_eq!(
+            dup.validate_all(),
+            Err("wallet guardian set: duplicate guardian key")
+        );
+        let mut registry = super::super::registry::QuantumAccountRegistry::new();
+        assert!(registry.register(dup).is_err());
+
+        account.guardian_root[0] ^= 0xFF;
+        assert_eq!(
+            account.validate_all(),
+            Err("wallet guardian set: root does not match guardians")
+        );
+        assert!(registry.register(account).is_err());
     }
 }

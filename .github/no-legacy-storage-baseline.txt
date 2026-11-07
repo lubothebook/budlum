@@ -1,0 +1,1 @@
+# Legacy storage removal baseline (WP-07): empty — all legacy storage code and paths have been retired.

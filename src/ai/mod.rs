@@ -6,6 +6,7 @@
 pub mod execution;
 pub mod registry;
 pub mod types;
+pub mod verification_level;
 
 pub use execution::{
     build_fixed_point_mlp_guest, eval_fixed_point_mlp, input_commitment, output_commitment,
@@ -59,7 +60,7 @@ mod tests {
     fn text_perception() -> crate::ai_inference::perception::PerceptionRequest {
         crate::ai_inference::perception::PerceptionRequest {
             asset_id: crate::pollen::AssetId([0xAB; 32]),
-            content_id: crate::storage::content_id::ContentId([0xBC; 32]),
+            content_id: crate::storage::bud3::content_id::ContentId::referenced([0xBC; 32]),
             kind: crate::ai_inference::perception::PerceptionKind::Text,
             declared_units: 4,
         }

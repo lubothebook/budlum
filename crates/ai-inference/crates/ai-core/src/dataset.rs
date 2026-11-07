@@ -3,6 +3,7 @@
 //!
 //! The permission rules are not copied here; they are queried from the chain
 //! state.
+//! Convenience: retained public API surface after legacy storage retirement (`WP-07`).
 
 use crate::model::Hash32;
 
@@ -15,7 +16,7 @@ pub enum DatasetKind {
     InferenceCache,
 }
 
-/// AI dataset metadata bound to a B.U.D. StorageDeal.
+/// AI dataset metadata bound to a B.U.D. stored content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatasetMetadata {
     pub kind: DatasetKind,
@@ -45,10 +46,10 @@ impl DatasetMetadata {
         }
     }
 
-    /// Validate the metadata before it labels a B.U.D. StorageDeal.
+    /// Validate the metadata before it labels a B.U.D. stored content.
     ///
     /// A dataset label is a claim in the closed circuit: it is what tells the
-    /// chain "this StorageDeal is safe for AI inference layer to read as a training corpus".
+    /// chain "this stored content is safe for AI inference layer to read as a training corpus".
     /// A label that does not hold together is not a harmless decoration - it is
     /// the thing an operator would lean on to justify reading data that should
     /// not have been labelled. Two conditions are checked:
@@ -67,7 +68,7 @@ impl DatasetMetadata {
     /// [`DatasetError::EmptyTrainingCorpus`] or
     /// [`DatasetError::MissingModelTarget`].
     pub fn validate(&self) -> Result<(), DatasetError> {
-        if self.model_target.is_none() {
+        if matches!(self.model_target, None | Some([0u8; 32])) {
             return Err(DatasetError::MissingModelTarget);
         }
         if self.kind == DatasetKind::TrainingCorpus && self.sample_count == 0 {
@@ -90,12 +91,12 @@ pub enum DatasetError {
 ///
 /// - `PollenGrant`  - an authorised read through a Pollen `AccessGrant` /
 ///   `TrainingDataGrant`
-/// - `StorageDeal`  - content labelled as an AI dataset in B.U.D. storage
+/// - `StoredContent` - content labelled as an AI dataset in B.U.D. storage
 /// - `SocialRef`    - in-network content coming over the SocialFi bridge
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
     PollenGrant,
-    StorageDeal,
+    StoredContent,
     SocialRef,
 }
 
@@ -111,9 +112,9 @@ pub struct SourceRef {
 
 impl SourceRef {
     #[must_use]
-    pub fn storage_deal(content_id: Hash32) -> Self {
+    pub fn stored_content(content_id: Hash32) -> Self {
         Self {
-            kind: SourceKind::StorageDeal,
+            kind: SourceKind::StoredContent,
             content_id,
             grant_epochs_remaining: None,
         }
@@ -136,6 +137,38 @@ impl SourceRef {
             grant_epochs_remaining: None,
         }
     }
+
+    /// Validate closed-circuit source identity and epoch window (`BLG-160`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SourceError`] when `content_id` is all-zero, when a data-market
+    /// grant has zero remaining epochs or omits its epoch counter, or when a
+    /// non-grant source carries unexpected grant epochs.
+    pub fn validate(&self) -> Result<(), SourceError> {
+        if self.content_id == [0u8; 32] {
+            return Err(SourceError::ZeroContentId);
+        }
+        match (self.kind, self.grant_epochs_remaining) {
+            (SourceKind::StorageDeal | SourceKind::SocialRef, None) => Ok(()),
+            (SourceKind::StorageDeal | SourceKind::SocialRef, Some(_)) => {
+                Err(SourceError::UnexpectedGrantEpochs)
+            }
+            (_, Some(epochs)) if epochs > 0 => Ok(()),
+            (_, _) => Err(SourceError::ExpiredOrMissingGrant),
+        }
+    }
+}
+
+/// Convenience: closed-circuit source validation errors (`BLG-160`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceError {
+    /// All-zero `content_id` does not identify content.
+    ZeroContentId,
+    /// A data-market grant requires at least one remaining epoch.
+    ExpiredOrMissingGrant,
+    /// Non-grant sources do not carry grant epoch counters.
+    UnexpectedGrantEpochs,
 }
 
 #[cfg(test)]
@@ -188,10 +221,25 @@ mod tests {
 
     #[test]
     fn only_grant_carries_epochs() {
-        let deal = SourceRef::storage_deal([1; 32]);
+        let deal = SourceRef::stored_content([1; 32]);
         assert!(deal.grant_epochs_remaining.is_none());
 
-        let grant = SourceRef::pollen_grant([1; 32], 3);
+        let mut grant = SourceRef::pollen_grant([1; 32], 3);
         assert_eq!(grant.grant_epochs_remaining, Some(3));
+        assert!(grant.validate().is_ok());
+        grant.grant_epochs_remaining = Some(0);
+        assert_eq!(grant.validate(), Err(SourceError::ExpiredOrMissingGrant));
+    }
+
+    #[test]
+    fn blg_160_zero_model_target_content_id_or_expired_grant_refused() {
+        let mut bad = DatasetMetadata::training([4; 32], 10);
+        bad.model_target = Some([0u8; 32]);
+        assert_eq!(bad.validate(), Err(DatasetError::MissingModelTarget));
+
+        assert_eq!(
+            SourceRef::storage_deal([0u8; 32]).validate(),
+            Err(SourceError::ZeroContentId)
+        );
     }
 }

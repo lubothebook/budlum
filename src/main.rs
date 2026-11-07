@@ -16,7 +16,7 @@ use budlum_core::domain::{
 use budlum_core::network::node::Node;
 use budlum_core::network::protocol::NetworkMessage;
 use budlum_core::rpc::{RpcMode, RpcSecurityConfig, RpcServer};
-use budlum_core::storage::db::Storage;
+use budlum_core::persistence::db::Storage;
 
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -107,31 +107,78 @@ fn write_database_backup(
     backup_dir: &Path,
     retention_count: usize,
 ) -> std::io::Result<PathBuf> {
+    if retention_count == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "backup retention count must be at least one",
+        ));
+    }
     std::fs::create_dir_all(backup_dir)?;
+    // Serialize creation and pruning across cooperating processes. An in-flight
+    // reservation must not be mistaken for an expired backup by another writer.
+    let lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(backup_dir.join(".budlum-backup.lock"))?;
+    lock.try_lock()?;
     let timestamp_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(std::io::Error::other)?
         .as_millis();
     let path = backup_dir.join(format!("budlum-{timestamp_ms}.budbak"));
-    storage.create_snapshot(&path)?;
+    // Reserve the name rather than replacing an existing verified backup if
+    // two requests arrive in the same millisecond or the clock moves back.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    if let Err(error) = storage.create_snapshot(&path) {
+        let _ = std::fs::remove_file(&path);
+        return Err(error);
+    }
     Storage::verify_snapshot(&path)?;
 
-    let mut backups: Vec<PathBuf> = std::fs::read_dir(backup_dir)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|candidate| {
-            candidate
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("budlum-") && name.ends_with(".budbak"))
-        })
-        .collect();
+    prune_database_backups(backup_dir, &path, retention_count)?;
+    Ok(path)
+}
+
+// Only files bearing our exact numeric timestamp naming scheme are managed.
+// Always retain the just-verified backup, even if the system clock moved back.
+fn prune_database_backups(
+    backup_dir: &Path,
+    current: &Path,
+    retention_count: usize,
+) -> std::io::Result<()> {
+    let mut backups = Vec::new();
+    for entry in std::fs::read_dir(backup_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path == current || !entry.file_type()?.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let Some(timestamp) = name
+            .to_str()
+            .and_then(|name| name.strip_prefix("budlum-"))
+            .and_then(|name| name.strip_suffix(".budbak"))
+            .filter(|timestamp| {
+                !timestamp.is_empty() && timestamp.bytes().all(|b| b.is_ascii_digit())
+            })
+            .and_then(|timestamp| timestamp.parse::<u128>().ok())
+        else {
+            continue;
+        };
+        backups.push((timestamp, path));
+    }
     backups.sort();
-    let remove_count = backups.len().saturating_sub(retention_count);
-    for expired in backups.into_iter().take(remove_count) {
+    let remove_count = backups
+        .len()
+        .saturating_sub(retention_count.saturating_sub(1));
+    for (_, expired) in backups.into_iter().take(remove_count) {
         std::fs::remove_file(expired)?;
     }
-    Ok(path)
+    Ok(())
 }
 
 #[tokio::main]
@@ -822,6 +869,14 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            // BLG-010: the label the vendor BLS mechanism signs through is
+            // the operator's, not the compiled-in default, so the object the
+            // startup binding test proves a pairing for is the object that
+            // signs.
+            let s = match config.pkcs11_bls_key_label.clone() {
+                Some(label) => s.with_bls_key_label(label),
+                None => s,
+            };
             let signer = s.with_vendor_mechanisms(
                 config.pkcs11_bls_mechanism.clone(),
                 config.pkcs11_pq_mechanism.clone(),
@@ -1454,70 +1509,13 @@ async fn main() {
         config.p2p_identity_file.as_deref(),
     );
 
-    // B.U.D. Storage Node Initialization (Monolithic Architecture)
-    type StorageParts = (
-        Option<Arc<bud_node::BudBitswap>>,
-        Option<bud_node::ShardingConfig>,
-        Option<Arc<dyn bud_node::ContentStore>>,
-    );
-    let (storage_node, sharding_config, content_metrics_store): StorageParts =
-        if config.storage_enabled {
-            // Content bytes are node-local service state, not consensus state, but
-            // losing them on restart strands the manifests and active deals that
-            // the chain still advertises. Keep the store beside the chain DB and
-            // fail closed if it cannot be opened; silently falling back to memory
-            // would turn a restart into data loss again.
-            let content_path = std::path::Path::new(&config.db_path).with_extension("content");
-            let store = Arc::new(
-                bud_node::FileContentStore::with_default_capacity_at(&content_path).unwrap_or_else(
-                    |error| {
-                        eprintln!(
-                            "Error: could not open persistent B.U.D. content store at {}: {error}",
-                            content_path.display()
-                        );
-                        std::process::exit(1);
-                    },
-                ),
-            );
-            let bitswap = Arc::new(bud_node::BudBitswap::new(store.clone()));
-
-            let mut s_config = if config.mobile_mode {
-                bud_node::ShardingConfig::mobile_default()
-            } else {
-                bud_node::ShardingConfig::default()
-            };
-
-            s_config.replication_factor = config.storage_replication_factor;
-            s_config.mandatory = config.storage_mandatory_sharding;
-
-            (Some(bitswap), Some(s_config), Some(store))
-        } else {
-            (None, None, None)
-        };
-
-    if let Some(store) = content_metrics_store {
-        let metrics = metrics.clone();
-        tokio::spawn(async move {
-            loop {
-                metrics
-                    .content_store_chunks
-                    .set(i64::try_from(store.len()).unwrap_or(i64::MAX));
-                metrics
-                    .content_store_bytes
-                    .set(i64::try_from(store.bytes()).unwrap_or(i64::MAX));
-                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
-            }
-        });
-    }
-
     let mut node = Node::with_key(
         chain.clone(),
         identity_key,
         config
             .mdns_enabled
             .unwrap_or(network.security_config().mdns_enabled),
-        storage_node,
-        sharding_config,
+        config.mobile_mode,
     )
     .unwrap_or_else(|e| {
         eprintln!("Error: could not build the P2P node: {e}");
@@ -1896,7 +1894,11 @@ async fn main() {
         // Production.
         let cursor_path = std::path::Path::new(&config.db_path).join("relayer-cursor");
         let relayer = budlum_core::relayer::RelayerWorker::new(chain.clone(), relayer_addr)
-            .with_cursor_path(Some(cursor_path));
+            .with_cursor_path(Some(cursor_path))
+            // The reservation gauges are the only live view of the pending
+            // store: without them an operator learns that results are piling
+            // up one file read at a time, on the node they happen to be on.
+            .with_metrics(metrics.clone());
 
         // The `--evm-bridge-address`
         // registration is removed. The EVM bridge leg has no live end-to-end
@@ -2049,11 +2051,8 @@ async fn main() {
                                     continue;
                                 }
                             };
-                            if let Some((block, pruned_cids)) = chain.produce_block(producer).await {
+                            if let Some((block, _pruned_cids)) = chain.produce_block(producer).await {
                                 println!("Produced block #{} with {} txs", block.index, block.transactions.len());
-                                for cid in pruned_cids {
-                                    client.storage_prune_sync(cid);
-                                }
                             }
                         }
                         "chain" => {
@@ -2087,9 +2086,73 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        claim_new_key_file, console_producer, daemon_producer_loop_runs, try_load_signing_key,
+        claim_new_key_file, console_producer, daemon_producer_loop_runs, prune_database_backups,
+        try_load_signing_key, write_database_backup,
     };
     use budlum_core::cli::ConsensusType;
+
+    #[test]
+    fn zero_retention_refuses_backup_without_deleting_existing_files() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let db_path = dir.path().join("db");
+        let storage = budlum_core::storage::db::Storage::new(db_path.to_str().unwrap())
+            .expect("open database");
+        let backups = dir.path().join("backups");
+        std::fs::create_dir(&backups).unwrap();
+        let existing = backups.join("budlum-9.budbak");
+        std::fs::write(&existing, b"existing").unwrap();
+        let error = write_database_backup(&storage, &backups, 0).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(std::fs::read(existing).unwrap(), b"existing");
+        assert_eq!(std::fs::read_dir(backups).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn retention_uses_numeric_timestamps_and_preserves_current_and_unknown_files() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in [
+            "budlum-2.budbak",
+            "budlum-10.budbak",
+            "budlum-1.budbak",
+            "budlum-manual.budbak",
+        ] {
+            std::fs::write(dir.path().join(name), name).unwrap();
+        }
+        let current = dir.path().join("budlum-1.budbak");
+        prune_database_backups(dir.path(), &current, 2).unwrap();
+        assert!(current.exists());
+        assert!(!dir.path().join("budlum-2.budbak").exists());
+        assert!(dir.path().join("budlum-10.budbak").exists());
+        assert!(dir.path().join("budlum-manual.budbak").exists());
+    }
+
+    #[test]
+    fn backup_refuses_concurrent_writer_without_pruning() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage =
+            budlum_core::storage::db::Storage::new(dir.path().join("db").to_str().unwrap())
+                .expect("open database");
+        let backups = dir.path().join("backups");
+        std::fs::create_dir(&backups).unwrap();
+        let existing = backups.join("budlum-1.budbak");
+        std::fs::write(&existing, b"existing").unwrap();
+        let lock = std::fs::File::create(backups.join(".budlum-backup.lock")).unwrap();
+        lock.lock().unwrap();
+        assert!(write_database_backup(&storage, &backups, 1).is_err());
+        assert_eq!(std::fs::read(existing).unwrap(), b"existing");
+    }
+
+    #[test]
+    fn backup_returns_a_verified_existing_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage =
+            budlum_core::storage::db::Storage::new(dir.path().join("db").to_str().unwrap())
+                .expect("open database");
+        let path = write_database_backup(&storage, &dir.path().join("backups"), 1)
+            .expect("write backup");
+        assert!(path.is_file());
+        budlum_core::storage::db::Storage::verify_snapshot(path).expect("verify backup");
+    }
 
     #[test]
     fn key_claim_refuses_to_overwrite_an_existing_file() {

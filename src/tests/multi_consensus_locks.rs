@@ -349,6 +349,7 @@ mod poa_authority_binding {
             agg_sig_bls: vec![],
             bitmap: vec![],
             set_hash: snapshot.set_hash.clone(),
+            seat_table_version: 0,
         };
         match crate::domain::finality_adapter::PoSFinalityAdapter
             .verify_finality(
@@ -375,9 +376,8 @@ mod poa_authority_binding {
         let honest: Vec<KeyPair> = (0..3).map(|_| KeyPair::generate().unwrap()).collect();
         let honest_addrs: Vec<_> = honest.iter().map(kp_address).collect();
 
-        let params = crate::domain::storage_params::StorageDomainParams::default();
         let mut domain = domain_with(
-            ConsensusKind::StorageAttestation(params),
+            ConsensusKind::StorageAttestation,
             "storage-attestation-v1",
             [0u8; 32],
         );

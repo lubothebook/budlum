@@ -341,7 +341,7 @@ mod rpc_tests {
     /// Own fee back - that is what will be charged, since the flat-fee protocol
     /// Takes `tx.fee` verbatim once it clears `base_fee`.
     #[tokio::test]
-    async fn estimate_gas_reflects_a_fee_the_caller_already_set() {
+    async fn estimate_gas_ok_reflects_a_fee_the_caller_already_set() {
         let (server, chain) = setup().await;
         let base_fee = chain.get_base_fee().await;
         let chosen = base_fee + 500;
@@ -404,7 +404,7 @@ mod rpc_tests {
     /// The two numbers a wallet combines, and they were sourced from different
     /// Places - one from the live chain, one from a constant.
     #[tokio::test]
-    async fn gas_price_and_estimate_gas_agree_on_the_floor() {
+    async fn gas_price_ok_agrees_with_estimate_gas() {
         let (server, _) = setup().await;
 
         let price = server.gas_price().await.unwrap();
@@ -441,22 +441,6 @@ mod rpc_tests {
         );
     }
 
-    #[tokio::test]
-    async fn social_delete_is_refused_outside_a_block() {
-        let (_server, bc) = setup().await;
-        let auth = crate::storage::GrantAuthorization {
-            owner_key: [0u8; crate::crypto::primitives::ML_DSA_87_PUBLIC_KEY_LEN],
-            signature: Vec::new(),
-        };
-        let err = bc
-            .social_delete(crate::storage::ContentId::of(b"x"), auth, 1)
-            .await
-            .unwrap_err();
-        assert!(
-            err.contains("state-root") && err.contains("bud_sendRawTransaction"),
-            "the refusal must name the diverging root and the door that does work, got: {err}"
-        );
-    }
 
     #[tokio::test]
     async fn test_rpc_block_methods() {
@@ -1024,205 +1008,6 @@ mod rpc_tests {
         assert_eq!(domains["domains"], serde_json::json!([]));
     }
 
-    /// the five storage writes are `StorageTx` transactions applied in
-    /// block (covered in `src/domain/storage_tx.rs`). Their operator RPCs
-    /// refuse every call, name the transaction door, and change nothing:
-    /// the manifest stays unregistered and no balance moves.
-    #[tokio::test]
-    async fn the_storage_write_rpcs_refuse_and_name_their_transaction_doors() {
-        let (server, bc) = setup().await;
-        let manifest = crate::storage::ContentManifest::from_bytes_sliced(
-            b"hello storage rpc lifecycle test",
-            16,
-        )
-        .unwrap();
-        let s_id = manifest.shards[0].shard_id;
-        let op = Address::from([31u8; 32]);
-        let payer = Address::from([32u8; 32]);
-        bc.credit_development_account(&payer, 100_000_000)
-            .await
-            .expect("devnet credit");
-        let payer_before = bc.get_balance(&payer).await;
-        let economics = crate::domain::storage_deal::StorageEconomicsParams {
-            operator_bond: 2_000_000,
-            fee_per_byte_epoch: 10,
-        };
-
-        let refusals = [
-            (
-                server
-                    .storage_register_manifest(manifest.clone())
-                    .await
-                    .expect_err("manifest registration is a transaction"),
-                "StorageTx::RegisterManifest",
-            ),
-            (
-                server
-                    .storage_open_deal(
-                        1,
-                        manifest.clone(),
-                        format!("0x{}", hex::encode(s_id.0)),
-                        format!("0x{}", op.to_hex()),
-                        format!("0x{}", payer.to_hex()),
-                        0,
-                        10,
-                        100,
-                        economics.clone(),
-                        crate::domain::storage_params::StorageDomainParams::default(),
-                        Some(valid_merkle_proof()),
-                        Some([0x42u8; 32]),
-                        7,
-                        String::new(),
-                        String::new(),
-                    )
-                    .await
-                    .expect_err("deal opening is a transaction"),
-                "StorageTx::OpenDeal",
-            ),
-            (
-                server
-                    .storage_accept_reallocation(
-                        0,
-                        format!("0x{}", op.to_hex()),
-                        format!("0x{}", payer.to_hex()),
-                        0,
-                        10,
-                        economics,
-                        crate::domain::storage_params::StorageDomainParams::default(),
-                        None,
-                        None,
-                        7,
-                        String::new(),
-                        String::new(),
-                    )
-                    .await
-                    .expect_err("repair acceptance is a transaction"),
-                "StorageTx::AcceptReallocation",
-            ),
-            (
-                server
-                    .storage_open_challenge(
-                        crate::domain::storage_deal::RetrievalChallengeRequest {
-                            deal_id: 0,
-                            byte_start: 0,
-                            byte_end: 15,
-                            challenge_epoch: 0,
-                            deadline_epoch: 25,
-                            opener_bond: 50,
-                            opener: Some(payer),
-                            opener_signature: None,
-                        },
-                    )
-                    .await
-                    .expect_err("challenge opening is a transaction"),
-                "StorageTx::OpenChallenge",
-            ),
-            (
-                server
-                    .storage_answer_challenge(crate::domain::storage_deal::RetrievalResponse {
-                        challenge_id: 0,
-                        _range_hash: crate::storage::content_id::ContentId([0xAA; 32]),
-                        responder: op,
-                        response_epoch: 18,
-                        responder_signature: None,
-                        proof_bytes: None,
-                    })
-                    .await
-                    .expect_err("challenge answers are transactions"),
-                "StorageTx::AnswerChallenge",
-            ),
-        ];
-        for (err, door) in refusals {
-            assert!(
-                err.message().contains(door) && err.message().contains("bud_sendRawTransaction"),
-                "the refusal names {door}: {}",
-                err.message()
-            );
-        }
-
-        let get_man = server
-            .storage_get_manifest(format!("0x{}", hex::encode(manifest.manifest_id.0)))
-            .await
-            .unwrap();
-        assert_eq!(get_man["found"], false, "a refused call registers nothing");
-        assert_eq!(bc.get_balance(&payer).await, payer_before);
-    }
-
-    #[tokio::test]
-    async fn test_storage_economics_rpc_reports_chain_actor_state() {
-        let (server, _) = setup().await;
-
-        let summary = server.storage_get_economics_summary().await.unwrap();
-        assert_eq!(summary["slashedBondTotal"], serde_json::json!(0));
-        assert_eq!(summary["burnedBondTotal"], serde_json::json!(0));
-        assert_eq!(summary["eventCount"], serde_json::json!(0));
-
-        let events = server.storage_get_economics_events().await.unwrap();
-        assert_eq!(events["count"], serde_json::json!(0));
-        assert!(events["events"].as_array().unwrap().is_empty());
-    }
-
-    /// Empty registry → count 0, empty operators list.
-    #[tokio::test]
-    async fn storage_active_operators_empty() {
-        let (server, _) = setup().await;
-        let res = server.storage_active_operators().await.unwrap();
-        assert_eq!(res["roleId"], serde_json::json!(5));
-        assert_eq!(res["role"], "storage_operator");
-        assert_eq!(res["count"], serde_json::json!(0));
-        assert!(res["operators"].as_array().unwrap().is_empty());
-    }
-
-    /// Registered STORAGE_OPERATOR appears in RPC listing.
-    #[tokio::test]
-    async fn storage_active_operators_lists_registered() {
-        let operator = Address::from_hex(&"0a".repeat(32)).unwrap();
-        let min_stake = 1_000u64; // PermissionlessRegistry default floor
-                                  // a bond is a `RoleBond` transaction applied in block; the
-                                  // fixture writes the registry before the actor starts.
-        let mut blockchain = Blockchain::new(Arc::new(PoWEngine::new(0)), None, 45262, None);
-        blockchain.state.add_balance(&operator, min_stake * 2);
-        blockchain
-            .state
-            .bond_storage_operator(&operator, min_stake)
-            .expect("bond_storage_operator must succeed with sufficient balance");
-        let (server, _) = setup_with_blockchain(blockchain).await;
-
-        let res = server.storage_active_operators().await.unwrap();
-        assert_eq!(res["roleId"], serde_json::json!(5));
-        assert_eq!(res["role"], "storage_operator");
-        assert_eq!(res["count"], serde_json::json!(1));
-        let ops = res["operators"].as_array().unwrap();
-        assert_eq!(ops.len(), 1);
-        assert_eq!(ops[0]["role"], "storage_operator");
-        assert_eq!(ops[0]["stake"], serde_json::json!(min_stake));
-        let listed = ops[0]["address"].as_str().unwrap().to_lowercase();
-        assert!(
-            listed.contains(&operator.to_hex().to_lowercase())
-                || listed.contains(&format!("0x{}", operator.to_hex()).to_lowercase()),
-            "listed address {listed} must match operator"
-        );
-    }
-
-    #[tokio::test]
-    async fn storage_operator_economics_is_permissionless_and_explicit_about_slashes() {
-        let (server, _) = setup().await;
-        let operator = Address::from_hex(&"0b".repeat(32)).unwrap();
-
-        let economics = server
-            .storage_get_operator_economics(operator)
-            .await
-            .expect("read-only operator economics query must succeed");
-        assert_eq!(economics["accruedRewards"], serde_json::json!(0));
-        assert_eq!(economics["activeDealCount"], serde_json::json!(0));
-        assert_eq!(economics["slashedBondTotal"], serde_json::json!(0));
-        assert!(economics["slashHistory"].as_array().unwrap().is_empty());
-        assert_eq!(
-            economics["slashedBondDisposition"],
-            "burn_from_operator_liquid_balance_best_effort"
-        );
-    }
-
     /// The operator-only admin surface refuses on a public listener: the
     /// mode gate runs before any peer-state work and answers with the
     /// static -32004 string shared by every admin endpoint, so clients do
@@ -1313,58 +1098,6 @@ mod rpc_tests {
         assert_eq!(empty.code(), -32602);
     }
 
-    /// Zero bytes are content too: the sealed RPC path emits a feed for them.
-    #[tokio::test]
-    async fn rpc_tests_qr_feed_accepts_empty_content_when_sealed() {
-        let (server, _chain) = setup().await;
-        let seed = "ab".repeat(32);
-        let preview = server
-            .storage_qr_feed_preview(String::new(), 64, None, Some(seed.clone()))
-            .await
-            .expect("sealed empty preview");
-        let key = crate::storage::payload_crypt::PayloadKey::derive(&[0xabu8; 32]);
-        let total = u32::try_from(preview["k"].as_u64().expect("k")).unwrap();
-        let burst = server
-            .storage_qr_feed_frames(String::new(), 64, 0, total, Some(seed))
-            .await
-            .expect("sealed empty frames");
-        assert_eq!(burst["count"], total);
-        let mut dec = crate::storage::qr_carousel::CarouselDecoder::new();
-        for f in burst["frames"].as_array().expect("frames array") {
-            let frame = hex::decode(f.as_str().expect("hex frame")).expect("frame hex");
-            let wire = &frame[crate::storage::qr_frame::THREE_FRAME_HEADER_LEN..];
-            let d = crate::storage::qr_carousel::Drop::from_bytes(wire).expect("drop");
-            dec.push(&d).expect("push");
-        }
-        let packed = dec.finish().expect("carousel finish");
-        let (kind, sealed) = crate::storage::qr_payload::unpack_payload(&packed).expect("unpack");
-        assert_eq!(
-            kind,
-            crate::storage::qr_payload::PayloadKind::EncryptedContent
-        );
-        let clear = crate::storage::payload_crypt::open_payload(&key, &sealed).expect("open");
-        assert!(clear.is_empty());
-    }
-
-    /// Without a seed the gated preview of empty content is still refused as a
-    /// bad request, as it is for any other body.
-    #[tokio::test]
-    async fn rpc_tests_qr_feed_empty_content_without_seed_is_refused() {
-        let (server, _chain) = setup().await;
-        let refused = server
-            .storage_qr_feed_preview(String::new(), 200, None, None)
-            .await
-            .expect_err("unsealed gated preview must be refused");
-        assert_eq!(refused.code(), -32602);
-        assert!(
-            refused
-                .message()
-                .contains("neither sealed nor declared ciphertext"),
-            "unexpected message: {}",
-            refused.message()
-        );
-    }
-
     /// The external evidence intake carries an unsigned submitter, so the
     /// public listener must refuse it before the payload is even parsed.
     #[tokio::test]
@@ -1390,63 +1123,378 @@ mod rpc_tests {
         assert_eq!(refused.code(), -32004);
     }
 
-    /// Storage calls that change node-local state outside a block are
-    /// operator-only: the public listener refuses them with -32004.
+    /// BLG-192: the estimate is the fee the chain will actually enforce for
+    /// this transaction, not the base fee. The finding is that
+    /// `bud_estimateGas` quoted `base_fee` while admission charged
+    /// `required_fee`, which bills the proportional cut on a transfer
+    /// (`transfer_fee_ppm` of the amount, on top of the base fee) and a
+    /// multiplied base fee for a governance proposal. A wallet sized its
+    /// transaction from the quote and was then refused for the fee the RPC had
+    /// just suggested.
+    ///
+    /// Canary: restore `Ok(Self::to_hex(base_fee))` in `estimate_gas` and this
+    /// fails: the proportional cut alone is 1% of the amount.
     #[tokio::test]
-    async fn rpc_tests_storage_mutations_refused_on_public_listener() {
+    async fn blg_192_estimate_gas_quotes_the_proportional_transfer_fee() {
+        use crate::chain::fee_market::PPM_DENOMINATOR;
+        use crate::registry::RegistryParams;
+
         let consensus = Arc::new(PoWEngine::new(0));
-        let blockchain = Blockchain::new(consensus, None, 45266, None);
-        let (chain_actor, chain) = ChainActor::new(blockchain);
-        tokio::spawn(async move {
-            chain_actor.run().await;
-        });
-        let node_struct = Node::new(chain.clone()).unwrap();
-        let node_client = node_struct.get_client();
-        let public_server = RpcServer::with_security_and_mode(
-            chain.clone(),
-            node_client,
-            RpcSecurityConfig::operator_default(),
-            RpcMode::Public,
+        let mut blockchain = Blockchain::new(consensus, None, 45262, None);
+        let mut params = *blockchain.state.registry.params();
+        params.transfer_fee_ppm = 10_000; // 1% of the amount
+        blockchain.state.registry.set_params(params);
+        let base_fee = blockchain.state.base_fee;
+        let (server, _chain) = setup_with_blockchain(blockchain).await;
+
+        let amount = 1_000_000u64;
+        let mut tx = Transaction::new_with_chain_id(
+            Address::from([1u8; 32]),
+            Address::from([2u8; 32]),
+            amount,
+            0, // the caller is asking what to pay
+            0,
+            vec![],
+            45262,
+            crate::core::transaction::TransactionType::Transfer,
         );
-        let response = crate::domain::storage_deal::RetrievalResponse {
-            challenge_id: 1,
-            _range_hash: crate::storage::content_id::ContentId([0xAA; 32]),
-            responder: Address::from([9u8; 32]),
-            response_epoch: 1,
-            responder_signature: None,
-            proof_bytes: None,
-        };
-        let refused = public_server
-            .storage_answer_challenge(response)
-            .await
-            .expect_err("public listener must refuse storage_answer_challenge");
-        assert_eq!(refused.code(), -32004);
-        let refused_commit = public_server
-            .storage_register_confidential_commit(
-                "aa".repeat(32),
-                "xchacha20poly1305".to_string(),
-                "bb".repeat(32),
-                "hash_only".to_string(),
-                None,
-            )
-            .await
-            .expect_err("public listener must refuse confidential commit mutation");
-        assert_eq!(refused_commit.code(), -32004);
+        tx.hash = tx.calculate_hash();
+
+        let estimate = server.estimate_gas(tx).await.expect("estimate");
+        let estimate = u64::from_str_radix(estimate.trim_start_matches("0x"), 16).expect("hex");
+
+        // The charge the admission rule computes: `required_transfer_fee` is
+        // the function `bud_estimateGas` must agree with.
+        let proportional = amount * params.transfer_fee_ppm / PPM_DENOMINATOR;
+        assert!(proportional > 0, "the fixture must charge a proportional cut");
+        let charged = params.required_transfer_fee(amount, base_fee);
+        assert_eq!(charged, base_fee + proportional);
+        assert_eq!(
+            estimate, charged,
+            "the estimate must be what the chain charges, not the base fee alone"
+        );
+        assert_ne!(
+            estimate, base_fee,
+            "quoting only the base fee is the finding"
+        );
     }
 
-    /// The re-encode check refuses a body over the shared 1 MiB cap before
-    /// it decodes or encodes anything.
+    // ---------------------------------------------------------------------
+    // Method coverage (directive WP-61 item 5, TEST-GAP-07).
+    //
+    // Each pair below is one row of the `bud_*` surface: `<stem>_ok` observes an
+    // answer, `<stem>_refused` observes the refusal the handler names. The
+    // completeness rule over the whole surface lives in
+    // `src/rpc/method_coverage.rs`, so a method added without its pair fails
+    // there rather than going untested quietly.
+    //
+    // A method with no arm that can refuse is not paired here; it carries a
+    // `no-refusal:` line in `.github/rpc-method-coverage-baseline.txt` with the
+    // reason, and that is the only way to avoid the refusal half.
+    // ---------------------------------------------------------------------
+
+    /// A well-formed 32-byte address whose bytes are readable in a failure:
+    /// `test_address(7)` is `0x0707..07`.
+    fn test_address(seed: u8) -> String {
+        let byte = format!("{seed:02x}");
+        format!("0x{}", byte.repeat(32))
+    }
+
     #[tokio::test]
-    async fn rpc_tests_verify_encoding_refuses_oversized_body() {
+    async fn chain_id_ok_reports_the_configured_chain() {
         let (server, _chain) = setup().await;
-        let manifest =
-            crate::storage::ContentManifest::from_bytes_sliced(b"small body", 16).unwrap();
-        let big = "00".repeat(crate::storage::emit::MAX_PREVIEW_CONTENT_BYTES + 1);
-        let refused = server
-            .storage_verify_encoding(big, manifest)
+        let answer = server.chain_id().await.expect("chain id");
+        assert_eq!(
+            answer,
+            format!("0x{:x}", crate::core::transaction::DEFAULT_CHAIN_ID)
+        );
+    }
+
+    #[tokio::test]
+    async fn block_number_ok_is_the_chain_height() {
+        let (server, chain) = setup().await;
+        let answer = server.block_number().await.expect("block number");
+        let height = u64::from_str_radix(answer.trim_start_matches("0x"), 16).expect("hex");
+        assert_eq!(height, chain.get_height().await);
+    }
+
+    #[tokio::test]
+    async fn get_block_by_number_ok_answers_genesis() {
+        let (server, _chain) = setup().await;
+        let block = server.get_block_by_number(0).await.expect("genesis");
+        assert!(!block.is_null(), "height 0 is the genesis block");
+        assert_eq!(block["number"], serde_json::json!("0x0"));
+    }
+
+    /// A height this node does not hold is `null`, not an error: absence is a
+    /// positive answer and the client must be able to tell it from a failure.
+    #[tokio::test]
+    async fn get_block_by_number_refused_to_invent_a_block_it_does_not_hold() {
+        let (server, _chain) = setup().await;
+        let answer = server
+            .get_block_by_number(u64::MAX)
             .await
-            .expect_err("oversized body must be refused");
-        assert!(refused.message().contains("verify cap"));
+            .expect("an absent block is not an error");
+        assert!(answer.is_null());
+    }
+
+    #[tokio::test]
+    async fn get_block_by_hash_ok_looks_up_the_genesis_hash() {
+        let (server, chain) = setup().await;
+        let genesis = chain.get_block(0).await.expect("genesis");
+        // The chain stores the hash without the `0x` prefix and the handler
+        // strips one if it is there, so both spellings must find the block.
+        let bare = genesis.hash.clone();
+        let prefixed = format!("0x{bare}");
+        assert!(!bare.is_empty(), "the genesis block must carry a hash");
+        for hash in [prefixed, bare] {
+            let block = server.get_block_by_hash(hash).await.expect("lookup");
+            assert_eq!(block["number"], serde_json::json!("0x0"));
+        }
+    }
+
+    #[tokio::test]
+    async fn get_block_by_hash_refused_to_invent_a_block_for_an_unknown_hash() {
+        let (server, _chain) = setup().await;
+        let answer = server
+            .get_block_by_hash(format!("0x{}", "ab".repeat(32)))
+            .await
+            .expect("absent hash is a null answer");
+        assert!(answer.is_null());
+    }
+
+    #[tokio::test]
+    async fn get_balance_ok_reports_a_hex_amount() {
+        let (server, _chain) = setup().await;
+        let balance = server
+            .get_balance(test_address(7))
+            .await
+            .expect("balance read");
+        assert!(balance.starts_with("0x"));
+        u64::from_str_radix(balance.trim_start_matches("0x"), 16).expect("hex amount");
+    }
+
+    #[tokio::test]
+    async fn get_balance_refused_for_a_malformed_address() {
+        let (server, _chain) = setup().await;
+        let refused = server
+            .get_balance("0xnot-an-address".into())
+            .await
+            .expect_err("a malformed address must be refused");
         assert_eq!(refused.code(), -32602);
+        assert!(refused.message().contains("Invalid address"));
+    }
+
+    #[tokio::test]
+    async fn get_nonce_ok_reports_a_hex_nonce() {
+        let consensus = Arc::new(PoWEngine::new(0));
+        let mut blockchain = Blockchain::new(consensus, None, 45262, None);
+        let holder = Address::from([8u8; 32]);
+        blockchain.state.get_or_create(&holder).nonce = 5;
+        let (server, _chain) = setup_with_blockchain(blockchain).await;
+
+        let nonce = server
+            .get_nonce(format!("0x{}", "08".repeat(32)))
+            .await
+            .expect("nonce read");
+        assert_eq!(
+            u64::from_str_radix(nonce.trim_start_matches("0x"), 16).expect("hex nonce"),
+            5,
+            "the answer must be the account's nonce, not a constant"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_nonce_refused_for_a_short_address() {
+        let (server, _chain) = setup().await;
+        let refused = server
+            .get_nonce("0x1234".into())
+            .await
+            .expect_err("a short address must be refused");
+        assert_eq!(refused.code(), -32602);
+    }
+
+    #[tokio::test]
+    async fn gas_price_ok_reports_the_base_fee() {
+        let (server, chain) = setup().await;
+        let price = server.gas_price().await.expect("gas price");
+        assert_eq!(
+            u64::from_str_radix(price.trim_start_matches("0x"), 16).expect("hex"),
+            chain.get_base_fee().await
+        );
+    }
+
+    /// A transaction whose wire encoding exceeds the transport ceiling is
+    /// refused before any fee arithmetic happens.
+    #[tokio::test]
+    async fn estimate_gas_refused_for_an_oversized_transaction() {
+        let (server, _chain) = setup().await;
+        let mut tx = Transaction::new_with_chain_id(
+            Address::from([1u8; 32]),
+            Address::zero(),
+            1,
+            0,
+            0,
+            vec![0u8; crate::consensus::budget::MAX_TX_BYTES + 1],
+            45262,
+            crate::core::transaction::TransactionType::Transfer,
+        );
+        tx.hash = tx.calculate_hash();
+        let refused = server
+            .estimate_gas(tx)
+            .await
+            .expect_err("an oversized transaction must be refused");
+        assert_eq!(refused.code(), -32602);
+        assert!(refused.message().contains("Transaction too large"));
+    }
+
+    /// The success arm: a funded sender signs a V4 transfer over the chain id
+    /// and the pool admits it, answering with the hash it was admitted under.
+    #[tokio::test]
+    async fn send_raw_transaction_ok_returns_the_admitted_hash() {
+        let consensus = Arc::new(PoWEngine::new(0));
+        let mut blockchain = Blockchain::new(consensus, None, 45262, None);
+        let keypair = crate::crypto::primitives::KeyPair::generate().expect("ed25519 key");
+        let sender = Address::from(keypair.public_key_bytes());
+        blockchain.state.add_balance(&sender, 1_000);
+        let (server, _chain) = setup_with_blockchain(blockchain).await;
+
+        let mut tx = Transaction::new_with_chain_id(
+            sender,
+            Address::from([9u8; 32]),
+            1,
+            1,
+            0,
+            vec![],
+            crate::core::transaction::DEFAULT_CHAIN_ID,
+            crate::core::transaction::TransactionType::Transfer,
+        );
+        tx.sign(&keypair);
+        let hash = server
+            .send_raw_transaction(tx)
+            .await
+            .expect("a funded, signed transfer is admitted");
+        assert!(hash.starts_with("0x"));
+        assert_eq!(hash.trim_start_matches("0x").len(), 64);
+    }
+
+    /// A signed, well-formed transaction from an account with no funds is
+    /// refused by the pool, and the refusal names the pool's reason rather than
+    /// a generic failure.
+    #[tokio::test]
+    async fn send_raw_transaction_refused_for_an_unfunded_sender() {
+        let (server, _chain) = setup().await;
+        let keypair = crate::crypto::primitives::KeyPair::generate().expect("ed25519 key");
+        let mut tx = Transaction::new_with_chain_id(
+            Address::from(keypair.public_key_bytes()),
+            Address::from([9u8; 32]),
+            1,
+            1,
+            0,
+            vec![],
+            crate::core::transaction::DEFAULT_CHAIN_ID,
+            crate::core::transaction::TransactionType::Transfer,
+        );
+        tx.sign(&keypair);
+        let refused = server
+            .send_raw_transaction(tx)
+            .await
+            .expect_err("an unfunded sender cannot pay the amount and the fee");
+        assert_eq!(refused.code(), -32602);
+        let message = refused.message();
+        assert!(
+            message.contains("Invalid params") || message.contains("Mempool error"),
+            "the refusal must name the pool's reason, got: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_raw_transaction_refused_without_a_signature() {
+        let (server, _chain) = setup().await;
+        let mut tx = Transaction::new_with_chain_id(
+            Address::from([2u8; 32]),
+            Address::from([3u8; 32]),
+            10,
+            10,
+            0,
+            vec![],
+            45262,
+            crate::core::transaction::TransactionType::Transfer,
+        );
+        tx.hash = tx.calculate_hash();
+        let refused = server
+            .send_raw_transaction(tx)
+            .await
+            .expect_err("an unsigned transaction must be refused");
+        assert_eq!(refused.code(), -32602);
+        assert!(refused.message().contains("Invalid transaction signature"));
+    }
+
+    #[tokio::test]
+    async fn send_raw_transaction_refused_for_an_oversized_transaction() {
+        let (server, _chain) = setup().await;
+        let mut tx = Transaction::new_with_chain_id(
+            Address::from([2u8; 32]),
+            Address::from([3u8; 32]),
+            10,
+            10,
+            0,
+            vec![0u8; crate::consensus::budget::MAX_TX_BYTES + 1],
+            45262,
+            crate::core::transaction::TransactionType::Transfer,
+        );
+        tx.hash = tx.calculate_hash();
+        let refused = server
+            .send_raw_transaction(tx)
+            .await
+            .expect_err("oversized transaction must be refused");
+        assert!(refused.message().contains("Transaction too large"));
+    }
+
+    #[tokio::test]
+    async fn net_version_ok_is_the_chain_id_in_decimal() {
+        let (server, chain) = setup().await;
+        let version = server.net_version().await.expect("net version");
+        assert_eq!(version, chain.get_chain_id().await.to_string());
+    }
+
+    /// `net_listening` answers for a listener that is serving. The server
+    /// object here is built but not bound to a socket, so the honest assertion
+    /// is that the flag is a decision this process makes and not a constant
+    /// copied from a comment: it is `true` only while the node handle is alive.
+    #[tokio::test]
+    async fn net_listening_ok_is_true_for_a_live_node_handle() {
+        let (server, _chain) = setup().await;
+        assert!(server.net_listening().await.expect("listening"));
+    }
+
+    #[tokio::test]
+    async fn net_peer_count_ok_is_a_hex_count() {
+        let (server, _chain) = setup().await;
+        let count = server.net_peer_count().await.expect("peer count");
+        assert_eq!(count, "0x0", "a fresh test node has no peers");
+    }
+
+    #[tokio::test]
+    async fn health_ok_reports_a_status_and_height() {
+        let (server, _chain) = setup().await;
+        let health = server.health().await.expect("health");
+        assert!(health["status"].is_string());
+        assert!(health["blockHeight"]
+            .as_str()
+            .is_some_and(|h| h.starts_with("0x")));
+    }
+
+    #[tokio::test]
+    async fn node_info_ok_reports_the_listener_and_chain() {
+        let (server, chain) = setup().await;
+        let info = server.node_info().await.expect("node info");
+        assert_eq!(
+            info["chainId"],
+            serde_json::json!(format!("0x{:x}", chain.get_chain_id().await))
+        );
+        // The listener column is part of the answer: a client must be able to
+        // tell an operator surface from a public one.
+        assert_eq!(info["rpcMode"], serde_json::json!("operator"));
     }
 }

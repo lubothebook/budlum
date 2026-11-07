@@ -35,8 +35,6 @@ pub mod sharding_e2e;
 // permissionless, whitelist and data-sovereignty invariants (plan section 0.5
 // + acceptance criteria).
 #[cfg(test)]
-pub mod bud_e2e;
-#[cfg(test)]
 pub mod byzantine_settlement;
 #[cfg(test)]
 pub mod chaos;
@@ -45,10 +43,7 @@ pub mod distributed_settlement;
 #[cfg(test)]
 pub mod fork_choice_locks;
 #[cfg(test)]
-pub mod manifest_commitment_locks;
-#[cfg(test)]
 pub mod multi_consensus_locks;
-pub mod operator_kill_chaos;
 // P01 consensus-round behaviour and the P01 negative-validation batch. The file
 // existed and no `mod` declared it, so rustc never read it: 558 lines of round
 // tests that grepped like live coverage and ran nowhere.
@@ -102,7 +97,7 @@ pub mod private_transfer_fee_market;
 #[cfg(test)]
 pub mod prover;
 #[cfg(test)]
-pub mod regeneration_recovery;
+pub mod state_recovery;
 #[cfg(test)]
 pub mod relayer_liveness;
 // chain relayer proof cryptographic verification + M5 budlumxyz fee + M4 BNS fee
@@ -115,8 +110,6 @@ pub mod relayer_gates;
 pub mod relayer_worker_locks;
 #[cfg(test)]
 pub mod settlement_prod;
-#[cfg(test)]
-pub mod storage_tx_door;
 #[cfg(test)]
 pub mod tokenomics;
 pub mod tokenomics_proptest;
@@ -140,8 +133,6 @@ pub mod consensus_expanded;
 pub mod consensus_lock_order_loom;
 #[cfg(test)]
 pub mod constitution_engine;
-#[cfg(test)]
-pub mod hard_prune;
 #[cfg(test)]
 pub mod load_test;
 #[cfg(test)]
@@ -228,7 +219,67 @@ pub mod consensus_bypass_locks;
 pub mod block_clock;
 #[cfg(test)]
 pub mod real_chain_fixtures;
-// Effect-asserting locks for the slashing matrix and the overflow rule
-//.
+// Effect-asserting locks for the slashing matrix and the overflow rule.
 #[cfg(test)]
 pub mod refusal_locks;
+
+// Regression locks for fixes already in the tree, one module per area.
+#[cfg(test)]
+pub mod regression_ai_storage;
+#[cfg(test)]
+pub mod regression_bridge;
+#[cfg(test)]
+pub mod regression_chain;
+#[cfg(test)]
+pub mod regression_ops_crypto;
+
+// Validator classes and the single registration door.
+#[cfg(test)]
+pub mod validator_classes;
+
+// The B.U.D. 3.0 storage door end to end.
+#[cfg(test)]
+pub mod bud3_door;
+#[cfg(test)]
+pub mod bud3_types;
+#[cfg(test)]
+pub mod audit_lane_d;
+
+// WP-17 state transition, vesting, staking, governance, sharding, and V2 snapshot suite.
+#[cfg(test)]
+pub mod wp17_state_hardening;
+
+// WP-41 item 6 and WP-20 item 13: the readiness and storage-health series,
+// read back out of a real Prometheus scrape.
+#[cfg(test)]
+pub mod readiness_metrics;
+
+// WP-41 item 6: the alert rules name metrics the node exports, and every
+// mandatory alert exists.
+#[cfg(test)]
+pub mod alert_rules_reference_existing_metrics;
+
+// WP-41 item 8: the backup drill covers the paths the node persists now, and
+// the restore it performs refuses a target that is not empty.
+#[cfg(test)]
+pub mod backup_covers_persisted_paths;
+
+// WP-41 item 7: every alert the node raises has a first-check row in the
+// operator runbook, and no row outlives its rule.
+#[cfg(test)]
+pub mod alerts_have_runbook_entries;
+
+// WP-41 item 5: the public TLS edge fronts the ports the services bind, and
+// never an unauthenticated listener.
+#[cfg(test)]
+pub mod caddy_edges_match_the_services;
+
+// WP-41 item 6: the scrape topology reaches every exporter the alert rules
+// read, and the rule file is mounted where the config expects it.
+#[cfg(test)]
+pub mod scrape_topology_covers_the_rules;
+
+// WP-41 item 4: the compose stacks name the services and ports the launch
+// runs, and both scrape with the same pinned Prometheus.
+#[cfg(test)]
+pub mod compose_topology_matches_services;

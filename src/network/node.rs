@@ -27,7 +27,6 @@ const SYNC_TIMEOUT_SECS: u64 = 60;
 /// Concurrent request/response streams per connection. The libp2p default is
 /// 100; with a 1 MiB request ceiling that pins 100 MiB or more per peer.
 const MAX_SYNC_CONCURRENT_STREAMS: usize = 16;
-const MAX_PENDING_BITSWAP_FETCH_WAITERS: usize = 128;
 /// QC blobs assembled at once, across all peers.
 const MAX_QC_ASSEMBLIES: usize = 8;
 /// A slow or malicious peer cannot occupy every outbound fetch slot.
@@ -334,15 +333,112 @@ fn log_prefix(s: &str, max_chars: usize) -> String {
     s.chars().take(max_chars).collect()
 }
 
-/// Extract IPv4 /24 key from a multiaddr (first 3 octets), if present.
-pub fn ipv4_slash24(addr: &Multiaddr) -> Option<[u8; 3]> {
+/// The subnet bucket a remote multiaddr is counted in.
+///
+/// The eclipse bound used to key on an IPv4 `/24` and nothing else, so an IPv6
+/// peer - or the same peer reached through a dual-stack listener as
+/// `::ffff:a.b.c.d` - came back as `None`, and `None` was admitted without a
+/// bound. One host could take the whole peer table while the `/24` limit
+/// reported itself as enforced, and the profile value was measured on the one
+/// family an attacker would not use (BLG-034). The bucket now covers both
+/// families; see [`crate::network::peer_manager::SubnetKey`].
+fn subnet_bucket(addr: &Multiaddr) -> Option<crate::network::peer_manager::SubnetKey> {
+    use libp2p::multiaddr::Protocol;
     for proto in addr.iter() {
-        if let libp2p::multiaddr::Protocol::Ip4(ip) = proto {
-            let o = ip.octets();
-            return Some([o[0], o[1], o[2]]);
+        match proto {
+            Protocol::Ip4(ip) => {
+                return Some(crate::network::peer_manager::SubnetKey::from_ip(
+                    std::net::IpAddr::V4(ip),
+                ));
+            }
+            Protocol::Ip6(ip) => {
+                return Some(crate::network::peer_manager::SubnetKey::from_ip(
+                    std::net::IpAddr::V6(ip),
+                ));
+            }
+            _ => {}
         }
     }
     None
+}
+
+/// Whether an address a peer advertised may enter the routing table.
+///
+/// `Identify` hands the node whatever listen addresses a peer claims, and every
+/// one of them used to go straight into Kademlia. On a public network a peer
+/// can therefore advertise `127.0.0.1`, `10.0.0.0/8` or `fe80::/10` and fill
+/// the routing table with addresses that mean nothing outside the process that
+/// sent them: every later dial goes nowhere and the node stops finding peers it
+/// could reach (BLG-034, Kademlia poisoning).
+///
+/// `private_ok` is the node's own answer to "is this a private network". On
+/// devnet the peers *are* on loopback, and a private address is the only
+/// address there is, so the rule has to be a profile decision rather than a
+/// global one.
+fn advertised_address_is_allowed(addr: &Multiaddr, private_ok: bool) -> bool {
+    use libp2p::multiaddr::Protocol;
+    if private_ok {
+        return true;
+    }
+    for proto in addr.iter() {
+        let ip = match proto {
+            Protocol::Ip4(ip) => std::net::IpAddr::V4(ip),
+            Protocol::Ip6(ip) => std::net::IpAddr::V6(ip),
+            // A `/dns4` or `/p2p-circuit` component says nothing about an IP
+            // address; there is nothing here to refuse.
+            _ => continue,
+        };
+        if !is_globally_routable(ip) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Whether this profile treats a private advertisement as a poisoning attempt.
+///
+/// Devnet is the one network where the peers really are on loopback; every
+/// other profile either faces the open internet or is a rehearsal of it, and
+/// there a private address in the routing table is an address nobody can dial.
+fn profile_rejects_private_advertisements(network: crate::core::chain_config::Network) -> bool {
+    !matches!(network, crate::core::chain_config::Network::Devnet)
+}
+
+/// Whether an IP address can be dialled from anywhere on the internet.
+///
+/// The IPv4-mapped IPv6 form is judged as the IPv4 address it carries: a
+/// `::ffff:10.0.0.1` advertisement is a private address, not a routable v6 one.
+fn is_globally_routable(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.is_multicast()
+                || o[0] == 0
+                // 100.64.0.0/10: carrier-grade NAT. `is_private` says no
+                // because it is not RFC 1918, but nothing outside the carrier
+                // can dial it either.
+                || (o[0] == 100 && (64..128).contains(&o[1])))
+        }
+        std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => is_globally_routable(std::net::IpAddr::V4(v4)),
+            None => {
+                let o = v6.octets();
+                !(v6.is_loopback()
+                    || v6.is_unspecified()
+                    || v6.is_multicast()
+                    // fc00::/7: unique local.
+                    || (o[0] & 0xfe) == 0xfc
+                    // fe80::/10: unicast link local.
+                    || (o[0] == 0xfe && (o[1] & 0xc0) == 0x80))
+            }
+        },
+    }
 }
 
 #[derive(NetworkBehaviour)]
@@ -354,7 +450,6 @@ pub struct BudlumBehaviour {
     gossipsub: gossipsub::Behaviour,
     kad: Kademlia<MemoryStore>,
     sync: request_response::Behaviour<crate::network::sync_codec::SyncCodec>,
-    bitswap: request_response::Behaviour<bud_node::BitswapCodec>,
     /// `/budlum/witness/1.0.0`: witnesses of a block for a node that
     /// pruned them, checked against the block's `witness_root`.
     witness: request_response::Behaviour<crate::network::witness_protocol::WitnessCodec>,
@@ -370,7 +465,7 @@ use crate::chain::chain_actor::ChainHandle;
 use crate::chain::finality::{Precommit, Prevote};
 use crate::network::gossip_dedup::{DedupResult, GossipDedup};
 use crate::network::peer_manager::PeerManager;
-use crate::network::regen_health_tick::{Checkpoint, CheckpointView, RegenHealthTick, TickOutcome};
+use crate::chain::state_recovery::tick::{Checkpoint, CheckpointView, StateRecoveryTick, TickOutcome};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 #[allow(clippy::large_enum_variant)]
@@ -383,20 +478,6 @@ pub enum NodeCommand {
     RequestSync,
     BroadcastTx(crate::core::transaction::Transaction),
     ListPeers,
-    /// Hard Pruning - physical deletion of B.U.D. content.
-    /// Triggered ONLY by local Executor after verified NftBurn (SECURITY_AUDIT_HACKER.md).
-    /// Payload is 32-byte ContentId (mirrors budlum_core::storage::content_id::ContentId and bud_node::store::ContentId).
-    StoragePrune {
-        cid: [u8; 32],
-    },
-    FetchLocalContent {
-        cid: [u8; 32],
-        response: oneshot::Sender<Result<Vec<u8>, String>>,
-    },
-    FetchRemoteContent {
-        cid: [u8; 32],
-        response: oneshot::Sender<Result<Vec<u8>, String>>,
-    },
     /// Operator RPC (`bud_adminBanPeer`): ban a peer through the same peer
     /// manager the gossip path consults; ban persistence stays on its
     /// existing cadence.
@@ -457,45 +538,6 @@ impl NodeClient {
             "blocks".into(),
             NetworkMessage::SlashingEvidence(evidence),
         ));
-    }
-
-    /// F1: Trigger local hard prune of B.U.D. content (only via local executor, not P2P).
-    pub fn storage_prune_sync(&self, cid: [u8; 32]) {
-        let _ = self.sender.try_send(NodeCommand::StoragePrune { cid });
-    }
-
-    /// Convenience: the backpressured twin of [`Self::storage_prune_sync`]
-    /// for async embedders of this client. The in-tree console keeps the
-    /// sync form on purpose: it fires just after block production, where a
-    /// saturated command channel must not stall production.
-    pub async fn storage_prune(&self, cid: [u8; 32]) {
-        let _ = self.sender.send(NodeCommand::StoragePrune { cid }).await;
-    }
-
-    pub async fn fetch_local_content(&self, cid: [u8; 32]) -> Result<Vec<u8>, String> {
-        const LOCAL_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
-        let (tx, rx) = oneshot::channel();
-        self.sender
-            .send(NodeCommand::FetchLocalContent { cid, response: tx })
-            .await
-            .map_err(|e| format!("failed to send local content request: {e}"))?;
-        tokio::time::timeout(LOCAL_FETCH_TIMEOUT, rx)
-            .await
-            .map_err(|_| "local content fetch timed out".to_string())?
-            .map_err(|e| format!("failed to receive local content response: {e}"))?
-    }
-
-    pub async fn fetch_remote_content(&self, cid: [u8; 32]) -> Result<Vec<u8>, String> {
-        const REMOTE_FETCH_TIMEOUT: Duration = Duration::from_secs(10);
-        let (tx, rx) = oneshot::channel();
-        self.sender
-            .send(NodeCommand::FetchRemoteContent { cid, response: tx })
-            .await
-            .map_err(|e| format!("failed to send remote content request: {e}"))?;
-        tokio::time::timeout(REMOTE_FETCH_TIMEOUT, rx)
-            .await
-            .map_err(|_| "remote content fetch timed out".to_string())?
-            .map_err(|e| format!("failed to receive remote content response: {e}"))?
     }
 
     /// Bans a peer by id through the node loop (`bud_adminBanPeer`). The
@@ -585,31 +627,29 @@ pub const MAX_PEERS: usize = 50;
 pub const DHT_BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(300);
 
 /// Writes the identity key file. On unix the file is created with mode 0600,
-/// so it is never readable by other users, not even briefly.
+/// so it is never readable by other users, not even briefly, and the write is
+/// atomic: a crash mid-write cannot leave a truncated identity that the next
+/// boot would then replace with a fresh peer id (BLG-004, the key-file rule).
 fn write_identity_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?;
-        file.write_all(bytes)
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, bytes)
-    }
+    crate::crypto::key_file::write_atomic_owner_only(path, bytes)
 }
 
 pub fn load_or_generate_identity_key(path: Option<&str>) -> identity::Keypair {
     if let Some(p) = path {
         let file_path = std::path::Path::new(p);
         if file_path.exists() {
-            match std::fs::read(file_path) {
+            // BLG-004: the identity file is a key file, so the reader holds the
+            // same rule as the writer. A wide one is refused loudly and a fresh
+            // identity is generated rather than read, because reading it would
+            // be using a secret that anyone on the host can already copy.
+            let narrow = crate::crypto::key_file::require_owner_only(file_path);
+            if let Err(e) = &narrow {
+                warn!("Identity file {p} is not owner-only, not using it: {e}");
+            }
+            let read = narrow
+                .map_err(|e| e.to_string())
+                .and_then(|()| std::fs::read(file_path).map_err(|e| e.to_string()));
+            match read {
                 Ok(bytes) => {
                     if let Ok(keypair) = identity::Keypair::from_protobuf_encoding(&bytes) {
                         info!("Loaded persistent P2P identity from {p}");
@@ -631,12 +671,6 @@ pub fn load_or_generate_identity_key(path: Option<&str>) -> identity::Keypair {
                 } else {
                     info!("Saved new P2P identity key to {p}");
                 }
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ =
-                        std::fs::set_permissions(file_path, std::fs::Permissions::from_mode(0o600));
-                }
             }
             Err(e) => warn!("Failed to encode identity key: {e}"),
         }
@@ -645,6 +679,54 @@ pub fn load_or_generate_identity_key(path: Option<&str>) -> identity::Keypair {
         let key = identity::Keypair::generate_ed25519();
         info!("Generated ephemeral P2P identity (no identity file configured)");
         key
+    }
+}
+
+#[cfg(test)]
+mod identity_file_tests {
+    use super::*;
+
+    /// BLG-004: the same identity is loaded twice, so the file the writer made
+    /// is a file the reader accepts.
+    #[test]
+    fn a_written_identity_is_loaded_back_as_the_same_peer() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("identity.key");
+        let first = load_or_generate_identity_key(Some(path.to_str().expect("utf8")));
+        assert!(path.exists(), "the first call must write the identity file");
+        let again = load_or_generate_identity_key(Some(path.to_str().expect("utf8")));
+        assert_eq!(
+            first.public().to_peer_id(),
+            again.public().to_peer_id(),
+            "a restart must keep the peer id"
+        );
+    }
+
+    /// BLG-004: an identity file that group or others can read is not used.
+    /// The node starts on a fresh identity instead and says why, which is the
+    /// only safe answer: a wide file may already be copied.
+    #[cfg(unix)]
+    #[test]
+    fn a_world_readable_identity_file_is_not_used() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("identity.key");
+        let original = load_or_generate_identity_key(Some(path.to_str().expect("utf8")));
+        let original_peer = original.public().to_peer_id();
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+            .expect("chmod wide");
+        let replaced = load_or_generate_identity_key(Some(path.to_str().expect("utf8")));
+        assert_ne!(
+            replaced.public().to_peer_id(),
+            original_peer,
+            "a wide identity file must not be trusted as this node's identity"
+        );
+        // The replacement is written narrow, so the next boot reads it.
+        crate::crypto::key_file::require_owner_only(&path)
+            .expect("the file left behind is owner-only");
+        let next = load_or_generate_identity_key(Some(path.to_str().expect("utf8")));
+        assert_eq!(next.public().to_peer_id(), replaced.public().to_peer_id());
     }
 }
 
@@ -707,11 +789,6 @@ pub fn resolve_dns_seeds(seeds: &[String], port: u16) -> Vec<String> {
     addrs
 }
 
-/// Bitswap content fetches awaiting a P2P response, keyed by content id.
-/// Multiple callers can await the same CID, so each entry holds a list of
-/// One-shot responders that are all completed when the block arrives.
-pub type PendingBitswapFetches = HashMap<[u8; 32], Vec<oneshot::Sender<Result<Vec<u8>, String>>>>;
-
 pub struct Node {
     swarm: Swarm<BudlumBehaviour>,
     command_rx: mpsc::Receiver<NodeCommand>,
@@ -749,21 +826,6 @@ pub struct Node {
     /// (`DeferredVotes`, AF-18). They are replayed when the round opens,
     /// because a vote can never be retransmitted by its author.
     deferred_votes: crate::network::deferred_votes::DeferredVotes,
-    pub pending_bitswap_fetches: PendingBitswapFetches,
-    /// The content id each outbound Bitswap request asked for. A response is
-    /// checked against this, not against the cid the response claims.
-    bitswap_requests: HashMap<request_response::OutboundRequestId, bud_node::store::ContentId>,
-    /// Target peer for each in-flight Bitswap request so `ConnectionClosed`
-    /// retires only requests sent to the peer whose connection actually closed.
-    bitswap_request_peers: HashMap<request_response::OutboundRequestId, PeerId>,
-    /// Outstanding Bitswap answers per content id. A
-    /// waiters list used to be removed only when a response delivered data;
-    /// every `not_found`, every malformed response and every disconnected
-    /// peer left the entry - and the callers in it - in the map forever.
-    /// Each outbound request per peer is one attempt; when the last attempt
-    /// fails by any route, the waiters are answered with the failure and the
-    /// entry is dropped.
-    bitswap_pending_attempts: HashMap<[u8; 32], usize>,
     pub max_peers: usize,
     pub validator_address: Option<crate::core::address::Address>,
     pub last_precommit_height: u64,
@@ -787,26 +849,15 @@ pub struct Node {
     pub identity_path: Option<std::path::PathBuf>,
     pub banned_peer_db: Option<std::path::PathBuf>,
     pub mdns_enabled: bool,
+    /// Whether a private address a peer advertises may enter the routing table.
+    ///
+    /// Defaults to `true`: a node that never applied a network profile is a
+    /// test or an embedded node whose peers are on loopback, and refusing them
+    /// would buy no security. [`Self::apply_network_security`] closes it for
+    /// the public networks, where a private advertisement is a poisoning
+    /// attempt rather than a description of where the peer is.
+    pub accept_private_peer_addresses: bool,
     pub metrics: Option<Arc<crate::core::metrics::Metrics>>,
-    pub storage_node: Option<Arc<bud_node::BudBitswap>>,
-    /// What this node is allowed to delete, and whether it may delete at all.
-    ///
-    /// The hard-prune worker used to call `store().delete()` the moment an
-    /// `NftBurn` produced a content id, without asking what kind of node it
-    /// was running on. `PruningPolicy::validate` refuses an archive node that
-    /// prunes, and refuses a pruning node with no finalized-snapshot
-    /// retention, but nothing consulted it: the policy existed, was tested,
-    /// and no deletion path read it.
-    ///
-    /// An archive node exists to be the copy of last resort. One misconfigured
-    /// into deleting is worse than one that never existed, because the network
-    /// counted on it.
-    ///
-    /// `None` keeps the previous behaviour for nodes that never set a policy,
-    /// which is every test and ephemeral devnet node. A node that stores
-    /// content in production should set one.
-    pub pruning_policy: Option<crate::storage::PruningPolicy>,
-    pub shard_manager: Option<Arc<bud_node::ShardManager>>,
     pub mobile_mode: bool,
     /// What this device says it can spend on being a peer.
     ///
@@ -830,16 +881,16 @@ pub struct Node {
     /// leaving the node stuck at whatever its flattest battery earned it. It
     /// is a ceiling and never a floor: a profile can only ask for fewer.
     mobile_peer_ceiling: usize,
-    /// The reversion ledger the regeneration health tick assesses and moves.
+    /// The reversion ledger the state recovery tick assesses and moves.
     ///
     /// Node-local and in memory: the ledger records what this node verified
     /// about its own view against the finality certificates, and it starts
     /// again from the live checkpoint on restart.
-    regen_health: RegenHealthTick,
+    recovery_tick: StateRecoveryTick,
     /// Transactions a reversion gave up, offered again after re-growth
     ///, and the height the stash starts above.
-    regen_mempool: crate::domain::RegenMempool,
-    regen_stash_from: Option<u64>,
+    recovery_mempool: crate::chain::state_recovery::RecoveryMempool,
+    recovery_stash_from: Option<u64>,
     /// Witness requests in flight, with the root the answer must hash to.
     witness_requests: HashMap<
         request_response::OutboundRequestId,
@@ -1343,16 +1394,16 @@ impl Node {
         true
     }
 
-    /// One regeneration health tick against the finalized checkpoints.
+    /// One state recovery tick against the finalized checkpoints.
     ///
     /// The canonical commitment of each stage comes from the post-quantum
     /// source (Root Seal, verified anchor, finality checkpoint with its QC);
-    /// the held one is this node's own. [`RegenHealthTick::observe`] decides
+    /// the held one is this node's own. [`StateRecoveryTick::observe`] decides
     /// and moves the reversion ledger. This method gathers the view and acts on the
     /// outcome: repair and revert open a sync round, alarms are logged as
     /// errors with their stable kind label.
-    async fn regen_health_tick(&mut self) {
-        use crate::domain::regeneration_stage::Stage;
+    async fn state_recovery_tick(&mut self) {
+        use crate::chain::state_recovery::stage::Stage;
         let live = self.chain.get_finalized_height().await;
         let (polyp, previous) = self.chain.pq_sealed_heights(live).await;
         // Every stage is read through the post-quantum canonical source: a
@@ -1362,8 +1413,8 @@ impl Node {
         wanted.extend(previous.map(|height| (Stage::Ephyra, height)));
         wanted.extend(polyp.map(|height| (Stage::Polyp, height)));
         let held = (
-            self.regen_health.held_stage(),
-            self.regen_health.held_height(),
+            self.recovery_tick.held_stage(),
+            self.recovery_tick.held_height(),
         );
         if !wanted.contains(&held) {
             wanted.push(held);
@@ -1385,7 +1436,7 @@ impl Node {
             polyp,
             checkpoints,
         };
-        let outcome = self.regen_health.observe(&view);
+        let outcome = self.recovery_tick.observe(&view);
         match &outcome {
             TickOutcome::Idle | TickOutcome::Healthy => {}
             TickOutcome::Repair {
@@ -1397,7 +1448,7 @@ impl Node {
                 repair_cost,
                 regrowth_cost,
                 height = live,
-                "Regeneration health: view diverges from the finality certificate, repair by sync"
+                "State recovery: view diverges from the finality certificate, repair by sync"
             ),
             TickOutcome::Reverted(reversion) => warn!(
                 from = ?reversion.from,
@@ -1405,19 +1456,19 @@ impl Node {
                 stress = ?reversion.stress,
                 height_after = reversion.height_after,
                 event = reversion.event_number,
-                "Regeneration health: reversion ledger reverted, re-growing by sync"
+                "State recovery: reversion ledger reverted, re-growing by sync"
             ),
             TickOutcome::RevertRefused(error) => tracing::error!(
                 %error,
                 height = live,
-                "Regeneration health: the ledger refused the reversion verdict"
+                "State recovery: the ledger refused the reversion verdict"
             ),
             TickOutcome::Alarm { reason, stress } => tracing::error!(
                 kind = reason.kind(),
                 ?reason,
                 ?stress,
                 height = live,
-                "Regeneration health alarm: self-recovery is impossible or unsafe"
+                "State recovery alarm: self-recovery is impossible or unsafe"
             ),
         }
         match &outcome {
@@ -1425,7 +1476,7 @@ impl Node {
                 self.stash_reverted_transactions(reversion.height_after, live)
                     .await;
             }
-            TickOutcome::Healthy if self.regen_health.held_stage() == Stage::Medusa => {
+            TickOutcome::Healthy if self.recovery_tick.held_stage() == Stage::Medusa => {
                 self.rebroadcast_stashed_transactions(live).await;
             }
             _ => {}
@@ -1433,7 +1484,7 @@ impl Node {
         if outcome.opens_sync() {
             let locator = self.chain.get_locator().await;
             if !self.request_headers_from_peer(None, locator, 500) {
-                info!("Regeneration health: no sync round opened, one is open or no peer fits");
+                info!("State recovery: no sync round opened, one is open or no peer fits");
             }
         }
     }
@@ -1470,19 +1521,19 @@ impl Node {
             let Some(block) = self.chain.get_block(height).await else {
                 continue;
             };
-            kept += self.regen_mempool.stash(
+            kept += self.recovery_mempool.stash(
                 &block.transactions,
                 height,
                 &crate::mempool::pool::charged_bytes,
             );
         }
-        self.regen_stash_from = Some(
-            self.regen_stash_from
+        self.recovery_stash_from = Some(
+            self.recovery_stash_from
                 .map_or(target, |held| held.min(target)),
         );
         info!(
             kept,
-            target, live, "Regeneration: stashed the transactions of the reverted heights"
+            target, live, "State recovery: stashed the transactions of the reverted heights"
         );
     }
 
@@ -1490,11 +1541,11 @@ impl Node {
     /// transactions the canonical chain did not include to the mempool and the
     /// network again. The mempool door validates them like any other.
     async fn rebroadcast_stashed_transactions(&mut self, live: u64) {
-        let Some(from) = self.regen_stash_from else {
+        let Some(from) = self.recovery_stash_from else {
             return;
         };
-        if self.regen_mempool.is_empty() {
-            self.regen_stash_from = None;
+        if self.recovery_mempool.is_empty() {
+            self.recovery_stash_from = None;
             return;
         }
         let mut confirmed = std::collections::HashSet::new();
@@ -1505,9 +1556,9 @@ impl Node {
             }
         }
         let txs = self
-            .regen_mempool
+            .recovery_mempool
             .take_unconfirmed(live, &|hash| confirmed.contains(hash));
-        self.regen_stash_from = None;
+        self.recovery_stash_from = None;
         let mut accepted = 0;
         for tx in txs {
             if self.chain.add_transaction(tx.clone()).await.is_ok() {
@@ -1526,7 +1577,7 @@ impl Node {
         }
         info!(
             accepted,
-            "Regeneration: re-offered the stashed transactions after re-growth"
+            "State recovery: re-offered the stashed transactions after re-growth"
         );
     }
 
@@ -1843,15 +1894,14 @@ impl Node {
 
     pub fn new(chain: ChainHandle) -> Result<Self, Box<dyn Error>> {
         let local_key = identity::Keypair::generate_ed25519();
-        Self::with_key(chain, local_key, true, None, None)
+        Self::with_key(chain, local_key, true, false)
     }
 
     pub fn with_key(
         chain: ChainHandle,
         local_key: identity::Keypair,
         mdns_enabled: bool,
-        storage_node: Option<Arc<bud_node::BudBitswap>>,
-        sharding_config: Option<bud_node::ShardingConfig>,
+        mobile_mode: bool,
     ) -> Result<Self, Box<dyn Error>> {
         let peer_id = PeerId::from(local_key.public());
         let mdns_requested = mdns_enabled;
@@ -1861,10 +1911,6 @@ impl Node {
                 "mDNS was requested but this production/default build excludes the p2p-mdns feature; continuing with mDNS disabled"
             );
         }
-        let mobile_mode = sharding_config.as_ref().is_some_and(|c| c.mobile_mode);
-
-        let shard_manager =
-            sharding_config.map(|config| Arc::new(bud_node::ShardManager::new(peer_id, config)));
         info!("Node ID: {peer_id} (mDNS: {mdns_enabled}, Mobile: {mobile_mode})");
         // Replace DefaultHasher (64-bit, collision-prone) with
         // SHA-256 for gossipsub MessageId. The previous implementation used
@@ -1985,7 +2031,7 @@ impl Node {
         // muxer bookkeeping plus a receive window that auto-tunes toward the
         // bandwidth-delay product. Upstream's default allows 512; halving it
         // to 256 caps the per-connection DoS surface while staying well above
-        // the node's own needs: sync and bitswap are request/response with a
+        // the node's own needs: sync is request/response with a
         // 100-stream cap each (200 in the worst case on one connection), and
         // the mesh stays at ~D_out. Note libp2p-yamux 0.48 exposes only this
         // knob: the inner yamux `max_connection_receive_window` is not
@@ -2046,7 +2092,7 @@ impl Node {
                 // Request/response timeouts: without one, a peer that opens a
                 // request stream and never answers holds the request slot
                 // (and the outbound queue budget) indefinitely - a slowloris
-                // style resource-retention DoS against sync and bitswap
+                // style resource-retention DoS against sync
                 // (hardening research #58, #60). 30s bounds the wait while
                 // leaving plenty of headroom for large block batches.
                 //
@@ -2058,13 +2104,6 @@ impl Node {
                 let sync = request_response::Behaviour::new(
                     [(
                         StreamProtocol::new("/budlum/sync/1.0.0"),
-                        request_response::ProtocolSupport::Full,
-                    )],
-                    req_cfg.clone(),
-                );
-                let bitswap = request_response::Behaviour::new(
-                    [(
-                        StreamProtocol::new(bud_node::BITSWAP_PROTOCOL_NAME),
                         request_response::ProtocolSupport::Full,
                     )],
                     req_cfg.clone(),
@@ -2087,7 +2126,6 @@ impl Node {
                     gossipsub,
                     kad: kademlia,
                     sync,
-                    bitswap,
                     witness,
                     limits: libp2p::connection_limits::Behaviour::new(
                         libp2p::connection_limits::ConnectionLimits::default()
@@ -2133,10 +2171,6 @@ impl Node {
             active_sync_request: None,
             fork_rewalk: crate::network::fork_rewalk::ForkRewalkGate::new(),
             deferred_votes: crate::network::deferred_votes::DeferredVotes::new(),
-            pending_bitswap_fetches: HashMap::new(),
-            bitswap_pending_attempts: HashMap::new(),
-            bitswap_requests: HashMap::new(),
-            bitswap_request_peers: HashMap::new(),
             // The server budget. A battery-powered node lowers this through
             // `with_mobile_profile`, which derives it from the power mode
             // rather than from the boolean; deciding it twice is what let a
@@ -2151,16 +2185,14 @@ impl Node {
             identity_path: None,
             banned_peer_db: None,
             mdns_enabled,
+            accept_private_peer_addresses: true,
             metrics: None,
-            storage_node,
-            pruning_policy: None,
-            shard_manager,
             mobile_mode,
             mobile_profile: None,
             mobile_peer_ceiling: MAX_PEERS,
-            regen_health: RegenHealthTick::default(),
-            regen_mempool: crate::domain::RegenMempool::new(),
-            regen_stash_from: None,
+            recovery_tick: StateRecoveryTick::default(),
+            recovery_mempool: crate::chain::state_recovery::RecoveryMempool::new(),
+            recovery_stash_from: None,
             witness_requests: HashMap::new(),
             reorg_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             reorg_last_completed_at: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -2238,24 +2270,9 @@ impl Node {
     /// one is asked, and the answer is the profile's, not a second opinion
     /// formed here.
     #[must_use]
-    pub fn accepts_storage_work(&self) -> bool {
-        self.mobile_profile
-            .as_ref()
-            .is_none_or(|p| p.challenge_policy.storage_attestation && p.can_accept_tasks())
-    }
-
+ 
     /// Set what this node is allowed to delete.
     ///
-    /// Without this the hard-prune worker deletes whenever an `NftBurn`
-    /// names content it holds, which is right for a full node and wrong for
-    /// an archive node. `PruningPolicy::validate` should be called on the
-    /// policy before it reaches here; this only stores it.
-    #[must_use]
-    pub const fn with_pruning_policy(mut self, policy: crate::storage::PruningPolicy) -> Self {
-        self.pruning_policy = Some(policy);
-        self
-    }
-
     pub fn new_with_bootstrap(
         chain: ChainHandle,
         bootstrap_peers: Vec<String>,
@@ -2287,6 +2304,14 @@ impl Node {
                 format!("./data/{network:?}/vote-history.json").to_lowercase(),
             ));
         }
+        // Kademlia poisoning (BLG-034): `Identify` accepts whatever a peer
+        // says its listen addresses are, and the routing table used to take
+        // all of it. On a public network that lets one peer fill the table
+        // with `127.0.0.1` and `10.0.0.0/8` entries, after which every dial
+        // goes nowhere. The public profiles therefore accept only globally
+        // routable advertisements; devnet, where loopback *is* the topology,
+        // keeps them.
+        self.accept_private_peer_addresses = !profile_rejects_private_advertisements(network);
     }
 
     pub fn with_identity(mut self, path: Option<String>) -> Self {
@@ -2595,21 +2620,10 @@ impl Node {
         let mut dht_interval = tokio::time::interval(DHT_BOOTSTRAP_INTERVAL);
         let mut banning_interval = tokio::time::interval(Duration::from_secs(60));
         let mut ban_persist_interval = tokio::time::interval(Duration::from_secs(300));
-        let mut storage_announce_interval = tokio::time::interval(if self.mobile_mode {
-            Duration::from_secs(24 * 3600) // Daily on mobile
-        } else {
-            Duration::from_secs(3600) // Hourly on server
-        });
-        let mut storage_sharding_check_interval = tokio::time::interval(if self.mobile_mode {
-            Duration::from_secs(3600) // Hourly on mobile
-        } else {
-            Duration::from_secs(600) // 10 mins on server
-        });
         if let Some(ref profile) = self.mobile_profile {
             info!(
                 summary = %profile.summary(),
                 max_peers = self.max_peers,
-                storage_work = self.accepts_storage_work(),
                 "Mobile profile in force: peer and storage budgets derived from the battery"
             );
         }
@@ -2680,7 +2694,7 @@ impl Node {
                 _ = finality_health_interval.tick() => {
                     // Every node checks its own view, validator or not,
                     // so the health tick runs on a beat of its own.
-                    self.regen_health_tick().await;
+                    self.state_recovery_tick().await;
                 }
                 _ = finality_interval.tick() => {
                     // Resolve validator address lazily
@@ -2742,6 +2756,7 @@ impl Node {
                                                     scheme_id:
                                                         crate::chain::finality::BLS_SCHEME_RFC9380_V1
                                                             .to_string(),
+                                                    seat_table_version: cert.seat_table_version,
                                                 }
                                                 .to_bytes(),
                                             );
@@ -2854,6 +2869,7 @@ impl Node {
                                                 scheme_id:
                                                     crate::chain::finality::BLS_SCHEME_RFC9380_V1
                                                         .to_string(),
+                                                seat_table_version: cert.seat_table_version,
                                             }
                                             .to_bytes(),
                                         );
@@ -3016,37 +3032,6 @@ impl Node {
                     info!("Running periodic DHT bootstrapping...");
                     let _ = self.swarm.behaviour_mut().kad.bootstrap();
                 }
-                _ = storage_announce_interval.tick() => {
-                    if let Some(ref bitswap) = self.storage_node {
-                        #[allow(clippy::single_match)]
-                        let cids = bitswap.store().list_cids();
-                        info!("Storage: Announcing {} local chunks to DHT...", cids.len());
-                        for cid in cids {
-                            let key = bud_node::ContentDiscovery::cid_to_key(&cid);
-                            let _ = self.swarm.behaviour_mut().kad.start_providing(key);
-                        }
-                    }
-                }
-                _ = storage_sharding_check_interval.tick() => {
-                    // The profile decides, not this loop. A phone in
-                    // `PowerMode::Critical` sets `storage_attestation`
-                    // false and `max_proof_tasks` zero, and this sweep
-                    // ran anyway on the old two-way `mobile_mode`
-                    // split: the device declined the work and then
-                    // spent the radio looking for it.
-                    if !self.accepts_storage_work() {
-                        tracing::debug!(
-                            "Storage: sharding health check skipped, the device profile \
-                             declines storage work at this power level"
-                        );
-                    } else if let (Some(ref _bitswap), Some(ref _shard_manager)) = (&self.storage_node, &self.shard_manager) {
-                        // This logic is for User Decision 5: mandatory_sharding.
-                        // We check if there are deals near us that we aren't hosting.
-                        // For now, we log the health.
-                        info!("Storage: Running active sharding health check (XOR distance)...");
-                        // Future improvement: proactively query DHT for near-CIDs.
-                    }
-                }
                 _ = banning_interval.tick() => {
                     // An empty list here means no banned peer is ever
                     // disconnected again, which is the opposite of what
@@ -3100,75 +3085,6 @@ impl Node {
                                     warn!("Failed to gossip transaction: {e}");
                                 }
                             }
-                            NodeCommand::StoragePrune { cid } => {
-                                // Hard Pruning worker - physical deletion from local B.U.D. store.
-                                // Only triggered by local Executor (not via P2P gossip), per SECURITY_AUDIT_HACKER.md.
-                                //
-                                // Ask the policy first. An archive node exists to be the
-                                // copy of last resort, and `PruningPolicy::validate`
-                                // already refuses one that prunes. That refusal meant
-                                // nothing while no deletion path consulted it: the check
-                                // was written, tested, and unreachable.
-                                //
-                                // A node with no policy configured keeps the previous
-                                // behaviour, so this cannot quietly stop deletions that
-                                // were working. What it stops is an archive node deleting
-                                // the copy the network was counting on.
-                                // `continue` would target whichever loop the compiler
-                                // finds nearest, and this arm sits inside a `select!`
-                                // inside the event loop. A boolean read before the
-                                // deletion block keeps the control flow local and
-                                // obvious.
-                                let policy_permits = self
-                                    .pruning_policy
-                                    .as_ref()
-                                    .is_none_or(crate::storage::PruningPolicy::should_prune_historical_state);
-                                if !policy_permits {
-                                    if let Some(ref policy) = self.pruning_policy {
-                                        info!(
-                                            cid = %hex::encode(cid),
-                                            mode = policy.mode.label(),
-                                            "B.U.D. hard prune refused: this node's pruning policy does not \
-                                             permit deleting stored content"
-                                        );
-                                    }
-                                } else if let Some(ref storage_node) = self.storage_node {
-                                    let content_id = bud_node::store::ContentId(cid);
-                                    match storage_node.store().delete(&content_id) {
-                                        Ok(()) => {
-                                            info!(
-                                                cid = %hex::encode(cid),
-                                                "B.U.D. hard prune executed: content physically deleted from local store (NftBurn)"
-                                            );
-                                        }
-                                        Err(e) => {
-                                            // Not found is not an error - content may have been pruned already or never stored locally
-                                            tracing::debug!(
-                                                cid = %hex::encode(cid),
-                                                error = %e,
-                                                "B.U.D. hard prune: content not found locally (already pruned or not stored)"
-                                            );
-                                        }
-                                    }
-                                } else {
-                                    warn!(
-                                        cid = %hex::encode(cid),
-                                        "StoragePrune received but storage_node is None - no-op (node without B.U.D. storage)"
-                                    );
-                                }
-                            }
-                            NodeCommand::FetchLocalContent { cid, response } => {
-                                let result = if let Some(ref storage_node) = self.storage_node {
-                                    let content_id = bud_node::store::ContentId(cid);
-                                    storage_node
-                                        .store()
-                                        .get(&content_id)
-                                        .map_err(|e| format!("local B.U.D. content fetch failed: {e}"))
-                                } else {
-                                    Err("local B.U.D. storage node not configured".into())
-                                };
-                                let _ = response.send(result);
-                            }
                             NodeCommand::AdminBanPeer { peer_id, response } => {
                                 let result = self
                                     .peer_manager
@@ -3198,65 +3114,6 @@ impl Node {
                                     });
                                 let _ = response.send(result);
                             }
-                            NodeCommand::FetchRemoteContent { cid, response } => {
-                                // 1. Try local fetch first
-                                let local_result = if let Some(ref storage_node) = self.storage_node {
-                                    let content_id = bud_node::store::ContentId(cid);
-                                    storage_node.store().get(&content_id)
-                                } else {
-                                    Err(bud_node::store::StoreError::NotFound(bud_node::store::ContentId(cid)))
-                                };
-
-                                match local_result {
-                                    Ok(data) => {
-                                        let _ = response.send(Ok(data));
-                                    }
-                                    Err(_) => {
-                                        // 2. Fetch from remote P2P peers
-                                        // A poisoned PeerManager mutex must not
-                                        // take the node down over a content
-                                        // fetch. Every other lock site here
-                                        // either matches on the result or exits
-                                        // deliberately; this one used a bare
-                                        // unwrap, so one panic while the lock
-                                        // was held turned an optional Bitswap
-                                        // fetch into a node-wide crash.
-                                        let peers =
-                                            self.peer_manager_lock().connected_peers();
-                                        if peers.is_empty() {
-                                            let _ = response.send(Err("No connected peers for P2P fetch".into()));
-                                        } else {
-                                            let entry = self.pending_bitswap_fetches.entry(cid).or_default();
-                                            entry.retain(|sender| !sender.is_closed());
-                                            if entry.len() >= MAX_PENDING_BITSWAP_FETCH_WAITERS {
-                                                let _ = response.send(Err(format!(
-                                                    "too many pending remote content fetches for {}",
-                                                    hex::encode(cid)
-                                                )));
-                                                continue;
-                                            }
-                                            entry.push(response);
-                                            let want_cid = bud_node::store::ContentId(cid);
-                                            // One attempt per peer asked;
-                                            // the counter is what lets a failing route
-                                            // (not_found, bad response, disconnect)
-                                            // retire the waiters instead of parking them.
-                                            *self
-                                                .bitswap_pending_attempts
-                                                .entry(cid)
-                                                .or_insert(0) += peers.len();
-                                            for peer in &peers {
-                                                let request_id = self.swarm.behaviour_mut().bitswap.send_request(
-                                                    peer,
-                                                    bud_node::BitswapRequest { want_cid },
-                                                );
-                                                self.bitswap_requests.insert(request_id, want_cid);
-                                                self.bitswap_request_peers.insert(request_id, *peer);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -3267,7 +3124,7 @@ impl Node {
                         }
                         SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
                             let remote = endpoint.get_remote_address();
-                            let subnet = ipv4_slash24(remote);
+                            let subnet = subnet_bucket(remote);
                             // Security review (HIGH): a banned peer
                             // could reconnect and carry on issuing
                             // /sync requests, because the handshaked
@@ -3295,7 +3152,7 @@ impl Node {
                                 .can_admit_subnet(subnet);
                             if !admit {
                                 warn!(
-                                    "Eclipse bound: rejecting {} from {:?} (/24 limit)",
+                                    "Eclipse bound: rejecting {} from {:?} (per-subnet limit)",
                                     peer_id, subnet
                                 );
                                 let _ = self.swarm.disconnect_peer_id(peer_id);
@@ -3407,44 +3264,6 @@ impl Node {
                             num_established,
                             ..
                         } => {
-                            // Retire ONLY Bitswap requests addressed to `peer_id` when its
-                            // last connection closes, and recompute remaining live asks per
-                            // cid from `bitswap_requests` so unrelated peer churn never
-                            // drains in-flight fetches (CWE-404).
-                            if num_established == 0 {
-                                let retired_ids: Vec<_> = self
-                                    .bitswap_request_peers
-                                    .iter()
-                                    .filter_map(|(req_id, p)| (*p == peer_id).then_some(*req_id))
-                                    .collect();
-                                let mut affected_cids = std::collections::BTreeSet::new();
-                                for req_id in retired_ids {
-                                    self.bitswap_request_peers.remove(&req_id);
-                                    if let Some(want) = self.bitswap_requests.remove(&req_id) {
-                                        affected_cids.insert(want.0);
-                                    }
-                                }
-                                for cid in affected_cids {
-                                    let outstanding = self
-                                        .bitswap_requests
-                                        .values()
-                                        .filter(|want| want.0 == cid)
-                                        .count();
-                                    if outstanding == 0 {
-                                        self.bitswap_pending_attempts.remove(&cid);
-                                        if let Some(senders) = self.pending_bitswap_fetches.remove(&cid) {
-                                            for sender in senders {
-                                                let _ = sender.send(Err(format!(
-                                                    "no peer served content {} (peers disconnected)",
-                                                    hex::encode(cid)
-                                                )));
-                                            }
-                                        }
-                                    } else {
-                                        self.bitswap_pending_attempts.insert(cid, outstanding);
-                                    }
-                                }
-                            }
                             // Same treatment: a poisoned lock used to
                             // report every close as a real disconnect,
                             // which drifts `peer_count` in the opposite
@@ -3702,11 +3521,8 @@ impl Node {
                                                 }
                                             }
                                             match self.chain.validate_and_add_block(block.clone()).await {
-                                                Ok(pruned_cids) => {
+                                                Ok(_pruned_cids) => {
                                                     info!("Added block #{} to local chain", block.index);
-                                                    for cid in pruned_cids {
-                                                        let _ = self.command_tx.send(NodeCommand::StoragePrune { cid }).await;
-                                                    }
                                                     {
                                                         let mut pm = self.peer_manager_lock();
                                                         pm.report_good_behavior(&peer_id);
@@ -3948,10 +3764,7 @@ impl Node {
                                                         let h = self.chain.get_height().await;
                                                         if block.index == h + 1 {
                                                             match self.chain.validate_and_add_block(block.clone()).await {
-                                                                Ok(pruned_cids) => {
-                                                                    for cid in pruned_cids {
-                                                                        let _ = self.command_tx.send(NodeCommand::StoragePrune { cid }).await;
-                                                                    }
+                                                                Ok(_pruned_cids) => {
                                                                 }
                                                                 Err(e) => warn!(
                                                                     peer = %peer_id,
@@ -3968,10 +3781,7 @@ impl Node {
                                                     let h = self.chain.get_height().await;
                                                     if block.index == h + 1 {
                                                         match self.chain.validate_and_add_block(block.clone()).await {
-                                                            Ok(pruned_cids) => {
-                                                                for cid in pruned_cids {
-                                                                    let _ = self.command_tx.send(NodeCommand::StoragePrune { cid }).await;
-                                                                }
+                                                            Ok(_pruned_cids) => {
                                                             }
                                                             Err(e) => warn!(
                                                                 peer = %peer_id,
@@ -4069,11 +3879,8 @@ impl Node {
                                             let h = self.chain.get_height().await;
                                             if block.index > h {
                                                 match self.chain.validate_and_add_block(block.clone()).await {
-                                                    Ok(pruned_cids) => {
+                                                    Ok(_pruned_cids) => {
                                                         info!("Snap-sync applied block #{}", block.index);
-                                                        for cid in pruned_cids {
-                                                            let _ = self.command_tx.send(NodeCommand::StoragePrune { cid }).await;
-                                                        }
                                                     }
                                                     Err(e) => warn!("Snap-sync block #{} failed: {}", block.index, e),
                                                 }
@@ -4273,6 +4080,7 @@ impl Node {
                                                         scheme_id:
                                                             crate::chain::finality::BLS_SCHEME_RFC9380_V1
                                                                 .to_string(),
+                                                        seat_table_version: cert.seat_table_version,
                                                     }
                                                     .to_bytes(),
                                                 );
@@ -4318,6 +4126,7 @@ impl Node {
                                         bitmap,
                                         set_hash,
                                         scheme_id,
+                                        seat_table_version,
                                     } => {
                                         let rate_limit_ok = self.peer_manager_lock().check_vote_rate_limit(&peer_id);
                                         if !rate_limit_ok {
@@ -4352,6 +4161,7 @@ impl Node {
                                             agg_sig_bls,
                                             bitmap,
                                             set_hash,
+                                            seat_table_version,
                                         };
 
                                         let qc_checkpoint_hash = cert.checkpoint_hash.clone();
@@ -4539,9 +4349,21 @@ impl Node {
                             }
                         }
                         SwarmEvent::Behaviour(BudlumBehaviourEvent::Identify(identify::Event::Received { info, .. })) => {
-                            info!("Received identity from {:?}", info.public_key.to_peer_id());
+                            let identified = info.public_key.to_peer_id();
+                            info!("Received identity from {identified:?}");
                             for addr in info.listen_addrs {
-                                self.swarm.behaviour_mut().kad.add_address(&info.public_key.to_peer_id(), addr);
+                                // Kademlia poisoning (BLG-034): an advertisement
+                                // is taken on the advertiser's word, so a
+                                // private address is only believable on a
+                                // private network.
+                                if !advertised_address_is_allowed(
+                                    &addr,
+                                    self.accept_private_peer_addresses,
+                                ) {
+                                    warn!("Refusing private address {addr} from {identified}");
+                                    continue;
+                                }
+                                self.swarm.behaviour_mut().kad.add_address(&identified, addr);
                             }
                         }
                         SwarmEvent::Behaviour(BudlumBehaviourEvent::Kad(KademliaEvent::RoutingUpdated { peer, .. })) => {
@@ -4866,12 +4688,9 @@ impl Node {
                                                                     if block.index == h + 1 {
                                                                         let index = block.index;
                                                                         match self.chain.validate_and_add_block(block).await {
-                                                                            Ok(pruned_cids) => {
+                                                                            Ok(_pruned_cids) => {
                                                                                 info!("Added block #{index} to local chain");
                                                                                 joined = joined.saturating_add(1);
-                                                                                for cid in pruned_cids {
-                                                                                    let _ = self.command_tx.send(NodeCommand::StoragePrune { cid }).await;
-                                                                                }
                                                                             }
                                                                             // Silent refusal is how a follower can fetch the
                                                                             // same range every second and never move: the
@@ -4974,129 +4793,6 @@ impl Node {
                                 _ => {}
                             }
                         }
-                        SwarmEvent::Behaviour(BudlumBehaviourEvent::Bitswap(event)) => {
-                            if let request_response::Event::OutboundFailure { request_id, .. } = &event {
-                                self.bitswap_request_peers.remove(request_id);
-                                if let Some(want) = self.bitswap_requests.remove(request_id) {
-                                    let cid = want.0;
-                                    let outstanding = self
-                                        .bitswap_requests
-                                        .values()
-                                        .filter(|other| other.0 == cid)
-                                        .count();
-                                    if outstanding == 0 {
-                                        self.bitswap_pending_attempts.remove(&cid);
-                                        if let Some(senders) = self.pending_bitswap_fetches.remove(&cid) {
-                                            for sender in senders {
-                                                let _ = sender.send(Err(format!(
-                                                    "no peer served content {} (all attempts failed)",
-                                                    hex::encode(cid)
-                                                )));
-                                            }
-                                        }
-                                    } else {
-                                        self.bitswap_pending_attempts.insert(cid, outstanding);
-                                    }
-                                }
-                            }
-                            if let Some(ref bitswap) = self.storage_node {
-                                if let request_response::Event::Message { peer, message, .. } = event
-                                {
-                                    match message {
-                                        request_response::Message::Request {
-                                            request,
-                                            channel,
-                                            ..
-                                        } => {
-                                            // The sync request/response path already
-                                            // refuses banned, unhandshaked and
-                                            // rate-limited peers. Bitswap serves bytes
-                                            // from the same node to the same peer set and
-                                            // was outside that boundary, so a peer banned
-                                            // for misbehaviour on every other protocol
-                                            // kept pulling storage chunks.
-                                            let request_allowed = {
-                                                let mut pm = self.peer_manager_lock();
-                                                !pm.is_banned(&peer)
-                                                    && pm.is_handshaked(&peer)
-                                                    && pm.check_rate_limit(&peer)
-                                            };
-                                            if !request_allowed {
-                                                warn!("Rejected Bitswap request from banned/unhandshaked/rate-limited peer {peer}");
-                                                continue;
-                                            }
-                                            let response = bitswap.handle_request(request);
-                                            let _ = self
-                                                .swarm
-                                                .behaviour_mut()
-                                                .bitswap
-                                                .send_response(channel, response);
-                                        }
-                                        request_response::Message::Response { request_id, response } => {
-                                            let response_cid = response.cid;
-                                            let is_not_found = response.not_found;
-                                            // MEDIUM (CWE-345): the response must be for the
-                                            // requested block. The requested cid comes from the
-                                            // request we sent, never from the response itself.
-                                            self.bitswap_request_peers.remove(&request_id);
-                                            let Some(requested_cid) = self.bitswap_requests.remove(&request_id) else {
-                                                warn!("Unsolicited Bitswap response from {peer}");
-                                                self.peer_manager_lock().report_bad_behavior(&peer);
-                                                continue;
-                                            };
-                                            let mut attempt_failed = true;
-                                            if let Err(e) = bitswap.handle_response(requested_cid, response) {
-                                                self.peer_manager_lock().report_bad_behavior(&peer);
-                                                warn!("Bitswap response from {peer} failed: {e}");
-                                            } else {
-                                                {
-                                                    let mut pm = self.peer_manager_lock();
-                                                    pm.report_good_behavior(&peer);
-                                                }
-                                                if !is_not_found {
-                                                    let cid_bytes = requested_cid.0;
-                                                    if let Ok(data) = bitswap.store().get(&response_cid) {
-                                                        // Delivered: retire the waiters and
-                                                        // every bookkeeping entry for the cid.
-                                                        attempt_failed = false;
-                                                        self.bitswap_pending_attempts.remove(&cid_bytes);
-                                                        if let Some(senders) = self.pending_bitswap_fetches.remove(&cid_bytes) {
-                                                            for sender in senders {
-                                                                let _ = sender.send(Ok(data.clone()));
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            // Recompute remaining live asks from
-                                            // `bitswap_requests` using `requested_cid` (never
-                                            // `response_cid`, which is peer-chosen!).
-                                            if attempt_failed {
-                                                let cid_bytes = requested_cid.0;
-                                                let outstanding = self
-                                                    .bitswap_requests
-                                                    .values()
-                                                    .filter(|want| want.0 == cid_bytes)
-                                                    .count();
-                                                if outstanding == 0 {
-                                                    self.bitswap_pending_attempts.remove(&cid_bytes);
-                                                    if let Some(senders) = self.pending_bitswap_fetches.remove(&cid_bytes) {
-                                                        for sender in senders {
-                                                            let _ = sender.send(Err(format!(
-                                                                "no peer served content {} (all attempts failed)",
-                                                                hex::encode(cid_bytes)
-                                                            )));
-                                                        }
-                                                    }
-                                                } else {
-                                                    self.bitswap_pending_attempts.insert(cid_bytes, outstanding);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         SwarmEvent::Behaviour(BudlumBehaviourEvent::Witness(event)) => {
                             use crate::network::witness_protocol::{
                                 check_witnesses, WitnessRequest, WitnessResponse,
@@ -5110,7 +4806,7 @@ impl Node {
                                         },
                                     ..
                                 } => {
-                                    // Same boundary as /sync and Bitswap: a banned,
+                                    // Same boundary as /sync: a banned,
                                     // unhandshaked or rate-limited peer gets nothing.
                                     let allowed = {
                                         let mut pm = self.peer_manager_lock();
@@ -5344,14 +5040,6 @@ mod mobile_profile_wiring_tests {
             production.contains("ChallengePolicy::peer_budget"),
             "the node must derive its peer cap from the mobile profile"
         );
-        assert!(
-            production.contains("fn accepts_storage_work"),
-            "the storage sweep must ask the profile whether the device takes \
-             storage work at this power level"
-        );
-
-        // Canary: the split has to actually remove something, or the three
-        // assertions above silently went back to reading the whole file.
         assert!(
             production.len() < whole.len(),
             "the #[cfg(test)] split matched nothing, so this test is measuring \
@@ -5741,20 +5429,6 @@ mod sync_handler_order_tests {
         ));
     }
 
-    /// The cid a Bitswap response is checked against comes from the
-    /// request we sent.
-    #[test]
-    fn bitswap_response_is_checked_against_the_requested_cid() {
-        let code = production();
-        let own = format!("handle_response({}, response)", "response_cid");
-        assert!(
-            !code.contains(&own),
-            "the response must not vouch for itself"
-        );
-        assert!(code.contains("handle_response(requested_cid, response)"));
-        assert!(code.contains("self.bitswap_requests.insert(request_id, want_cid)"));
-        assert!(code.contains("self.bitswap_requests.remove(request_id)"));
-    }
 
     /// Ban and rate limit run before the protobuf decode.
     #[test]
@@ -6033,5 +5707,102 @@ mod gossip_author_tests {
         assert!(handshake_origin_matches_peer(relay, Some(relay)));
         assert!(!handshake_origin_matches_peer(relay, Some(author)));
         assert!(!handshake_origin_matches_peer(relay, None));
+    }
+}
+
+#[cfg(test)]
+mod subnet_policy_tests {
+    use super::*;
+    use crate::network::peer_manager::SubnetKey;
+
+    fn addr(s: &str) -> Multiaddr {
+        s.parse().expect("test multiaddrs are valid")
+    }
+
+    fn v4(a: u8, b: u8, c: u8, d: u8) -> std::net::IpAddr {
+        std::net::IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d))
+    }
+
+    /// The eclipse bucket ignores the address family: the mapped form is the
+    /// IPv4 address it carries, not a second budget.
+    ///
+    /// Canary: keep the old IPv4-only extractor and the mapped assertion is
+    /// `None` against `Some` on the same host.
+    #[test]
+    fn ipv4_mapped_address_is_not_a_new_subnet() {
+        let plain = subnet_bucket(&addr("/ip4/203.0.113.7/tcp/4001"));
+        let mapped = subnet_bucket(&addr("/ip6/::ffff:203.0.113.7/tcp/4001"));
+        assert_eq!(plain, Some(SubnetKey::from_ip(v4(203, 0, 113, 7))));
+        assert_eq!(
+            mapped, plain,
+            "::ffff:203.0.113.7 must land in the 203.0.113.0/24 bucket"
+        );
+    }
+
+    /// Two addresses inside one IPv6 `/64` are one subscriber and one bucket.
+    #[test]
+    fn ipv6_peers_in_one_slash64_share_a_bucket() {
+        let first = subnet_bucket(&addr("/ip6/2001:db8:1:2::1/tcp/4001"));
+        let second = subnet_bucket(&addr("/ip6/2001:db8:1:2:ffff::2/tcp/4001"));
+        let other = subnet_bucket(&addr("/ip6/2001:db8:1:3::1/tcp/4001"));
+        assert_eq!(first, second, "one /64 is one bucket");
+        assert_ne!(first, other, "a different /64 is a different bucket");
+        assert!(first.is_some(), "an IPv6 peer must be bucketed at all");
+    }
+
+    /// Kademlia poisoning: an advertisement is the advertiser's word, so on a
+    /// public network only a globally routable address may enter the table.
+    #[test]
+    fn kademlia_refuses_private_addresses_on_public_network() {
+        for advertised in [
+            "/ip4/127.0.0.1/tcp/4001",
+            "/ip4/10.1.2.3/tcp/4001",
+            "/ip4/172.16.9.9/tcp/4001",
+            "/ip4/192.168.0.7/tcp/4001",
+            "/ip4/169.254.10.10/tcp/4001",
+            "/ip4/100.64.0.1/tcp/4001",
+            "/ip4/0.0.0.0/tcp/4001",
+            "/ip6/::1/tcp/4001",
+            "/ip6/fd00::1/tcp/4001",
+            "/ip6/fe80::1/tcp/4001",
+            "/ip6/::ffff:10.1.2.3/tcp/4001",
+        ] {
+            assert!(
+                !advertised_address_is_allowed(&addr(advertised), false),
+                "{advertised} must be refused on a public network"
+            );
+            assert!(
+                advertised_address_is_allowed(&addr(advertised), true),
+                "{advertised} must stay usable on devnet"
+            );
+        }
+        for advertised in [
+            "/ip4/8.8.8.8/tcp/4001",
+            "/ip6/2001:db8::1/tcp/4001",
+            "/dns4/seed.example/tcp/4001",
+        ] {
+            assert!(
+                advertised_address_is_allowed(&addr(advertised), false),
+                "{advertised} is dialable and must be accepted"
+            );
+        }
+    }
+
+    /// The public profiles close private advertisements; devnet keeps them,
+    /// because on devnet every peer is on loopback.
+    #[test]
+    fn public_profiles_close_private_advertisements() {
+        use crate::core::chain_config::Network;
+        assert!(profile_rejects_private_advertisements(Network::Mainnet));
+        assert!(profile_rejects_private_advertisements(Network::Testnet));
+        assert!(
+            !profile_rejects_private_advertisements(Network::Devnet),
+            "devnet peers are on loopback: private is the topology"
+        );
+        // The same decision `apply_network_security` installs on the node.
+        assert!(!advertised_address_is_allowed(
+            &addr("/ip4/127.0.0.1/tcp/4001"),
+            !profile_rejects_private_advertisements(Network::Testnet)
+        ));
     }
 }

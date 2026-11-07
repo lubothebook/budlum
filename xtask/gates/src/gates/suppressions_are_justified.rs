@@ -257,7 +257,7 @@ const BUDGETS: &[Budget] = &[
             Budget {
         file: "src/chain/blockchain.rs",
         lint: "clippy::too_many_arguments",
-        count: 4,
+        count: 2,
         reason: "the bridge lock, verified-mint and settlement evidence entry points, whose arguments are all required and none of which groups into a meaningful struct; the storage escrow wrappers that were here left when deal opening and repair acceptance became `StorageTx` transactions, and the evidence path arrived with the slashing work",
     },
         Budget {
@@ -297,12 +297,6 @@ const BUDGETS: &[Budget] = &[
         reason: "fields or helpers read only under a feature or by a subset of tests; kept beside their siblings rather than deleted and rewritten",
     },
     Budget {
-        file: "src/domain/storage_deal.rs",
-        lint: "clippy::too_many_arguments",
-        count: 5,
-        reason: "a consensus or storage entry point whose arguments are all required and none of which groups into a meaningful struct; bundling them would hide which fields a caller must supply. The fifth is `answer_coding_audit`: the answer, the audit it answers and the clock reading are three different things, and the column, the byte and the inclusion path have to stay three slices a caller cannot confuse",
-    },
-    Budget {
         file: "src/ai_inference/executor.rs",
         lint: "clippy::too_many_arguments",
         count: 1,
@@ -319,12 +313,6 @@ const BUDGETS: &[Budget] = &[
         lint: "clippy::large_enum_variant",
         count: 1,
         reason: "the large variant is the common case; boxing it would allocate on the hot path to satisfy a size lint",
-    },
-    Budget {
-        file: "src/network/node.rs",
-        lint: "clippy::single_match",
-        count: 1,
-        reason: "a match kept single-armed on purpose because the other arms are coming and an if-let would have to be rewritten",
     },
     Budget {
         file: "src/network/proto_conversions.rs",
@@ -387,7 +375,7 @@ const BUDGETS: &[Budget] = &[
         reason: "next_checkpoint_height cannot be const: the nightly jobs (udeps, determinism) reject trait calls inside const fns with E0658, and this fn was reverted from const in c72b911 for exactly that reason",
     },
     Budget {
-        file: "src/storage/pact_binding.rs",
+        file: "src/account_abstraction/pact_binding.rs",
         lint: "clippy::missing_const_for_fn",
         count: 3,
         reason: "Pact::new, is_residual_only and PactRegistry::new cannot be const: the nightly jobs (udeps, determinism) reject trait calls inside const fns with E0658, and these fns were reverted from const in c72b911 for exactly that reason",
@@ -423,7 +411,7 @@ const BUDGETS: &[Budget] = &[
         reason: "the module header says it is not wired yet (WIRING note), so its items have no caller; the allow is removed when the module is wired",
     },
     Budget {
-        file: "crates/budscan/src/query.rs",
+        file: "crates/budlum-explorer/src/query.rs",
         lint: "clippy::too_many_lines",
         count: 1,
         reason: "one linear query dispatcher in the light-client crate that reads worse split into pieces called once each",
@@ -435,7 +423,7 @@ const BUDGETS: &[Budget] = &[
         reason: "two visitor state structs whose booleans are independent guard flags of one syn walk; a bit set would hide which guard each flag records",
     },
     Budget {
-        file: "xtask/gates/src/gates/budscan_patchset.rs",
+        file: "xtask/gates/src/gates/explorer_patchset.rs",
         lint: "clippy::too_many_lines",
         count: 1,
         reason: "the patch-set check is one linear sequence of independent verdicts; splitting it would scatter the failure messages that read in order",
@@ -502,10 +490,52 @@ const BUDGETS: &[Budget] = &[
         reason: "the reseal envelope tuple mirrors the wire format field for field",
     },
     Budget {
-        file: "src/storage/db.rs",
-        lint: "dead_code",
+        file: "budzero/bud-compiler/tests/regression.rs",
+        lint: "clippy::expect_used",
         count: 1,
-        reason: "the cfg-gated reader exists for the on-disk format migration and no other cfg reaches it; removing it would strand rows written by the previous format",
+        reason: "an integration test whose helpers sit outside a `#[test]` body, so `allow-unwrap-in-tests` in clippy.toml does not reach them; a panic here fails the test run",
+    },
+    Budget {
+        file: "budzero/bud-compiler/tests/regression.rs",
+        lint: "clippy::unwrap_used",
+        count: 1,
+        reason: "an integration test whose helpers sit outside a `#[test]` body, so `allow-unwrap-in-tests` in clippy.toml does not reach them; a panic here fails the test run",
+    },
+    Budget {
+        file: "budzero/bud-proof/tests/regression.rs",
+        lint: "clippy::expect_used",
+        count: 1,
+        reason: "an integration test whose helpers sit outside a `#[test]` body, so `allow-unwrap-in-tests` in clippy.toml does not reach them; a panic here fails the test run",
+    },
+    Budget {
+        file: "budzero/bud-proof/tests/regression.rs",
+        lint: "clippy::unwrap_used",
+        count: 1,
+        reason: "an integration test whose helpers sit outside a `#[test]` body, so `allow-unwrap-in-tests` in clippy.toml does not reach them; a panic here fails the test run",
+    },
+    Budget {
+        file: "crates/uel-abi/tests/frames.rs",
+        lint: "clippy::expect_used",
+        count: 1,
+        reason: "an integration test in standalone workspace `crates/uel-abi` (`unwrap_used`/`expect_used` denied crate-wide); panicking fails the test",
+    },
+    Budget {
+        file: "crates/uel-abi/tests/frames.rs",
+        lint: "clippy::unwrap_used",
+        count: 1,
+        reason: "an integration test in standalone workspace `crates/uel-abi` (`unwrap_used`/`expect_used` denied crate-wide); panicking fails the test",
+    },
+    Budget {
+        file: "crates/uel-abi/tests/transport.rs",
+        lint: "clippy::expect_used",
+        count: 1,
+        reason: "an integration test in standalone workspace `crates/uel-abi` (`unwrap_used`/`expect_used` denied crate-wide); panicking fails the test",
+    },
+    Budget {
+        file: "crates/uel-abi/tests/transport.rs",
+        lint: "clippy::unwrap_used",
+        count: 1,
+        reason: "an integration test in standalone workspace `crates/uel-abi` (`unwrap_used`/`expect_used` denied crate-wide); panicking fails the test",
     },
 ];
 
