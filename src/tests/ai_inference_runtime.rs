@@ -88,6 +88,74 @@ fn result_transaction_with_commitment(
 }
 
 #[test]
+fn blg_100_ai_request_cannot_escrow_vesting_locked_balance() {
+    let requester = Address::from([0x63; 32]);
+    let mut state = AccountState::new();
+    let (spec, request) = model_and_request(requester);
+    state.ai_registry.register_model(spec).expect("model");
+    state.add_balance(&requester, 101);
+    state.team_vesting = Some((
+        requester,
+        crate::tokenomics::VestingSchedule {
+            total: 100,
+            start_epoch: 0,
+            cliff_epochs: 10,
+            duration_epochs: 100,
+        },
+    ));
+    assert_eq!(state.spendable_balance(&requester), 1);
+    let root_before = state.calculate_state_root();
+    let tx = Transaction::new_with_chain_id(
+        requester,
+        Address::zero(),
+        0,
+        1,
+        0,
+        vec![],
+        DEFAULT_CHAIN_ID,
+        TransactionType::AiInferenceRequest(request.clone()),
+    );
+
+    assert_eq!(tx.checked_admission_cost(), Some(101));
+    let error = Executor::apply_transaction_checked(&mut state, &tx).unwrap_err();
+    assert_eq!(error.code(), "insufficient_balance");
+    assert_eq!(state.calculate_state_root(), root_before);
+    assert_eq!(state.get_balance(&requester), 101);
+    assert_eq!(state.get_nonce(&requester), 0);
+    assert!(!state.ai_registry.requests.contains_key(&request.request_id));
+}
+
+#[test]
+fn blg_197_ai_escrow_plus_fee_overflow_is_atomic() {
+    let requester = Address::from([0x64; 32]);
+    let mut state = AccountState::new();
+    let (spec, mut request) = model_and_request(requester);
+    request.max_fee = u64::MAX;
+    request.request_id = request.calculate_id();
+    state.ai_registry.register_model(spec).expect("model");
+    state.add_balance(&requester, u64::MAX);
+    let root_before = state.calculate_state_root();
+    let tx = Transaction::new_with_chain_id(
+        requester,
+        Address::zero(),
+        0,
+        1,
+        0,
+        vec![],
+        DEFAULT_CHAIN_ID,
+        TransactionType::AiInferenceRequest(request.clone()),
+    );
+
+    assert_eq!(tx.checked_admission_cost(), None);
+    let error = Executor::apply_transaction_checked(&mut state, &tx).unwrap_err();
+    assert_eq!(error.code(), "transaction_cost_overflow");
+    assert_eq!(state.calculate_state_root(), root_before);
+    assert_eq!(state.get_balance(&requester), u64::MAX);
+    assert_eq!(state.get_nonce(&requester), 0);
+    assert!(!state.ai_registry.requests.contains_key(&request.request_id));
+}
+
+#[test]
 fn signed_ai_bond_debits_balance_and_registers_role8() {
     let mut state = AccountState::new();
     let operator = Address::from([0x11; 32]);
