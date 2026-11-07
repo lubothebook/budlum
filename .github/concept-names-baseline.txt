@@ -1,0 +1,43 @@
+# The retired concept names, with the files and lines that still carry each one.
+#
+# `concept-names` reads config/naming/concept_map.toml and compares the tree
+# with this file. The numbers only go DOWN. A concept that gains a file or a
+# line fails the gate. A concept whose count falls must have its number lowered
+# here in the same change, so finished work is recorded instead of quietly
+# banked. WP-43 sets the map to absolute mode at the end of T-Launch, and then
+# every line here reaches zero.
+#
+# Format: <key>\t<files>\t<lines>
+# The key is the new name in the map, lowercased, with punctuation folded to a
+# hyphen. It is derived, never chosen: the map is written verbatim from the
+# directive, and a hand-written key could drift from the name it stands for.
+#
+# Recorded: 2026-11-07, from a scan of the roots the map names. Every line below
+# was measured; none was guessed.
+hash-chain-election	11	207
+faucet	1	13
+quantumalertlevel-advisory-restricted-isolated	6	12
+shared-security	23	76
+app-binding	41	753
+data-market	70	694
+budlum-explorer	32	244
+explorer-evidence	7	52
+identity-profile	10	61
+nft-folders	7	137
+education-domain	12	32
+app-registry	25	174
+project-manifest	6	49
+content-gateway	5	8
+state-recovery	43	303
+sigagg-crate-bud-sigagg	13	91
+bud3-object-objectcommitment-bof1	50	1198
+src-storage-bud3	30	186
+wide-stripe	0	0
+access-tiering-tiertransition	5	15
+removed	13	103
+sealed-object-ciphertext-chunks-cipherprofile-aead-fieldnative-plaintext-root-deletion-set-escroweddisclosure-predicateproof	0	0
+private-transfer-v1	0	0
+domainfinalityproof-blockaggregateproof-remotestateview	0	0
+ai-verification-verificationlevel-deterministicinferenceprofile-answerproofbundle-on-device-assistant	7	16
+budzero-core-budzero-rv32-budzero-guest-mobileproverprofile	1	1
+object-layer-and-section-2-2-object-layer-terms	0	0

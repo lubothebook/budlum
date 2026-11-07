@@ -28,3 +28,11 @@ crates/ai-inference/crates/ai-tune/src/schema.rs	4
 # and the red-team test feeds through the walk.
 src/registry/identity_fill.rs	1
 src/tests/ported_slice_redteam.rs	5
+# Recorded 2026-11-07, with the concept name map. config/naming/concept_map.toml
+# is written verbatim from the directive's Appendix C, and Turkish is what the
+# lines are about: every record carries the retired Turkish name and its Turkish
+# term beside the English one. Retired names that carry diacritics cannot be
+# translated - a renamed concept has to be recognisable by the spelling it is
+# being renamed away from, or the count in .github/concept-names-baseline.txt
+# would be counting something nobody can find.
+config/naming/concept_map.toml	37
