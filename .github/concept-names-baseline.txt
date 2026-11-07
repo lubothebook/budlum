@@ -1,0 +1,31 @@
+# Legacy concept-name counts per entry of config/naming/concept_map.toml.
+# One line per entry: name|files|matches. A ratchet: the numbers may only fall.
+# Lower it with: BUDLUM_CONCEPT_NAMES_WRITE=1 budlum-gates concept-names
+# The map moves to `absolute` mode once every line is zero.
+Anaç|0|0
+Atlas|6|48
+Budscan|29|241
+D-Web Passport|9|80
+DeEd|12|31
+Developer OS|6|50
+Filiz (faucet)|1|14
+Filiz (leader election)|11|225
+Fotosentez|7|19
+GT-1|0|0
+Gonca|0|0
+Graft|39|840
+Gövde|1|1
+Kiragi|6|16
+Liquid storage|0|0
+Living Threshold|5|15
+Mikoriza|21|71
+Mobile Self|14|120
+PUL|11|97
+Pollen|69|732
+Regeneration|29|110
+Sera|0|0
+Tarif|51|1426
+Universal Gateway|4|7
+Vault (SocialFi)|7|152
+budlumxyz|25|202
+three_* modules|30|196

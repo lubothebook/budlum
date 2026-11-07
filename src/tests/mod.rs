@@ -22,6 +22,8 @@ pub mod regression_canaries;
 pub mod bench_performance;
 #[cfg(test)]
 pub mod block_reward;
+#[cfg(test)]
+pub mod audit_lane_a;
 // State-machine sharding (Whitepaper v1.3): block-level shards commitment
 // production/validation and atomic cross-shard transfers.
 #[cfg(test)]
@@ -102,7 +104,7 @@ pub mod private_transfer_fee_market;
 #[cfg(test)]
 pub mod prover;
 #[cfg(test)]
-pub mod regeneration_recovery;
+pub mod state_recovery;
 #[cfg(test)]
 pub mod relayer_liveness;
 // chain relayer proof cryptographic verification + M5 budlumxyz fee + M4 BNS fee
@@ -228,7 +230,49 @@ pub mod consensus_bypass_locks;
 pub mod block_clock;
 #[cfg(test)]
 pub mod real_chain_fixtures;
-// Effect-asserting locks for the slashing matrix and the overflow rule
-//.
+// Effect-asserting locks for the slashing matrix and the overflow rule.
 #[cfg(test)]
 pub mod refusal_locks;
+
+// Regression locks for fixes already in the tree, one module per area.
+#[cfg(test)]
+pub mod regression_ai_storage;
+#[cfg(test)]
+pub mod regression_bridge;
+#[cfg(test)]
+pub mod regression_chain;
+#[cfg(test)]
+pub mod regression_ops_crypto;
+
+// Validator classes and the single registration door.
+#[cfg(test)]
+pub mod validator_classes;
+
+// The B.U.D. 3.0 storage door end to end.
+#[cfg(test)]
+pub mod bud3_door;
+
+// Object replacement: the second representation of one content id
+// (section 6.14).
+#[cfg(test)]
+pub mod bud3_replace;
+
+// WP-35: the conformance catalog and the execution limits agree with the code.
+#[cfg(test)]
+pub mod conformance_locks;
+
+// The persistence move is behaviour-neutral.
+#[cfg(test)]
+pub mod persistence_move;
+
+// WP-14 Instant Duty Handover and Disaster Recovery Mode suite.
+#[cfg(test)]
+pub mod wp14_handover_recovery;
+
+// WP-17 state transition, vesting, staking, governance, sharding, and V2 snapshot hardening.
+#[cfg(test)]
+pub mod wp17_state_hardening;
+
+// WP-44 domains, cross-domain bridge, settlement, and testnet feature-matrix locks.
+#[cfg(test)]
+pub mod wp44_domains_bridge_settlement;
