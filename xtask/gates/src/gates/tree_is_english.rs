@@ -10,7 +10,9 @@
 //! Exactly three things:
 //!
 //!   * [`ALLOWED_FILES`] - `README.tr.md` is a deliberate translation for
-//!     Turkish readers and is published as such.
+//!     Turkish readers and is published as such; the concept-name register and
+//!     its English table hold Turkish names because the Turkish name is the name
+//!     being retired; and two gate files hold the vocabulary they search for.
 //!   * [`ALLOWED_DIRS`] - a Turkish localisation directory. The strings shown
 //!     to a Turkish user ARE the product there; translating them into English
 //!     would delete the feature rather than clean the tree.
@@ -98,6 +100,18 @@ const ALLOWED_FILES: &[&str] = &[
     // forbids and the scope words it looks for have to be written in
     // Turkish in its lists. The lists are the only Turkish in the file.
     "xtask/gates/src/gates/pq_claims_are_backed.rs",
+    // The binding concept-name register (directive Appendix C, written by
+    // WP-05). Its `term_tr` field is the Turkish name of a concept and the
+    // `old` field holds the Turkish name being retired, both byte for byte as
+    // the appendix writes them: translating either would delete the name the
+    // register exists to find and retire. The file is a register of Turkish
+    // names, so the exemption is the file's whole content and nothing wider.
+    "config/naming/concept_map.toml",
+    // The English rendering of that register. It is English prose with one
+    // column that cannot be English: the retired names themselves. A naming
+    // table that spells a retired name in a form the search patterns cannot
+    // find is a naming table nobody can use.
+    "docs/NAMING.md",
 ];
 
 /// Path fragments whose contents are a Turkish localisation.
