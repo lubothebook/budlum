@@ -63,6 +63,7 @@ mod gates {
     pub mod classical_crypto_is_paired;
     pub mod clippy_extra;
     pub mod coding_audit_samples_the_relationship;
+    pub mod concept_names;
     pub mod consensus_maps_ordered;
     pub mod consensus_state_only_changes_in_blocks;
     pub mod containment_defaults;
@@ -115,6 +116,7 @@ mod gates {
     pub mod no_new_shell_gates;
     pub mod no_orphan_source_files;
     pub mod no_out_of_block_consensus_writes;
+    pub mod no_legacy_storage;
     pub mod no_pairing_snark_in_verification_path;
     pub mod no_unicode_dashes;
     pub mod no_upstream_brands;
@@ -134,10 +136,12 @@ mod gates {
     pub mod quantum_account;
     pub mod readme_no_deny;
     pub mod reduction_claims;
+    pub mod canonical_programs_reproduce;
     pub mod refusals_no_mutate;
     pub mod regen_health_door;
     pub mod regeneration;
     pub mod rejection_tests;
+    pub mod state_recovery_door;
     pub mod relay;
     pub mod release_profile_pins;
     pub mod repair_fires;
@@ -180,6 +184,7 @@ mod gates {
     pub mod zero_tests_witness;
     pub mod zizmor;
     pub mod zkvm_immune_regeneration;
+    pub mod zkvm_refuses_untrusted_proofs;
 }
 
 /// A gate's plain run: inspect the repo root, return a verdict.
@@ -215,6 +220,14 @@ const GATES: &[Gate] = &[
         run_log: None,
         run_args: None,
         self_test: gates::zkvm_immune_regeneration::self_test,
+    },
+    Gate {
+        name: "zkvm-refuses-untrusted-proofs",
+        replaces: None,
+        run: gates::zkvm_refuses_untrusted_proofs::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::zkvm_refuses_untrusted_proofs::self_test,
     },
     Gate {
         name: "quantum-account",
@@ -310,6 +323,14 @@ const GATES: &[Gate] = &[
         run: gates::transcript_mirrors::run,
         run_args: None,
         self_test: gates::transcript_mirrors::self_test,
+        run_log: None,
+    },
+    Gate {
+        name: "no-legacy-storage",
+        replaces: None,
+        run: gates::no_legacy_storage::run,
+        run_args: None,
+        self_test: gates::no_legacy_storage::self_test,
         run_log: None,
     },
     Gate {
@@ -685,12 +706,28 @@ const GATES: &[Gate] = &[
         self_test: gates::regeneration::self_test,
     },
     Gate {
+        name: "canonical-programs-reproduce",
+        replaces: None,
+        run: gates::canonical_programs_reproduce::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::canonical_programs_reproduce::self_test,
+    },
+    Gate {
         name: "regen-health-door",
         replaces: None,
         run: gates::regen_health_door::run,
         run_log: None,
         run_args: None,
         self_test: gates::regen_health_door::self_test,
+    },
+    Gate {
+        name: "state-recovery-door",
+        replaces: None,
+        run: gates::state_recovery_door::run,
+        run_log: None,
+        run_args: None,
+        self_test: gates::state_recovery_door::self_test,
     },
     Gate {
         name: "relay",
