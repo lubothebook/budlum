@@ -1122,32 +1122,32 @@ pub trait BudlumApi {
         offer_id: u64,
     ) -> Result<serde_json::Value, ErrorObjectOwned>;
 
-    /// List Pollen DataAsset records visible in chain state.
-    #[method(name = "bud_pollenGetDataAssets")]
+    /// List Data Market DataAsset records visible in chain state.
+    #[method(name = "bud_dataMarketGetDataAssets")]
     async fn pollen_get_data_assets(&self) -> Result<serde_json::Value, ErrorObjectOwned>;
 
-    /// List Pollen AccessGrant records visible in chain state.
-    #[method(name = "bud_pollenGetAccessGrants")]
+    /// List Data Market AccessGrant records visible in chain state.
+    #[method(name = "bud_dataMarketGetAccessGrants")]
     async fn pollen_get_access_grants(&self) -> Result<serde_json::Value, ErrorObjectOwned>;
 
-    /// List Pollen SaleAuthorization records visible in chain state.
-    #[method(name = "bud_pollenGetSaleAuthorizations")]
+    /// List Data Market SaleAuthorization records visible in chain state.
+    #[method(name = "bud_dataMarketGetSaleAuthorizations")]
     async fn pollen_get_sale_authorizations(&self) -> Result<serde_json::Value, ErrorObjectOwned>;
 
-    /// List Pollen purchase receipts visible in chain state.
-    #[method(name = "bud_pollenGetPurchaseReceipts")]
+    /// List Data Market purchase receipts visible in chain state.
+    #[method(name = "bud_dataMarketGetPurchaseReceipts")]
     async fn pollen_get_purchase_receipts(&self) -> Result<serde_json::Value, ErrorObjectOwned>;
 
-    /// Build canonical AiInferenceRequest.input_ref for Pollen-gated data reads.
-    #[method(name = "bud_pollenBuildAiInputRef")]
+    /// Build canonical AiInferenceRequest.input_ref for grant-gated data reads.
+    #[method(name = "bud_dataMarketBuildAiInputRef")]
     async fn pollen_build_ai_input_ref(
         &self,
         asset_id: String,
         grant_id: String,
     ) -> Result<serde_json::Value, ErrorObjectOwned>;
 
-    /// Prepare unsigned owner/seller authorization for selling DataAsset pollen.
-    #[method(name = "bud_pollenPrepareSaleAuthorization")]
+    /// Prepare unsigned owner/seller authorization for selling a DataAsset.
+    #[method(name = "bud_dataMarketPrepareSaleAuthorization")]
     async fn pollen_prepare_sale_authorization(
         &self,
         seller: String,
@@ -1158,13 +1158,13 @@ pub trait BudlumApi {
         terms_hash: String,
     ) -> Result<serde_json::Value, ErrorObjectOwned>;
 
-    /// Prepare an authorization-backed Pollen purchase without mutating state.
+    /// Prepare an authorization-backed Data Market purchase without mutating state.
     ///
     /// `buyer_signature`: an ed25519 signature by the buyer bound to the whole
     /// purchase set (authorization, price, duration, max_reads,
     /// payment_commitment, expiry) - finding #358: an unsigned purchase is
     /// not accepted.
-    #[method(name = "bud_pollenPreparePurchase")]
+    #[method(name = "bud_dataMarketPreparePurchase")]
     async fn pollen_prepare_purchase(
         &self,
         authorization_id: String,
@@ -1435,6 +1435,35 @@ pub trait BudlumApi {
     #[method(name = "bud_getValidatorSet")]
     async fn get_validator_set(&self) -> Result<serde_json::Value, ErrorObjectOwned>;
 
+    /// One validator's directory record (class, operator key, quota, offers,
+    /// pending changes), or null.
+    #[method(name = "bud_getValidator")]
+    async fn get_validator(&self, owner: String) -> Result<serde_json::Value, ErrorObjectOwned>;
+
+    /// A B.U.D. 3.0 object record by commitment (hex): header facts, symbol
+    /// roots, references, expiry and due repairs; a deleted object shows its
+    /// tombstone; unknown is null.
+    #[method(name = "bud_storageGetObject")]
+    async fn storage_get_object(
+        &self,
+        commitment: String,
+    ) -> Result<serde_json::Value, ErrorObjectOwned>;
+
+    /// The B.U.D. 3.0 shares a validator holds and their audit state.
+    #[method(name = "bud_storageGetCustody")]
+    async fn storage_get_custody(
+        &self,
+        validator: String,
+    ) -> Result<serde_json::Value, ErrorObjectOwned>;
+
+    /// Validators that offer a relay.
+    #[method(name = "bud_listRelays")]
+    async fn list_relays(&self) -> Result<serde_json::Value, ErrorObjectOwned>;
+
+    /// Validators that offer an upload gateway.
+    #[method(name = "bud_listGateways")]
+    async fn list_gateways(&self) -> Result<serde_json::Value, ErrorObjectOwned>;
+
     /// Domain info by ID.
     #[method(name = "bud_getDomainInfo")]
     async fn get_domain_info(&self, domain_id: u32) -> Result<serde_json::Value, ErrorObjectOwned>;
@@ -1484,6 +1513,21 @@ pub trait BudlumApi {
         requester: String,
         document: String,
     ) -> Result<serde_json::Value, ErrorObjectOwned>;
+
+    /// Read a Universal Object Layer domain charter by settlement domain id.
+    #[method(name = "bud_getCharter")]
+    async fn get_charter(&self, domain_id: u32) -> Result<serde_json::Value, ErrorObjectOwned>;
+
+    /// Read a Universal Object Layer asset class and its recorded custody by 32-byte hex id.
+    #[method(name = "bud_getAssetClass")]
+    async fn get_asset_class(
+        &self,
+        class_id: String,
+    ) -> Result<serde_json::Value, ErrorObjectOwned>;
+
+    /// Read a Universal Object Layer unique/record asset placement by 32-byte hex id.
+    #[method(name = "bud_getAsset")]
+    async fn get_asset(&self, asset_id: String) -> Result<serde_json::Value, ErrorObjectOwned>;
 
     /// WebSocket subscriptions: `kind` is
     /// `newHeads`, `finalizedHeads` or `logs`; `logs` takes an optional

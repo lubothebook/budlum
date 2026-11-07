@@ -102,7 +102,7 @@ pub mod private_transfer_fee_market;
 #[cfg(test)]
 pub mod prover;
 #[cfg(test)]
-pub mod regeneration_recovery;
+pub mod state_recovery;
 #[cfg(test)]
 pub mod relayer_liveness;
 // chain relayer proof cryptographic verification + M5 budlumxyz fee + M4 BNS fee
@@ -228,7 +228,74 @@ pub mod consensus_bypass_locks;
 pub mod block_clock;
 #[cfg(test)]
 pub mod real_chain_fixtures;
-// Effect-asserting locks for the slashing matrix and the overflow rule
-//.
+// Effect-asserting locks for the slashing matrix and the overflow rule.
 #[cfg(test)]
 pub mod refusal_locks;
+
+// Regression locks for fixes already in the tree, one module per area.
+#[cfg(test)]
+pub mod regression_ai_storage;
+#[cfg(test)]
+pub mod regression_bridge;
+#[cfg(test)]
+pub mod regression_chain;
+#[cfg(test)]
+pub mod regression_ops_crypto;
+
+// Validator classes and the single registration door.
+#[cfg(test)]
+pub mod validator_classes;
+
+// The B.U.D. 3.0 storage door end to end.
+#[cfg(test)]
+pub mod bud3_door;
+
+// Prometheus alert rules may only name metrics the node exports.
+#[cfg(test)]
+pub mod alert_rules_reference_existing_metrics;
+#[cfg(test)]
+pub mod alerts_have_runbook_entries;
+
+// Derived object-layer measurement rings and counters.
+#[cfg(test)]
+pub mod object_layer_metrics;
+
+// Readiness series and the operational surfaces that scrape and alert on them.
+#[cfg(test)]
+pub mod backup_covers_persisted_paths;
+#[cfg(test)]
+pub mod caddy_edges_match_the_services;
+#[cfg(test)]
+pub mod compose_topology_matches_services;
+#[cfg(test)]
+pub mod readiness_metrics;
+#[cfg(test)]
+pub mod scrape_topology_covers_the_rules;
+
+// The persistence move is behaviour-neutral.
+#[cfg(test)]
+pub mod persistence_move;
+
+// State transition, vesting, staking, governance, sharding, and snapshot hardening.
+#[cfg(test)]
+pub mod state_hardening;
+
+// Domains, cross-domain bridge, settlement, and testnet feature-matrix locks.
+#[cfg(test)]
+pub mod domains_bridge_settlement;
+
+// Instant Duty Handover and finality recovery.
+#[cfg(test)]
+pub mod handover_recovery;
+
+// Ceremony rehearsal and protocol drills.
+#[cfg(test)]
+pub mod ceremony_and_drills;
+
+// Security, conservation, and privilege-boundary regressions.
+#[cfg(test)]
+pub mod security_review;
+// Object replacement: the second representation of one content id
+// (section 6.14).
+#[cfg(test)]
+pub mod bud3_replace;

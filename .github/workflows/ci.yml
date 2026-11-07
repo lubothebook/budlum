@@ -7,7 +7,7 @@ on:
     # Run on the normal protected bases and on stacked continuation bases.
     # `arena/**` covers this repository's generated continuation branches;
     # `consensus-of-consensuses` keeps upstream stack covered.
-    branches: [main, fix/architecture-tip-adlari, consensus-of-consensuses, 'arena/**']
+    branches: [main, consensus-of-consensuses, 'arena/**']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -597,6 +597,31 @@ jobs:
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- generated-content-is-verifiable 2>&1 | tee -a /tmp/gate-out.log
           exit "${PIPESTATUS[0]}"
+      # `bud3.proto` is not compiled by the Rust
+      # workspace, so nothing in `cargo test` reads it. This pair is what makes
+      # its "placeholder-free and exactly fielded" claim checkable: an
+      # unreachable message, a reused field number, a BOF-1 header field or a
+      # raster on the wire all fail here.
+      - name: B.U.D. 3.0 module claims do not collide canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-module-claims-do-not-collide --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: B.U.D. 3.0 module claims do not collide
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-module-claims-do-not-collide 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: B.U.D. 3.0 wire contract is total canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-proto-is-total --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: B.U.D. 3.0 wire contract is total
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-proto-is-total 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
       - name: QR is derivative only canary
         if: always() && steps.build.outcome == 'success'
         run: |
@@ -706,6 +731,45 @@ jobs:
         if: always() && steps.build.outcome == 'success'
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-upstream-brands 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      # `f64` is not a consensus type: the same expression may give two answers
+      # on two machines, and the disagreement looks like a fork. The paths that
+      # decide a block, a receipt or a committee seat may not use it,
+      # excepted and pinned by name in the gate.
+      - name: No-float gate canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-float-in-consensus-paths --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: No floating point on the consensus path
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- no-float-in-consensus-paths 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      # A cargo workspace that no workflow builds is a workspace whose tests
+      # have never run: `cargo test` at the root reaches none of the seven.
+      - name: Workspace coverage gate canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- workflows-cover-every-workspace --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: Every workspace is built by a workflow
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- workflows-cover-every-workspace 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      # A nightly workflow that is missing, unscheduled or softened is not a
+      # gate. The reader checks the repository shape that makes the nightly
+      # surface required: file present, schedule live, verification unsoftened.
+      - name: Nightly workflow gate canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- nightly-workflows-are-required --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: Required nightly workflows are present and binding
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- nightly-workflows-are-required 2>&1 | tee -a /tmp/gate-out.log
           exit "${PIPESTATUS[0]}"
       - name: Repair trigger canary
         if: always() && steps.build.outcome == 'success'
@@ -1327,25 +1391,139 @@ jobs:
           shared-key: standalone-crates
           workspaces: |
             crates/bpqs
+            crates/bud-codec
             crates/note-packing
+            crates/uel-abi
+            execution/budzero
+            execution/cairo
+            execution/conformance
+            execution/evm
+            execution/move
+            execution/move-sui
+            execution/polkavm
+            execution/svm
+            execution/wasm
+      - id: protoc
+        name: Install protoc
+        if: always() && steps.rust.outcome == 'success'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
       - name: Format (bpqs)
         if: always() && steps.rust.outcome == 'success'
         run: cargo fmt --manifest-path crates/bpqs/Cargo.toml --all -- --check
+      - name: Format (bud-codec)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path crates/bud-codec/Cargo.toml --all -- --check
       - name: Format (note-packing)
         if: always() && steps.rust.outcome == 'success'
         run: cargo fmt --manifest-path crates/note-packing/Cargo.toml --all -- --check
+      - name: Format (uel-abi)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path crates/uel-abi/Cargo.toml --all -- --check
+      - name: Format (ee-budzero)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/budzero/Cargo.toml --all -- --check
+      - name: Format (ee-cairo)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/cairo/Cargo.toml --all -- --check
+      - name: Format (ee-conformance)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/conformance/Cargo.toml --all -- --check
+      - name: Format (ee-evm)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/evm/Cargo.toml --all -- --check
+      - name: Format (ee-move)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/move/Cargo.toml --all -- --check
+      - name: Format (ee-move-sui)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/move-sui/Cargo.toml --all -- --check
+      - name: Format (ee-polkavm)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/polkavm/Cargo.toml --all -- --check
+      - name: Format (ee-svm)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/svm/Cargo.toml --all -- --check
+      - name: Format (ee-wasm)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path execution/wasm/Cargo.toml --all -- --check
       - name: Clippy (bpqs)
         if: always() && steps.rust.outcome == 'success'
         run: cargo clippy --manifest-path crates/bpqs/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (bud-codec)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo clippy --manifest-path crates/bud-codec/Cargo.toml --all-targets -- -D warnings
       - name: Clippy (note-packing)
         if: always() && steps.rust.outcome == 'success'
         run: cargo clippy --manifest-path crates/note-packing/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (uel-abi)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path crates/uel-abi/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-budzero)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/budzero/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-cairo)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/cairo/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-conformance)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/conformance/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-evm)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/evm/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-move)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/move/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-move-sui)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/move-sui/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-polkavm)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/polkavm/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-svm)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/svm/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy (ee-wasm)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo clippy --manifest-path execution/wasm/Cargo.toml --all-targets -- -D warnings
       - name: Tests (bpqs)
         if: always() && steps.rust.outcome == 'success'
         run: cargo test --manifest-path crates/bpqs/Cargo.toml
+      - name: Tests (bud-codec)
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo test --manifest-path crates/bud-codec/Cargo.toml
       - name: Tests (note-packing)
         if: always() && steps.rust.outcome == 'success'
         run: cargo test --manifest-path crates/note-packing/Cargo.toml
+      - name: Tests (uel-abi)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path crates/uel-abi/Cargo.toml
+      - name: Tests (ee-budzero)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/budzero/Cargo.toml
+      - name: Tests (ee-cairo)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/cairo/Cargo.toml
+      - name: Tests (ee-conformance)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/conformance/Cargo.toml
+      - name: Tests (ee-evm)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/evm/Cargo.toml
+      - name: Tests (ee-move)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/move/Cargo.toml
+      - name: Tests (ee-move-sui)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/move-sui/Cargo.toml
+      - name: Tests (ee-polkavm)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/polkavm/Cargo.toml
+      - name: Tests (ee-svm)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/svm/Cargo.toml
+      - name: Tests (ee-wasm)
+        if: always() && steps.protoc.outcome == 'success'
+        run: cargo test --manifest-path execution/wasm/Cargo.toml
 
   # ============================  / Bolum 4 (BNS gate) ============================
       - name: Format
@@ -2014,6 +2192,31 @@ jobs:
       # measured: stale lock exits 101, fresh exits 0; --no-deps does NOT
       # validate, measured the same day). The discovery is dynamic, like
       # the machete gate: hand-kept lists go stale silently.
+      # These two checks read the README only, so they run in the
+      # `gates` job with the rest of the Rust gates rather than in `repo-lint`:
+      # this job owns /tmp/gate-out.log, and the Tally below lists every red gate
+      # by name. The canary of each runs first, so a red pair says whether the
+      # finding is the README or the check.
+      - name: README definition block is verbatim canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- readme-definition-block-is-verbatim --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: README definition block is verbatim
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- readme-definition-block-is-verbatim 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: README carries no placeholder canary
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- readme-has-no-placeholders --self-test 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
+      - name: README carries no placeholder
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- readme-has-no-placeholders 2>&1 | tee -a /tmp/gate-out.log
+          exit "${PIPESTATUS[0]}"
       - name: lockfiles match their manifests (--locked metadata)
         run: |
           set -euo pipefail
@@ -2037,6 +2240,8 @@ jobs:
         run: cargo clippy --release --manifest-path xtask/gates/Cargo.toml --all-targets -- -D warnings
       - name: Rust gates rustfmt
         run: cargo fmt --manifest-path xtask/gates/Cargo.toml --check
+      - name: Rust gates unit tests (concept-names canary and ratchet tests included)
+        run: cargo test --release --manifest-path xtask/gates/Cargo.toml
       # xtask/tools is its own workspace and runs five CI tools (audit-guard,
       # step-reachability, audit-deps, generate-sbom, the smoke tools). Its
       # lints are pedantic-deny and its unit tests (the committed FSF document
@@ -2308,6 +2513,25 @@ jobs:
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- storage-is-priced-by-size --self-test
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- storage-is-priced-by-size
+      # Section 11.5 prices storage in **physical** bytes. The two numbers that
+      # are easy to mistake for it are the content length the uploader started
+      # from and the symbol count the fountain produced. Pricing either one
+      # charges for bytes nobody holds, or prices the same object differently
+      # after every repair. The fee module keeps the inputs apart by name and
+      # this step keeps the distinction from being edited out.
+      - name: is the B.U.D. 3.0 fee priced in physical bytes + canary
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-fee-uses-physical-bytes --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-fee-uses-physical-bytes
+      # The endowment pays symbol bytes times the presence multiplier, pays a
+      # share nothing for a window it missed, and sends what it could not
+      # distribute to the network security pool. Each rule is one line of code
+      # that a later edit can delete without any test in the tree noticing, so
+      # the shape of all three is held here.
+      - name: do custody rewards follow audits and presence + canary
+        run: |
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-custody-rewards --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- bud3-custody-rewards
       # Two entry points take a manifest an untrusted caller built.
       # Registration (now the `StorageTx::RegisterManifest` door) ran
       # `validate_untrusted`; `open_deal` ran
@@ -2517,12 +2741,12 @@ jobs:
       # assumptions go stale. If they diverge, the value written to the allowlist and
       # the value the verifier computes from the proof differ: either every honest
       # proof is refused, or a program not on the list counts as being on it.
-      # The gate REGENERATES the value with an independent Keccak-256; it does not
-      # soyledigine inanmaz.
-      - name: regeneration (canonical code regenerated, convergent) + canary
+      # The gate reproduces the value with an independent Keccak-256; it does not
+      # trust what the code claims.
+      - name: canonical-programs-reproduce (canonical code reproduced, convergent) + canary
         run: |
-          cargo run --release --manifest-path xtask/gates/Cargo.toml -- regeneration --self-test
-          cargo run --release --manifest-path xtask/gates/Cargo.toml -- regeneration
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- canonical-programs-reproduce --self-test
+          cargo run --release --manifest-path xtask/gates/Cargo.toml -- canonical-programs-reproduce
       # Relay: ships the regeneration consensus (tokens + proof-side canonical
       # set + signed relay-status.json) to external consumers. Runs after
       # regeneration because it consumes its output line; the proof-side
@@ -2616,3 +2840,35 @@ jobs:
         run: |
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- genesis-schema --self-test
           cargo run --release --manifest-path xtask/gates/Cargo.toml -- genesis-schema
+
+  budlum-types:
+    # The shared wire types carry their own lock file and are not a member of the
+    # root package, so `cargo test --lib` at the root never runs their tests. The
+    # node re-exports `budlum_types::Address`, which means a break here is a break
+    # in the address every account is named by. Same reason as standalone-crates.
+    name: Shared types (budlum-types)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: rust
+        name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-09-12
+        with:
+          toolchain: "1.97.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: budlum-types
+          workspaces: |
+            crates/budlum-types
+      - name: Format
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo fmt --manifest-path crates/budlum-types/Cargo.toml --all -- --check
+      - name: Clippy
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo clippy --manifest-path crates/budlum-types/Cargo.toml --all-targets -- -D warnings
+      - name: Tests
+        if: always() && steps.rust.outcome == 'success'
+        run: cargo test --manifest-path crates/budlum-types/Cargo.toml

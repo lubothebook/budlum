@@ -66,6 +66,16 @@ pub struct RpcSecurityConfig {
     pub max_connections: Option<u32>,
 }
 
+/// A 32-byte value from hex, with or without `0x`.
+fn parse_hex32(s: &str) -> Result<[u8; 32], ErrorObjectOwned> {
+    let clean = s.strip_prefix("0x").unwrap_or(s);
+    let bytes = hex::decode(clean)
+        .map_err(|e| ErrorObjectOwned::owned(-32602, format!("Invalid hex: {e}"), None::<()>))?;
+    bytes
+        .try_into()
+        .map_err(|_| ErrorObjectOwned::owned(-32602, "expected 32 bytes", None::<()>))
+}
+
 impl Default for RpcSecurityConfig {
     fn default() -> Self {
         // (security audit) secure default - auth ON, no API key
@@ -520,6 +530,13 @@ impl RpcServer {
         }
     }
 
+    async fn finish_template(
+        &self,
+        tx: crate::core::transaction::Transaction,
+    ) -> Result<crate::core::transaction::Transaction, ErrorObjectOwned> {
+        finish_template(&self.chain, tx).await
+    }
+
     fn to_hex(n: u64) -> String {
         format!("0x{n:x}")
     }
@@ -705,7 +722,7 @@ impl RpcServer {
     }
 
     fn account_proof_to_json(
-        bundle: &crate::storage::merkle_trie::AccountProofBundle,
+        bundle: &crate::persistence::state_trie::AccountProofBundle,
     ) -> serde_json::Value {
         serde_json::json!({
             // Named `proofRoot`, not `stateRoot`: this commits to the same
@@ -894,27 +911,32 @@ fn request_came_from_trusted_proxy<B>(config: &RpcSecurityConfig, req: &HttpRequ
 }
 
 fn extract_client_ip<B>(config: &RpcSecurityConfig, req: &HttpRequest<B>) -> Option<IpAddr> {
-    // Security model:
-    // 1. Prefer the real socket peer address when available.
-    // 2. Only honor forwarding headers if the socket peer is itself trusted.
-    // This closes both previous failure modes:
-    // - direct requests no longer self-DoS when allow-lists are enabled,
-    // - proxy headers are no longer trusted purely because `trusted_proxies`
-    //   Is non-empty.
     let direct_ip = extract_direct_client_ip(req);
 
     if !config.trusted_proxies.is_empty() && request_came_from_trusted_proxy(config, req) {
-        if let Some(forwarded_ip) = req
-            .headers()
-            .get("x-forwarded-for")
-            .and_then(|value| value.to_str().ok())
-            // Rightmost entry: the one the trusted proxy itself appended.
-            // Entries to its left are client-supplied and can be forged.
-            .and_then(|value| value.split(',').next_back())
-            .map(str::trim)
-            .and_then(|ip| ip.parse::<IpAddr>().ok())
-        {
-            return Some(forwarded_ip);
+        // All header lines form one chain in wire order. Only explicitly
+        // configured proxy addresses may be skipped; a wildcard trusts the
+        // socket peer but must not make every forwarded hop trusted.
+        if req.headers().contains_key("x-forwarded-for") {
+            let values = req.headers().get_all("x-forwarded-for");
+            let mut lines: Vec<_> = values.iter().collect();
+            while let Some(line) = lines.pop() {
+                let value = line.to_str().ok()?;
+                let last = value.split(',').next_back()?;
+                let prefix = value.rsplit_once(',').map(|(prefix, _)| prefix);
+                for entry in std::iter::once(last)
+                    .chain(prefix.into_iter().flat_map(|prefix| prefix.rsplit(',')))
+                {
+                    let ip = entry.trim().parse::<IpAddr>().ok()?;
+                    if !config.trusted_proxies.iter().any(|proxy| {
+                        proxy.parse::<IpAddr>().is_ok_and(|trusted| trusted == ip)
+                    }) {
+                        return Some(ip);
+                    }
+                }
+            }
+            // A malformed or entirely trusted chain cannot identify a client.
+            return None;
         }
 
         if let Some(real_ip) = req
@@ -1032,12 +1054,15 @@ pub(crate) fn cors_outcome<B>(config: &RpcSecurityConfig, req: &HttpRequest<B>) 
     else {
         return CorsOutcome::NotApplicable;
     };
-    if config
-        .cors_origins
-        .iter()
-        .any(|allowed| allowed == "*" || allowed == origin)
-    {
+    // An origin listed by name is echoed: that is the one value the
+    // operator approved. A `*` entry answers with the literal `*` and never
+    // echoes the caller's header back: a reflected wildcard turns
+    // "any origin" into "this exact origin", which caches and credential
+    // rules treat as a named grant.
+    if config.cors_origins.iter().any(|allowed| allowed == origin) {
         CorsOutcome::Allow(origin.to_string())
+    } else if config.cors_origins.iter().any(|allowed| allowed == "*") {
+        CorsOutcome::Allow("*".to_string())
     } else {
         CorsOutcome::Deny
     }
@@ -1098,6 +1123,43 @@ fn clamp_feed_limit(limit: usize) -> usize {
 /// serialization cost do not grow with chain state.
 const MAX_LIST_RESPONSE_ITEMS: usize = 1000;
 
+/// Finish a `*_prepare_*` transaction template: the nonce is
+/// the sender's next nonce and the fee is the admission floor the chain
+/// enforces (`AccountState::required_fee`), with `max_fee == fee` as
+/// flat-fee mode requires. The templates used to carry hard-coded fees
+/// (500, 1000, 2000, `MIN_TX_FEE`) and a nonce of 0, so a wallet that
+/// signed one as given was refused, or overpaid.
+async fn finish_template(
+    chain: &ChainHandle,
+    mut tx: crate::core::transaction::Transaction,
+) -> Result<crate::core::transaction::Transaction, ErrorObjectOwned> {
+    tx.nonce = chain.get_nonce(&tx.from).await;
+    let fee = chain
+        .get_required_fee(tx.clone())
+        .await
+        .ok_or_else(|| ErrorObjectOwned::owned(-32603, "chain actor did not answer", None::<()>))?;
+    tx.fee = fee;
+    tx.max_fee = fee;
+    tx.priority_fee = 0;
+    Ok(tx)
+}
+
+/// Serialize one RPC result value. A value that cannot be encoded is an
+/// explicit `-32603` error naming what failed, never a silent `null`
+/// A `null` reads as "absent", which is a different answer.
+pub(crate) fn to_json<T: serde::Serialize>(
+    what: &str,
+    value: &T,
+) -> Result<serde_json::Value, ErrorObjectOwned> {
+    serde_json::to_value(value).map_err(|e| {
+        ErrorObjectOwned::owned(
+            -32603,
+            format!("{what} serialization failed: {e}"),
+            None::<()>,
+        )
+    })
+}
+
 fn cap_list_response<T>(mut items: Vec<T>) -> Vec<T> {
     items.truncate(MAX_LIST_RESPONSE_ITEMS);
     items
@@ -1141,13 +1203,21 @@ fn is_per_ip_rate_limited(
             // Seen client instead of globally rejecting all new IPs. This keeps
             // The map bounded without letting a rotational-IP attacker pin the
             // Table forever and deny unrelated clients.
-            if let Some(oldest_ip) = rates
+            //
+            // The evicted client is the one with the fewest requests in its
+            // window (oldest first among equals), never a busy one
+            // because evicting a client at its quota resets its window,
+            // so an attacker rotating addresses could buy a fresh quota for
+            // its own saturated address by filling the table.
+            if let Some(quietest) = rates
                 .iter()
-                .filter_map(|(client, window)| window.front().map(|first| (*client, *first)))
-                .min_by_key(|(_, first)| *first)
-                .map(|(client, _)| client)
+                .filter_map(|(client, window)| {
+                    window.front().map(|first| (*client, window.len(), *first))
+                })
+                .min_by_key(|(_, len, first)| (*len, *first))
+                .map(|(client, _, _)| client)
             {
-                rates.remove(&oldest_ip);
+                rates.remove(&quietest);
             }
         }
         if rates.len() >= MAX_TRACKED_RPC_CLIENTS {
@@ -1740,8 +1810,20 @@ impl BudlumApiServer for RpcServer {
         // So the estimate is the fee floor the caller's transaction must
         // Clear. If the caller already set a fee at or above the floor, that
         // Fee is what will be charged and it is returned unchanged.
-        let base_fee = self.chain.get_base_fee().await;
-        Ok(Self::to_hex(tx.fee.max(base_fee)))
+        //
+        // The floor is `AccountState::required_fee`, the same function the
+        // admission rule uses: base fee plus the proportional cut
+        // on a transfer, the escalating fee on a governance proposal. A
+        // floor of `base_fee` alone under-quoted both, and the wallet's
+        // transaction was then refused for a fee the RPC had just suggested.
+        let required = self
+            .chain
+            .get_required_fee(tx.clone())
+            .await
+            .ok_or_else(|| {
+                ErrorObjectOwned::owned(-32603, "chain actor did not answer", None::<()>)
+            })?;
+        Ok(Self::to_hex(tx.fee.max(required)))
     }
 
     async fn tx_precheck(&self, tx: Transaction) -> Result<serde_json::Value, ErrorObjectOwned> {
@@ -1983,13 +2065,13 @@ impl BudlumApiServer for RpcServer {
         let items: Vec<serde_json::Value> = profiles
             .into_iter()
             .map(|(profile, summary)| {
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "domainKey": format!("0x{}", hex::encode(profile.domain.as_bytes())),
                     "summary": summary,
-                    "profile": serde_json::to_value(&profile).unwrap_or(serde_json::Value::Null),
-                })
+                    "profile": to_json("Profile", &profile)?,
+                }))
             })
-            .collect();
+            .collect::<Result<_, ErrorObjectOwned>>()?;
         Ok(serde_json::json!({ "domains": items }))
     }
 
@@ -2318,11 +2400,9 @@ impl BudlumApiServer for RpcServer {
                 let slashings: Vec<serde_json::Value> = bond
                     .slashings
                     .iter()
-                    .map(|s: &crate::cross_domain::external::Slashing| {
-                        serde_json::to_value(s).unwrap_or(serde_json::Value::Null)
-                    })
-                    .collect();
-                serde_json::json!({
+                    .map(|s: &crate::cross_domain::external::Slashing| to_json("Slashing", s))
+                    .collect::<Result<_, ErrorObjectOwned>>()?;
+                Ok(serde_json::json!({
                     "prover": format!("0x{}", hex::encode(bond.prover.as_bytes())),
                     "bondAtoms": bond.bond_atoms.to_string(),
                     "liveAtoms": bond.live_atoms().to_string(),
@@ -2331,9 +2411,9 @@ impl BudlumApiServer for RpcServer {
                     "accepted": bond.accepted,
                     "refused": bond.refused,
                     "slashings": slashings,
-                })
+                }))
             })
-            .collect();
+            .collect::<Result<_, ErrorObjectOwned>>()?;
         let latest = registration.latest_attestation();
         // "No backing yet" is a visible state, not an absent field: shown
         // with the same value an adapter reports before its first cycle.
@@ -4639,6 +4719,51 @@ impl BudlumApiServer for RpcServer {
         }
     }
 
+    async fn get_charter(&self, domain_id: u32) -> Result<serde_json::Value, ErrorObjectOwned> {
+        let Some(charter) = self.chain.object_layer_charter(domain_id).await else {
+            return Ok(serde_json::Value::Null);
+        };
+        serde_json::to_value(charter)
+            .map_err(|e| ErrorObjectOwned::owned(-32603, e.to_string(), None::<()>))
+    }
+
+    async fn get_asset_class(
+        &self,
+        class_id: String,
+    ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        let clean = class_id.strip_prefix("0x").unwrap_or(&class_id);
+        let raw = hex::decode(clean).map_err(|e| {
+            ErrorObjectOwned::owned(-32602, format!("Invalid class_id hex: {e}"), None::<()>)
+        })?;
+        let bytes: [u8; 32] = raw.try_into().map_err(|_| {
+            ErrorObjectOwned::owned(-32602, "class_id must be 32 bytes", None::<()>)
+        })?;
+        let id = crate::object_layer::AssetClassId(bytes);
+        let Some((class, recorded_custody)) = self.chain.object_layer_asset_class(id).await else {
+            return Ok(serde_json::Value::Null);
+        };
+        Ok(serde_json::json!({
+            "class": class,
+            "recordedCustody": recorded_custody.to_string(),
+        }))
+    }
+
+    async fn get_asset(&self, asset_id: String) -> Result<serde_json::Value, ErrorObjectOwned> {
+        let clean = asset_id.strip_prefix("0x").unwrap_or(&asset_id);
+        let raw = hex::decode(clean).map_err(|e| {
+            ErrorObjectOwned::owned(-32602, format!("Invalid asset_id hex: {e}"), None::<()>)
+        })?;
+        let bytes: [u8; 32] = raw.try_into().map_err(|_| {
+            ErrorObjectOwned::owned(-32602, "asset_id must be 32 bytes", None::<()>)
+        })?;
+        let id = crate::object_layer::AssetId(bytes);
+        let Some(asset) = self.chain.object_layer_asset(id).await else {
+            return Ok(serde_json::Value::Null);
+        };
+        serde_json::to_value(asset)
+            .map_err(|e| ErrorObjectOwned::owned(-32603, e.to_string(), None::<()>))
+    }
+
     async fn subscribe(
         &self,
         pending: jsonrpsee::PendingSubscriptionSink,
@@ -4734,6 +4859,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::BnsRegister,
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "name": name,
@@ -4758,8 +4884,17 @@ impl BudlumApiServer for RpcServer {
         let data = bincode::serialize(&(parent_name.clone(), sub_label.clone(), owner_addr))
             .map_err(|e| ErrorObjectOwned::owned(-32000, e.to_string(), None::<()>))?;
 
+        // The executor requires the parent's owner as the sender
+        // (`register_subdomain` compares it with `tx.from`); a zero sender
+        // made the template unsignable.
+        let parent_owner = self
+            .chain
+            .bns_resolve_full(parent_name.clone())
+            .await
+            .map(|resolved| resolved.owner)
+            .ok_or_else(|| ErrorObjectOwned::owned(-32602, "Unknown parent name", None::<()>))?;
         let tx = crate::core::transaction::Transaction {
-            from: Address::zero(),
+            from: parent_owner,
             to: Address::zero(),
             amount: 0,
             fee: 500,
@@ -4779,6 +4914,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::BnsRegisterSubdomain,
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "parent": parent_name,
@@ -4838,6 +4974,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::BnsSetContent,
         };
+        let tx = self.finish_template(tx).await?;
         Ok(serde_json::json!({
             "name": name,
             "owner": owner,
@@ -4887,6 +5024,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::BnsRenew,
         };
+        let tx = self.finish_template(tx).await?;
         Ok(serde_json::json!({
             "name": name,
             "owner": owner,
@@ -4944,6 +5082,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::BnsTransfer,
         };
+        let tx = self.finish_template(tx).await?;
         Ok(serde_json::json!({
             "name": name,
             "owner": owner,
@@ -5056,6 +5195,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::NftMint,
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "author": author,
@@ -5099,6 +5239,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::NftBurn,
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "owner": owner,
@@ -5139,6 +5280,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::NftBoost { nft_id, amount },
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "booster": booster,
@@ -5197,6 +5339,7 @@ impl BudlumApiServer for RpcServer {
                 price,
             },
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "seller": seller,
@@ -5240,6 +5383,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::AiPurchaseData { offer_id },
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "buyer": buyer,
@@ -5529,6 +5673,7 @@ impl BudlumApiServer for RpcServer {
                 manifest_id: m_id,
             },
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "developer": developer,
@@ -5582,6 +5727,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::UniversalRelay(ext_tx),
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "from": from,
@@ -5603,7 +5749,7 @@ impl BudlumApiServer for RpcServer {
         let resolved = self.chain.bns_resolve_full(name.clone()).await;
         for cid in resolved
             .as_ref()
-            .map(crate::gateway::pollen_guard_ids)
+            .map(crate::storage::content_gateway::pollen_guard_ids)
             .unwrap_or_default()
         {
             if self.chain.pollen_asset_for_content(cid).await.is_some() {
@@ -5614,8 +5760,11 @@ impl BudlumApiServer for RpcServer {
                 ));
             }
         }
-        let gateway =
-            crate::gateway::BudGateway::new(self.chain.clone(), Some(self.node.clone()), None);
+        let gateway = crate::storage::content_gateway::BudGateway::new(
+            self.chain.clone(),
+            Some(self.node.clone()),
+            None,
+        );
         let data = gateway.fetch_name_content(&name).await.map_err(|e| {
             ErrorObjectOwned::owned(
                 -32000,
@@ -5637,7 +5786,7 @@ impl BudlumApiServer for RpcServer {
         let resolved = self.chain.bns_resolve_full(name.clone()).await;
         for cid in resolved
             .as_ref()
-            .map(crate::gateway::pollen_guard_ids)
+            .map(crate::storage::content_gateway::pollen_guard_ids)
             .unwrap_or_default()
         {
             if self.chain.pollen_asset_for_content(cid).await.is_some() {
@@ -5651,8 +5800,11 @@ impl BudlumApiServer for RpcServer {
         let parsed = parse_render_format(&format).map_err(|e| {
             ErrorObjectOwned::owned(-32602, format!("Invalid render format: {e}"), None::<()>)
         })?;
-        let gateway =
-            crate::gateway::BudGateway::new(self.chain.clone(), Some(self.node.clone()), None);
+        let gateway = crate::storage::content_gateway::BudGateway::new(
+            self.chain.clone(),
+            Some(self.node.clone()),
+            None,
+        );
         let (bytes, id) = gateway
             .render_name_content(&name, &parsed)
             .await
@@ -5670,7 +5822,7 @@ impl BudlumApiServer for RpcServer {
         &self,
         name: String,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
-        crate::gateway::validate_passport_name(&name).map_err(|e| {
+        crate::wallet::identity_profile::validate_passport_name(&name).map_err(|e| {
             ErrorObjectOwned::owned(-32602, format!("Invalid passport name: {e}"), None::<()>)
         })?;
         let resolved = self.chain.bns_resolve_full(name.clone()).await;
@@ -5686,7 +5838,7 @@ impl BudlumApiServer for RpcServer {
         let data_assets = self.chain.pollen_get_data_assets().await;
         let access_grants = self.chain.pollen_get_access_grants().await;
         let sale_authorizations = self.chain.pollen_get_sale_authorizations().await;
-        let profile = crate::gateway::build_passport_profile(
+        let profile = crate::wallet::identity_profile::build_passport_profile(
             name,
             resolved,
             manifest,
@@ -5707,7 +5859,7 @@ impl BudlumApiServer for RpcServer {
         &self,
         name: String,
     ) -> Result<serde_json::Value, ErrorObjectOwned> {
-        crate::gateway::validate_passport_name(&name).map_err(|e| {
+        crate::wallet::identity_profile::validate_passport_name(&name).map_err(|e| {
             ErrorObjectOwned::owned(-32602, format!("Invalid passport name: {e}"), None::<()>)
         })?;
         let resolved = self.chain.bns_resolve_full(name.clone()).await;
@@ -5723,7 +5875,7 @@ impl BudlumApiServer for RpcServer {
         let data_assets = self.chain.pollen_get_data_assets().await;
         let access_grants = self.chain.pollen_get_access_grants().await;
         let sale_authorizations = self.chain.pollen_get_sale_authorizations().await;
-        let profile = crate::gateway::build_passport_profile(
+        let profile = crate::wallet::identity_profile::build_passport_profile(
             name,
             resolved,
             manifest,
@@ -5733,13 +5885,14 @@ impl BudlumApiServer for RpcServer {
         );
         let height = self.chain.get_height().await;
         let bundle =
-            crate::gateway::try_build_passport_proof_bundle(&profile, height).map_err(|e| {
-                ErrorObjectOwned::owned(
-                    -32603,
-                    format!("failed to build passport proof bundle: {e}"),
-                    None::<()>,
-                )
-            })?;
+            crate::wallet::identity_profile::try_build_passport_proof_bundle(&profile, height)
+                .map_err(|e| {
+                    ErrorObjectOwned::owned(
+                        -32603,
+                        format!("failed to build passport proof bundle: {e}"),
+                        None::<()>,
+                    )
+                })?;
         serde_json::to_value(bundle).map_err(|e| {
             ErrorObjectOwned::owned(
                 -32603,
@@ -5762,7 +5915,7 @@ impl BudlumApiServer for RpcServer {
         let data_assets = self.chain.pollen_get_data_assets().await;
         let access_grants = self.chain.pollen_get_access_grants().await;
         let sale_authorizations = self.chain.pollen_get_sale_authorizations().await;
-        let context = crate::gateway::build_wallet_context(
+        let context = crate::explorer_evidence::build_wallet_context(
             address,
             balance,
             nonce,
@@ -5800,7 +5953,7 @@ impl BudlumApiServer for RpcServer {
             .get_ai_model(crate::ai::types::AiModelId(arr))
             .await
         {
-            Some(spec) => Ok(serde_json::to_value(&spec).unwrap_or(serde_json::Value::Null)),
+            Some(spec) => to_json("AI model", &spec),
             None => Ok(serde_json::Value::Null),
         }
     }
@@ -5881,6 +6034,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::AiModelRegister(spec),
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "model_id": model_id.to_hex(),
@@ -6078,6 +6232,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::AiInferenceRequest(req.clone()),
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "request_id": req.request_id.to_hex(),
@@ -6178,6 +6333,7 @@ impl BudlumApiServer for RpcServer {
             signature_version: crate::core::transaction::SIGNATURE_VERSION_V5,
             tx_type: crate::core::transaction::TransactionType::AiInferenceResult(res),
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "verifier": v_addr.to_hex(),
@@ -6225,7 +6381,7 @@ impl BudlumApiServer for RpcServer {
             .get_ai_outcome(crate::ai::types::AiRequestId(arr))
             .await
         {
-            Some(outcome) => Ok(serde_json::to_value(&outcome).unwrap_or(serde_json::Value::Null)),
+            Some(outcome) => to_json("AI outcome", &outcome),
             None => Ok(serde_json::Value::Null),
         }
     }
@@ -6433,6 +6589,7 @@ impl BudlumApiServer for RpcServer {
                 verifier: v_addr,
             },
         };
+        let tx = self.finish_template(tx).await?;
 
         Ok(serde_json::json!({
             "submitter": submitter,
@@ -6884,6 +7041,53 @@ impl BudlumApiServer for RpcServer {
         }))
     }
 
+    async fn get_validator(&self, owner: String) -> Result<serde_json::Value, ErrorObjectOwned> {
+        let clean = owner.strip_prefix("0x").unwrap_or(&owner);
+        let owner = Address::from_hex(clean).map_err(|e| {
+            ErrorObjectOwned::owned(-32602, format!("Invalid address: {e}"), None::<()>)
+        })?;
+        Ok(self
+            .chain
+            .validator_directory(crate::validators::DirectoryQuery::One(owner))
+            .await)
+    }
+
+    async fn storage_get_object(
+        &self,
+        commitment: String,
+    ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        let key = parse_hex32(&commitment)?;
+        Ok(self
+            .chain
+            .bud3(crate::storage::bud3::registry::Bud3Query::Object(key))
+            .await)
+    }
+
+    async fn storage_get_custody(
+        &self,
+        validator: String,
+    ) -> Result<serde_json::Value, ErrorObjectOwned> {
+        let key = parse_hex32(&validator)?;
+        Ok(self
+            .chain
+            .bud3(crate::storage::bud3::registry::Bud3Query::Custody(key))
+            .await)
+    }
+
+    async fn list_relays(&self) -> Result<serde_json::Value, ErrorObjectOwned> {
+        Ok(self
+            .chain
+            .validator_directory(crate::validators::DirectoryQuery::Relays)
+            .await)
+    }
+
+    async fn list_gateways(&self) -> Result<serde_json::Value, ErrorObjectOwned> {
+        Ok(self
+            .chain
+            .validator_directory(crate::validators::DirectoryQuery::Gateways)
+            .await)
+    }
+
     async fn get_quantum_alarm(&self) -> Result<serde_json::Value, ErrorObjectOwned> {
         Ok(self.chain.quantum_view().await)
     }
@@ -7170,6 +7374,128 @@ mod tests {
             .is_none());
     }
 
+    /// A `*` configuration answers with the literal `*`; the
+    /// caller's `Origin` header is never echoed back.
+    #[test]
+    fn cors_wildcard_does_not_reflect_headers() {
+        let config = cors_config(&["*"]);
+        let req = request_from_origin("https://saldirgan.example");
+        assert_eq!(cors_outcome(&config, &req), CorsOutcome::Allow("*".into()));
+        // A named origin next to `*` still gets its own name back.
+        let config = cors_config(&["*", "https://budscan.example"]);
+        let req = request_from_origin("https://budscan.example");
+        assert_eq!(
+            cors_outcome(&config, &req),
+            CorsOutcome::Allow("https://budscan.example".into())
+        );
+    }
+
+    /// A prepared template carries the sender's next nonce and the
+    /// admission fee floor, with `max_fee == fee`, whatever the hard-coded
+    /// values in the template were.
+    #[tokio::test]
+    async fn prepare_templates_carry_valid_nonce_and_fee() {
+        use crate::chain::chain_actor::ChainCommand;
+        let (sender, mut rx) = tokio::sync::mpsc::channel(4);
+        let chain = ChainHandle::new(sender);
+        tokio::spawn(async move {
+            while let Some(cmd) = rx.recv().await {
+                match cmd {
+                    ChainCommand::GetNonce(_, reply) => {
+                        let _ = reply.send(7);
+                    }
+                    ChainCommand::GetRequiredFee(_, reply) => {
+                        let _ = reply.send(13);
+                    }
+                    _ => {}
+                }
+            }
+        });
+        let mut template = crate::core::transaction::Transaction::new(
+            Address::from([1; 32]),
+            Address::zero(),
+            0,
+            Vec::new(),
+        );
+        template.fee = 500;
+        template.max_fee = 500;
+        template.nonce = 0;
+        let done = finish_template(&chain, template).await.unwrap();
+        assert_eq!(done.nonce, 7);
+        assert_eq!(done.fee, 13);
+        assert_eq!(done.max_fee, 13);
+        assert_eq!(done.priority_fee, 0);
+    }
+
+    /// the fee a `Prepare` template is given must be one the chain
+    /// will accept, not the `fee = 0` the template struct was built with.
+    ///
+    /// The finding is that 14 `Prepare` handlers returned `Transaction::new(..)`
+    /// verbatim, so the wallet signed a transaction with nonce 0 and fee 0 and
+    /// the node refused it at admission for exactly the two fields the RPC had
+    /// left at their defaults. The canary is the fixture: the template starts at
+    /// `fee = 500, max_fee = 500, nonce = 0` and the chain reports a required
+    /// fee of 13 and a nonce of 7, so an unwired template keeps 500/0.
+    ///
+    /// This is the binding half; `prepare_templates_carry_valid_nonce_and_fee`
+    /// above is the pre-existing behavioural test.
+    #[tokio::test]
+    async fn a_prepared_template_is_admissible_by_the_chain() {
+        use crate::chain::chain_actor::ChainCommand;
+        let (sender, mut rx) = tokio::sync::mpsc::channel(4);
+        let chain = ChainHandle::new(sender);
+        tokio::spawn(async move {
+            while let Some(cmd) = rx.recv().await {
+                match cmd {
+                    ChainCommand::GetNonce(_, reply) => {
+                        let _ = reply.send(7);
+                    }
+                    ChainCommand::GetRequiredFee(_, reply) => {
+                        let _ = reply.send(13);
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        // Every template starts with the two fields the finding names unset,
+        // plus a fee that is neither the floor nor zero: if `finish_template`
+        // is not on the path, the stale 500 survives and this fails.
+        let mut stale = crate::core::transaction::Transaction::new(
+            Address::from([1; 32]),
+            Address::zero(),
+            0,
+            Vec::new(),
+        );
+        stale.fee = 500;
+        stale.max_fee = 500;
+        stale.nonce = 0;
+
+        let prepared = finish_template(&chain, stale).await.expect("template");
+        assert_eq!(prepared.nonce, 7, "the sender's next nonce, not the default 0");
+        assert_eq!(prepared.fee, 13, "the admission floor, not the stale 500");
+        assert_eq!(
+            prepared.max_fee, prepared.fee,
+            "flat-fee mode requires max_fee == fee"
+        );
+        assert_eq!(
+            prepared.priority_fee, 0,
+            "flat-fee mode rejects any priority fee"
+        );
+    }
+
+    /// A value that cannot be encoded is an explicit error, not a
+    /// `null` that reads as "absent".
+    #[test]
+    fn rpc_serialization_error_is_explicit() {
+        let mut unencodable = std::collections::BTreeMap::new();
+        unencodable.insert((1u8, 2u8), 3u8);
+        let err = to_json("Probe", &unencodable).unwrap_err();
+        assert_eq!(err.code(), -32603);
+        assert!(err.message().contains("Probe serialization failed"));
+        assert_eq!(to_json("Ok", &5u8).unwrap(), serde_json::json!(5));
+    }
+
     /// With CORS unconfigured no header is emitted - the default is closed.
     #[test]
     fn empty_cors_list_emits_no_headers() {
@@ -7444,6 +7770,53 @@ mod tests {
         assert!(!is_per_ip_rate_limited(&config, &per_ip_rates, ip));
     }
 
+    /// When the table is full, the quietest client is evicted, never
+    /// one that sits at its quota: evicting a saturated client would reset its
+    /// window and hand it a fresh quota.
+    #[test]
+    fn full_table_does_not_evict_a_saturated_client() {
+        let config = RpcSecurityConfig {
+            rate_limit_per_minute: Some(2),
+            ..Default::default()
+        };
+        let per_ip_rates = Arc::new(Mutex::new(HashMap::new()));
+        let saturated = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        let now = Instant::now();
+        {
+            let mut rates = per_ip_rates.lock().unwrap();
+            for i in 0..MAX_TRACKED_RPC_CLIENTS {
+                let ip = IpAddr::V4(Ipv4Addr::new(
+                    10,
+                    ((i >> 8) & 0xff) as u8,
+                    (i & 0xff) as u8,
+                    1,
+                ));
+                let mut window = VecDeque::new();
+                // Every client but the saturated one made one recent request;
+                // the saturated one is the oldest and at its quota.
+                let first = now - Duration::from_secs(50) + Duration::from_millis(i as u64);
+                window.push_back(first);
+                if ip == saturated {
+                    window.push_back(first);
+                }
+                rates.insert(ip, window);
+            }
+        }
+        let newcomer = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7));
+        assert!(is_per_ip_rate_limited(
+            &config,
+            &per_ip_rates,
+            Some(newcomer)
+        ));
+        assert!(per_ip_rates.lock().unwrap().contains_key(&saturated));
+        // The saturated client is still refused.
+        assert!(!is_per_ip_rate_limited(
+            &config,
+            &per_ip_rates,
+            Some(saturated)
+        ));
+    }
+
     #[test]
     fn rate_limit_table_evicts_oldest_client_instead_of_globally_rejecting() {
         let config = RpcSecurityConfig {
@@ -7493,6 +7866,83 @@ mod tests {
         assert!(is_ip_allowed(&config, &req));
     }
 
+    ///  lock, quota half. A client behind a proxy may forge every entry
+    /// to the left of the one its proxy appended. The quota is keyed on the
+    /// appended address, so three forgeries spend three requests of one window
+    /// and the fourth is refused. An implementation that took the leftmost entry
+    /// would hand a fresh bucket to every forged address.
+    #[test]
+    fn a_forged_forwarded_for_entry_buys_no_fresh_quota() {
+        let config = RpcSecurityConfig {
+            trusted_proxies: vec!["*".into()],
+            allowed_ips: vec!["10.0.0.1".into()],
+            rate_limit_per_minute: Some(2),
+            ..Default::default()
+        };
+        let per_ip_rates = Arc::new(Mutex::new(HashMap::new()));
+        let real = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 7));
+        for forged in ["10.0.0.1", "10.0.0.2"] {
+            let mut req = request_with_remote(SocketAddr::from(([203, 0, 113, 9], 40000)));
+            req.headers_mut().insert(
+                "x-forwarded-for",
+                HeaderValue::from_str(&format!("{forged}, 198.51.100.7")).unwrap(),
+            );
+            assert_eq!(
+                extract_client_ip(&config, &req),
+                Some(real),
+                "the forged {forged} entry must not become the client"
+            );
+            assert!(
+                !is_ip_allowed(&config, &req),
+                "the forged {forged} entry must not read as an allow-listed client"
+            );
+            assert!(
+                is_per_ip_rate_limited(&config, &per_ip_rates, Some(real)),
+                "the {forged} forgery must not reset the window"
+            );
+        }
+        assert!(
+            !is_per_ip_rate_limited(&config, &per_ip_rates, Some(real)),
+            "one client, one bucket: the third request of a window of two is refused"
+        );
+        assert_eq!(
+            per_ip_rates.lock().unwrap().len(),
+            1,
+            "a forged address may not create its own bucket"
+        );
+    }
+
+    ///  lock. The comparison walks the expected key on every call and
+    /// folds the length difference into the accumulator, so a candidate of the
+    /// wrong length is refused without an early return and without the
+    /// same-buffer self-comparison that measured shorter than a real mismatch.
+    #[test]
+    fn the_api_key_compare_never_early_returns_on_length() {
+        let expected = "secret-value";
+        for candidate in [
+            "",
+            "s",
+            "secret",
+            "secret-valu",
+            "secret-value",
+            "secret-valuf",
+            "secret-value-and-more",
+        ] {
+            assert_eq!(
+                constant_time_eq_str(candidate, expected),
+                candidate == expected,
+                "candidate {candidate:?}"
+            );
+        }
+        // An empty candidate and an empty expectation are the one case where the
+        // loop body never runs: the length fold alone decides.
+        assert!(constant_time_eq_str("", ""));
+        assert!(!constant_time_eq_str("x", ""));
+        // A one byte difference at the end is refused, as is the same length
+        // with a different byte: neither answer is allowed to be cheaper.
+        assert!(!constant_time_eq_str("secret-valud", expected));
+    }
+
     #[test]
     fn spoofed_forwarded_headers_are_ignored_without_trusted_proxy_match() {
         let config = RpcSecurityConfig {
@@ -7530,6 +7980,49 @@ mod tests {
     }
 
     #[test]
+    fn forwarded_ip_and_quota_are_bound() {
+        let config = RpcSecurityConfig {
+            allowed_ips: vec!["203.0.113.7".into()],
+            trusted_proxies: vec!["127.0.0.1".into(), "192.0.2.10".into()],
+            rate_limit_per_minute: Some(1),
+            ..Default::default()
+        };
+        let mut req = request_with_remote(SocketAddr::from(([127, 0, 0, 1], 9000)));
+        req.headers_mut().append(
+            "x-forwarded-for",
+            HeaderValue::from_static("198.51.100.99, 203.0.113.7"),
+        );
+        req.headers_mut().append(
+            "x-forwarded-for",
+            HeaderValue::from_static("192.0.2.10"),
+        );
+        let client = Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)));
+        assert_eq!(extract_client_ip(&config, &req), client);
+        assert!(is_ip_allowed(&config, &req));
+        let rates = Arc::new(Mutex::new(HashMap::new()));
+        assert!(is_per_ip_rate_limited(&config, &rates, client));
+        assert!(!is_per_ip_rate_limited(&config, &rates, extract_client_ip(&config, &req)));
+
+        req.headers_mut().insert("x-forwarded-for", HeaderValue::from_static("bad"));
+        req.headers_mut().insert("x-real-ip", HeaderValue::from_static("203.0.113.7"));
+        assert_eq!(extract_client_ip(&config, &req), None);
+        assert!(!is_ip_allowed(&config, &req));
+        assert!(!is_per_ip_rate_limited(&config, &rates, extract_client_ip(&config, &req)));
+    }
+
+    #[test]
+    fn constant_time_eq_checks_length_and_distinct_buffers() {
+        let expected = String::from("secret-token");
+        let matching = String::from("secret-token");
+        assert!(constant_time_eq_str(&matching, &expected));
+        assert!(!constant_time_eq_str("secret-tokeN", &expected));
+        assert!(!constant_time_eq_str("secret", &expected));
+        assert!(!constant_time_eq_str("secret-token-more", &expected));
+        assert!(!constant_time_eq_str("", &expected));
+        assert!(constant_time_eq_str("", ""));
+    }
+
+    #[test]
     fn trusted_proxy_headers_are_honored_only_for_trusted_socket_peer() {
         let config = RpcSecurityConfig {
             allowed_ips: vec!["10.0.0.5".into()],
@@ -7544,6 +8037,185 @@ mod tests {
             Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5)))
         );
         assert!(is_ip_allowed(&config, &req));
+    }
+}
+
+/// the API-key comparison must not leak key length.
+///
+/// The earlier shape compared the two buffers and, on a length mismatch,
+/// dummy-compared `b` against itself (`a_b.ct_eq(a_b)`). Those are the same
+/// pointer, so LLVM at `-C opt-level=3` can fold the whole loop away and the
+/// mismatch path becomes measurably faster than the match path; the `/t/ = 45,78`
+/// timing ratio in the finding is that gap. The rule now has a correctness
+/// half and a shape half, and the shape half is what keeps the fold away.
+#[cfg(test)]
+mod api_key_comparison_tests {
+    use super::constant_time_eq_str;
+
+    /// Correctness: every one of these must answer exactly `<`, `==` and `>`
+    /// the way `str::eq` would, including the empty string on both sides.
+    #[test]
+    fn the_comparison_is_a_correct_equality() {
+        for (a, b) in [
+            ("secret-value", "secret-value"),
+            ("secret-value", "secret-valuf"),
+            ("secret-value", "secret-valu"),
+            ("secret-value", "x"),
+            ("x", "secret-value"),
+            ("", ""),
+            ("", "x"),
+            ("x", ""),
+            ("0123456789abcdef", "0123456789abcdee"),
+        ] {
+            assert_eq!(
+                constant_time_eq_str(a, b),
+                a == b,
+                "a={a:?} b={b:?} must answer like `==`"
+            );
+        }
+    }
+
+    /// The work depends on the expected value's length, never on the
+    /// candidate's. A short candidate must still walk the whole expected
+    /// buffer: with the self-comparison shape the loop had no second buffer to
+    /// walk, and the assembler removed it.
+    ///
+    /// This is asserted as a shape, not a timer: the function is
+    /// `black_box`-ed on every accumulated byte, so the loop is opaque to the
+    /// optimiser, and the observable consequence is that one byte of the
+    /// candidate changes the answer while a shorter candidate is still refused.
+    #[test]
+    fn a_length_mismatch_is_refused_without_a_self_comparison() {
+        let expected = "the-expected-api-key-of-some-length";
+        // Every truncation is refused, including the ones that agree on their
+        // whole prefix: a prefix match must not be accepted.
+        for cut in 0..expected.len() {
+            assert!(
+                !constant_time_eq_str(&expected[..cut], expected),
+                "a {cut}-byte prefix must not be accepted as the key"
+            );
+        }
+        // And an extension is refused too: length is folded into the
+        // accumulator, it is not a prefix rule.
+        let longer = format!("{expected}x");
+        assert!(!constant_time_eq_str(&longer, expected));
+        assert!(constant_time_eq_str(expected, expected));
+    }
+}
+
+/// the client identity behind a trusted proxy is the address the
+/// proxy itself appended, and the IP quota is keyed on that identity.
+///
+/// The finding has two halves and both were exploitable on their own:
+///
+///  * `extract_client_ip` trusted the **leftmost** `X-Forwarded-For` entry, so
+///    a client could set the header and pick its own identity, walk straight
+///    through an `allowed_ips` list and mint a fresh quota per request.
+///  * the rate table evicted FIFO, so an attacker rotating addresses could push
+///    a saturated address out of the table and buy it a fresh window.
+///
+/// A test that only checked the header parse would stay green if the quota
+/// went back to a shared bucket, so this one drives both through one config.
+#[cfg(test)]
+mod client_identity_tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    fn request_with_remote(remote: SocketAddr) -> HttpRequest<()> {
+        let mut req = HttpRequest::builder().uri("/").body(()).unwrap();
+        req.extensions_mut().insert(remote);
+        req
+    }
+
+    #[test]
+    fn the_quota_is_keyed_on_the_proxy_appended_address() {
+        let proxy = SocketAddr::from(([127, 0, 0, 1], 9000));
+        let config = RpcSecurityConfig {
+            rate_limit_per_minute: Some(1),
+            allowed_ips: vec!["203.0.113.7".into()],
+            trusted_proxies: vec!["127.0.0.1".into()],
+            ..Default::default()
+        };
+        let per_ip_rates = Arc::new(Mutex::new(HashMap::new()));
+
+        // The client prepends a forged address and the proxy appends the real
+        // one. The forged entry must not be the identity.
+        let mut spoofed = request_with_remote(proxy);
+        spoofed.headers_mut().insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("203.0.113.7, 198.51.100.9"),
+        );
+        assert_eq!(
+            extract_client_ip(&config, &spoofed),
+            Some(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9))),
+            "the rightmost entry is the one the trusted proxy appended"
+        );
+        // The forged entry would have passed the allow-list; the real one does
+        // not, which is the point of the finding.
+        assert!(!is_ip_allowed(&config, &spoofed));
+
+        // The quota is keyed on the real identity: one request is admitted and
+        // the second from the same client is refused.
+        let real = extract_client_ip(&config, &spoofed);
+        assert!(is_per_ip_rate_limited(&config, &per_ip_rates, real));
+        assert!(!is_per_ip_rate_limited(&config, &per_ip_rates, real));
+
+        // A different client behind the same proxy still has its own quota:
+        // the table is per identity, not per proxy.
+        let other = Some(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10)));
+        assert!(is_per_ip_rate_limited(&config, &per_ip_rates, other));
+    }
+
+    /// The other half: filling the table does not evict a client that is at its
+    /// quota, so a rotation cannot buy a saturated address a fresh window.
+    #[test]
+    fn a_full_table_evicts_the_quietest_client_not_the_busiest() {
+        let config = RpcSecurityConfig {
+            rate_limit_per_minute: Some(2),
+            ..Default::default()
+        };
+        let per_ip_rates = Arc::new(Mutex::new(HashMap::new()));
+        let saturated = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        let quiet = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
+        let now = Instant::now();
+        {
+            let mut rates = per_ip_rates.lock().unwrap();
+            let mut saturated_window = VecDeque::new();
+            saturated_window.push_back(now - Duration::from_secs(10));
+            saturated_window.push_back(now - Duration::from_secs(5));
+            rates.insert(saturated, saturated_window);
+            let mut quiet_window = VecDeque::new();
+            quiet_window.push_back(now - Duration::from_secs(40));
+            rates.insert(quiet, quiet_window);
+            // The rest of the table, so the ceiling is reached on the next
+            // unknown address.
+            for i in 0..(MAX_TRACKED_RPC_CLIENTS - 2) {
+                let ip = IpAddr::V4(Ipv4Addr::new(
+                    11,
+                    ((i >> 8) & 0xff) as u8,
+                    (i & 0xff) as u8,
+                    1,
+                ));
+                let mut window = VecDeque::new();
+                window.push_back(now - Duration::from_secs(20) + Duration::from_millis(i as u64));
+                rates.insert(ip, window);
+            }
+        }
+
+        let newcomer = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7));
+        assert!(
+            is_per_ip_rate_limited(&config, &per_ip_rates, Some(newcomer)),
+            "the newcomer takes the quiet client's slot"
+        );
+        let rates = per_ip_rates.lock().unwrap();
+        assert!(
+            rates.contains_key(&saturated),
+            "a client at its quota must keep its window: evicting it hands it a fresh quota"
+        );
+        assert!(
+            !rates.contains_key(&quiet),
+            "the quietest client is the one evicted"
+        );
     }
 }
 

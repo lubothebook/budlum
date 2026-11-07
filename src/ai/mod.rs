@@ -3,9 +3,12 @@
 //! Provides deterministic model registration, request/result attestation tracking,
 //! And threshold consensus finalization (`AiVerifier`).
 
+pub mod answer_proof_bundle;
 pub mod execution;
 pub mod registry;
 pub mod types;
+pub mod verification_layer;
+pub mod verification_level;
 
 pub use execution::{
     build_fixed_point_mlp_guest, eval_fixed_point_mlp, input_commitment, output_commitment,
