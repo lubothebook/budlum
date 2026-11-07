@@ -240,7 +240,7 @@ fn ai_require_execution_proof_blocks_finalize_without_proof() {
             modalities: crate::ai_inference::perception::ModalitySet::text_only(),
         })
         .expect_err(
-            "F-04: proof-required models cannot register while STARK verification is not live",
+            "proof-required models cannot register while STARK verification is not live",
         );
     assert!(
         err.contains("full AI STARK"),
@@ -283,6 +283,45 @@ fn signed_tx(kp: &KeyPair, chain_id: u64, tx_type: TransactionType) -> Transacti
         Transaction::new_with_chain_id(from, Address::zero(), 0, 100, 0, vec![], chain_id, tx_type);
     tx.sign(kp);
     tx
+}
+
+#[test]
+fn private_transfer_is_closed_on_testnet() {
+    use crate::core::chain_config::Network;
+    let chain_id = Network::Testnet.chain_id().value();
+    let kp = KeyPair::generate().unwrap();
+    let from = Address::from(kp.public_key_bytes());
+    let mut state = funded_state(from, 1_000_000);
+    let (sub, c_in, c_out) = transfer_fixture(&kp, &mut state);
+    let tx = signed_tx(&kp, chain_id, TransactionType::PrivateTransferSubmit(sub));
+    assert!(
+        state.validate_transaction(&tx).is_err(),
+        "account state validation must refuse unproven private transfers on public testnet 45261"
+    );
+    let err = Executor::apply_transaction(&mut state, &tx)
+        .expect_err("executor must refuse unproven private transfers on public testnet 45261");
+    assert!(err.contains("disabled on mainnet"), "got: {err}");
+    assert!(state.note_registry.contains_commitment(&c_in));
+    assert!(!state.note_registry.contains_commitment(&c_out));
+}
+
+#[test]
+fn privacy_note_insert_is_closed_on_testnet() {
+    use crate::core::chain_config::Network;
+    let chain_id = Network::Testnet.chain_id().value();
+    let kp = KeyPair::generate().unwrap();
+    let from = Address::from(kp.public_key_bytes());
+    let mut state = funded_state(from, 1_000_000);
+    let c = hash_from_field(43);
+    let tx = signed_tx(&kp, chain_id, TransactionType::PrivacyNoteInsert(c));
+    assert!(
+        state.validate_transaction(&tx).is_err(),
+        "account state validation must refuse unproven note insertion on public testnet 45261"
+    );
+    let err = Executor::apply_transaction(&mut state, &tx)
+        .expect_err("executor must refuse unproven note insertion on public testnet 45261");
+    assert!(err.contains("disabled on mainnet"), "got: {err}");
+    assert!(!state.note_registry.contains_commitment(&c));
 }
 
 #[test]

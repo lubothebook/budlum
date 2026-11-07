@@ -11,9 +11,23 @@ use serde_json;
 /// hashes; the bound leaves room for framing while preventing a length prefix
 /// from allocating attacker-sized memory during block execution.
 const MAX_RELAYER_RESULT_PROOF_BYTES: u64 = 4 * 1024;
+/// Maximum byte and allocation budget for structured BNS/NFT transaction `data` payloads.
+pub(crate) const MAX_STRUCTURED_TX_DATA_BYTES: u64 = 64 * 1024;
 /// How far before the including block a grant may be dated. A wider window would let a grant
 /// slip under an encryption policy that was deprecated since.
 const MAX_GRANT_BACKDATE_BLOCKS: u64 = 64;
+
+pub(crate) fn deserialize_tx_data<T: serde::de::DeserializeOwned>(
+    bytes: &[u8],
+) -> bincode::Result<T> {
+    if (bytes.len() as u64) > MAX_STRUCTURED_TX_DATA_BYTES {
+        return Err(Box::new(bincode::ErrorKind::SizeLimit));
+    }
+    bincode::options()
+        .with_fixint_encoding()
+        .with_limit(MAX_STRUCTURED_TX_DATA_BYTES)
+        .deserialize(bytes)
+}
 
 pub struct Executor;
 
@@ -63,30 +77,20 @@ fn check_ai_exec_dims(dims: &[u16]) -> Result<(), String> {
     Ok(())
 }
 
-fn privacy_transfers_enabled(chain_id: u64) -> bool {
+pub(crate) fn privacy_transfers_enabled(chain_id: u64) -> bool {
     // Allowlist, not a denylist.
     //
     // `PrivateTransferSubmit` reaches `note_registry.apply_transfer`, which
     // takes the nullifier the submitter hands it: the binding check
     // `nullifier == derive_nullifier(commitment, proof)` only runs when
-    // `apply_transfer_with_proofs` is called with proofs, and nothing in the
-    // tree calls it that way. So today a transfer proves who signed the
-    // transaction, never that the signer owns the note; value conservation and
-    // membership are unwired too. That is survivable on the two networks where
-    // the notes are worth nothing.
-    //
-    // The old test was `chain_id != Mainnet`, which answers "is this not the
-    // one network we care about" instead of "is this a network where losing the
-    // notes costs nothing". Every id nobody has claimed yet - a second mainnet,
-    // a public testnet that grows real value - came back enabled.
+    // `apply_transfer_with_proofs` is called with proofs, and ownership,
+    // value-conservation, and membership proofs are not yet verified on-chain.
+    // Public testnet (45261) and mainnet (45260) keep this surface closed; only
+    // local devnet (45262) enables it for local integration testing.
     chain_id
         == crate::core::chain_config::Network::Devnet
             .chain_id()
             .value()
-        || chain_id
-            == crate::core::chain_config::Network::Testnet
-                .chain_id()
-                .value()
 }
 
 impl Executor {
@@ -171,7 +175,7 @@ impl Executor {
         // transaction may originate from it, and it is rejected everywhere
         // but the genesis block by `validate_and_add_block`. Accepting any
         // zero-address sender here would let an attacker fill blocks with
-        // free, unsigned, fee-free transactions (BUDLUM finding #65/#171).
+        // free, unsigned, fee-free transactions.
         if tx.from == Address::zero() {
             if tx.verify_in(&state.scheme_registry) {
                 return Ok(());
@@ -914,7 +918,7 @@ impl Executor {
                 sender.nonce = sender.nonce.saturating_add(1);
             }
             TransactionType::BnsRegister => {
-                let (name, duration): (String, u64) = bincode::deserialize(&tx.data)
+                let (name, duration): (String, u64) = deserialize_tx_data(&tx.data)
                     .map_err(|e| BudlumError::validation("bns_invalid_data", e.to_string()))?;
 
                 let cost = state.bns_registry.calculate_cost(&name, duration);
@@ -976,7 +980,7 @@ impl Executor {
                 state.record_destroyed(u128::from(cost));
             }
             TransactionType::BnsRenew => {
-                let (name, duration): (String, u64) = bincode::deserialize(&tx.data)
+                let (name, duration): (String, u64) = deserialize_tx_data(&tx.data)
                     .map_err(|e| BudlumError::validation("bns_invalid_data", e.to_string()))?;
 
                 let cost = state.bns_registry.calculate_cost(&name, duration);
@@ -1030,7 +1034,7 @@ impl Executor {
                 state.record_destroyed(u128::from(cost));
             }
             TransactionType::BnsTransfer => {
-                let (name, new_owner): (String, Address) = bincode::deserialize(&tx.data)
+                let (name, new_owner): (String, Address) = deserialize_tx_data(&tx.data)
                     .map_err(|e| BudlumError::validation("bns_invalid_data", e.to_string()))?;
                 if tx.amount != 0 || tx.to != Address::zero() {
                     return Err(BudlumError::validation(
@@ -1062,7 +1066,7 @@ impl Executor {
             }
             TransactionType::BnsSetContent => {
                 let (name, cid): (String, crate::storage::content_id::ContentId) =
-                    bincode::deserialize(&tx.data)
+                    deserialize_tx_data(&tx.data)
                         .map_err(|e| BudlumError::validation("bns_invalid_data", e.to_string()))?;
 
                 state
@@ -1080,7 +1084,7 @@ impl Executor {
             }
             TransactionType::BnsRegisterSubdomain => {
                 let (parent, label, sub_owner): (String, String, Address) =
-                    bincode::deserialize(&tx.data)
+                    deserialize_tx_data(&tx.data)
                         .map_err(|e| BudlumError::validation("bns_invalid_data", e.to_string()))?;
 
                 state
@@ -1095,7 +1099,7 @@ impl Executor {
                 sender.nonce = sender.nonce.saturating_add(1);
             }
             TransactionType::BnsSetStorage => {
-                let (name, root, dom_id): (String, [u8; 32], u32) = bincode::deserialize(&tx.data)
+                let (name, root, dom_id): (String, [u8; 32], u32) = deserialize_tx_data(&tx.data)
                     .map_err(|e| BudlumError::validation("bns_invalid_data", e.to_string()))?;
 
                 state
@@ -1113,7 +1117,7 @@ impl Executor {
             }
             TransactionType::NftMint => {
                 let (cid, author): (crate::storage::content_id::ContentId, Option<String>) =
-                    bincode::deserialize(&tx.data)
+                    deserialize_tx_data(&tx.data)
                         .map_err(|e| BudlumError::validation("nft_invalid_data", e.to_string()))?;
 
                 // A duplicate id means the registry's counter disagrees with
@@ -1133,7 +1137,7 @@ impl Executor {
                 sender.nonce = sender.nonce.saturating_add(1);
             }
             TransactionType::NftTransfer => {
-                let (id, to): (u64, Address) = bincode::deserialize(&tx.data)
+                let (id, to): (u64, Address) = deserialize_tx_data(&tx.data)
                     .map_err(|e| BudlumError::validation("nft_invalid_data", e.to_string()))?;
 
                 // Folder-lock rule: a membership is the token owner's claim
@@ -1170,7 +1174,7 @@ impl Executor {
                 sender.nonce = sender.nonce.saturating_add(1);
             }
             TransactionType::NftBurn => {
-                let id: u64 = bincode::deserialize(&tx.data)
+                let id: u64 = deserialize_tx_data(&tx.data)
                     .map_err(|e| BudlumError::validation("nft_invalid_data", e.to_string()))?;
 
                 // The same lock burns enforce as transfers, for the same
@@ -1917,8 +1921,8 @@ impl Executor {
                         .consume_ai_read_grant(&grant_id, &tx.from, current_block)
                         .map_err(|e| BudlumError::validation("ai_data_access_denied", e))?;
                 }
-                // Balance check before deduction (spendable: the vesting gate -
-                // finding #356; the deduction comes from the spendable part and the lock
+                // Balance check before deduction (spendable: the vesting gate;
+                // the deduction comes from the spendable part and the lock
                 // is not broken because the first gate already verified spendable).
                 // spendable is read BEFORE the mutable borrow of `get_or_create`
                 // (E0502): if the account does not exist spendable is 0, and it is 0 after
@@ -3992,7 +3996,7 @@ mod tests {
 
         assert!(!privacy_transfers_enabled(mainnet), "mainnet must stay off");
         assert!(privacy_transfers_enabled(devnet), "devnet must stay on");
-        assert!(privacy_transfers_enabled(testnet), "testnet must stay on");
+        assert!(!privacy_transfers_enabled(testnet), "public testnet must stay off");
 
         for unclaimed in [1u64, 42, 1337, 45263, u64::MAX] {
             assert!(
@@ -4013,5 +4017,19 @@ mod tests {
 
         assert!(!privacy_transfers_enabled(mainnet));
         assert!(privacy_transfers_enabled(devnet));
+    }
+
+    #[test]
+    fn structured_tx_data_decoder_rejects_oversized_length_prefixes() {
+        let mut forged = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40];
+        forged.extend_from_slice(&[0u8; 8]);
+        assert!(deserialize_tx_data::<(String, u64)>(&forged).is_err());
+
+        let cid = crate::storage::content_id::ContentId::from_bytes(b"nft-mint-payload");
+        let wire = bincode::serialize(&(cid, None::<String>)).expect("serialize");
+        let (back_cid, back_author): (crate::storage::content_id::ContentId, Option<String>) =
+            deserialize_tx_data(&wire).expect("Option::None author round-trips");
+        assert_eq!(back_cid, cid);
+        assert!(back_author.is_none());
     }
 }
