@@ -2,9 +2,10 @@ import os
 import sys
 import boto3
 
-# API anahtarı koda yazılmaz; Codespaces Secret'tan gelir.
-if not os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
-    sys.exit("HATA: AWS_BEARER_TOKEN_BEDROCK secret'ı bulunamadı.")
+# Kimlik bilgisi Codespaces Secret'lardan gelir (koda yazılmaz):
+# AWS_ACCESS_KEY_ID ve AWS_SECRET_ACCESS_KEY
+if not (os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY")):
+    sys.exit("HATA: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY secret'ları bulunamadı.")
 
 client = boto3.client("bedrock-runtime", region_name="us-east-1")
 
