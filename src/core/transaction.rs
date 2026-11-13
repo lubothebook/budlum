@@ -4685,6 +4685,16 @@ fn encode_storage_v3_tx(tx: &crate::storage::bud3::tx::StorageTxV3, out: &mut Ve
             }
             put_u64(out, *proposer_stake);
         }
+        StorageTxV3::TransferCustody {
+            object,
+            segment,
+            to_validator,
+        } => {
+            put_u8(out, 12);
+            put_fixed(out, object);
+            put_u64(out, *segment);
+            put_fixed(out, to_validator);
+        }
     }
 }
 
