@@ -283,3 +283,71 @@ pub mod validator_registration_door;
 // Network peer management and gossip dedup.
 #[cfg(test)]
 pub mod network_peer_safety;
+
+// Consensus safety: constants, bounds, and internal consistency.
+#[cfg(test)]
+pub mod consensus_safety;
+
+// Sharding invariants: shard assignment, bounds, cross-shard detection.
+#[cfg(test)]
+pub mod sharding_invariants;
+
+// Wallet safety: mnemonic, keyfile, entropy.
+#[cfg(test)]
+pub mod wallet_safety;
+
+// Light client safety: checkpoint, trust modes, sync plan.
+#[cfg(test)]
+pub mod light_client_safety;
+
+// Post-quantum cryptography: ML-DSA, BLS, scheme consistency.
+#[cfg(test)]
+pub mod crypto_pq_safety;
+
+// Domain tag inventory: prefix, uniqueness, ASCII.
+#[cfg(test)]
+pub mod domain_tags_safety;
+
+// Settlement and commitment tree: merkle root determinism.
+#[cfg(test)]
+pub mod settlement_safety;
+
+// Gas schedule: ordering, bounds, network consistency.
+#[cfg(test)]
+pub mod gas_schedule_safety;
+
+// Genesis ceremony: validation gates, build, serde.
+#[cfg(test)]
+pub mod genesis_ceremony_safety;
+
+// Cross-domain nonce store extended: prune depth, root, edge cases.
+#[cfg(test)]
+pub mod cross_domain_nonce_extended;
+
+// Account model invariants: balance, fees, units.
+#[cfg(test)]
+pub mod account_invariants;
+
+// Hash function determinism and domain separation.
+#[cfg(test)]
+pub mod hash_determinism;
+
+// Validator stake bounds and class constraints.
+#[cfg(test)]
+pub mod validator_stake_bounds;
+
+// Prover module: ZK proof submission, program hash.
+#[cfg(test)]
+pub mod prover_safety;
+
+// Address type: construction, display, serde.
+#[cfg(test)]
+pub mod address_safety;
+
+// Block structure: genesis fields, hash determinism.
+#[cfg(test)]
+pub mod block_structure_safety;
+
+// Config consistency: TOML/JSON alignment.
+#[cfg(test)]
+pub mod config_consistency;
