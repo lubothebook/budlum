@@ -1,0 +1,44 @@
+# Budlum testnet node Dockerfile.
+# Build: docker build -f ops/docker/Dockerfile.testnet -t budlum-testnet .
+# Run:   docker run -p 18545:18545 -p 18547:18547 -p 5001:5001 budlum-testnet
+
+FROM rust:1.97-bookworm AS builder
+
+WORKDIR /build
+COPY . .
+
+RUN apt-get update && apt-get install -y \
+    libclang-dev \
+    pkg-config \
+    libssl-dev \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN cargo build --release --bin bud
+
+# Runtime image.
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/bud /usr/local/bin/bud
+COPY config/testnet.toml /etc/budlum/testnet.toml
+COPY config/testnet-genesis.json /etc/budlum/testnet-genesis.json
+
+RUN useradd -r -m budlum
+USER budlum
+
+EXPOSE 18545 18547 18550 5001 9090
+
+ENV BUDLUM_DATA_DIR=/home/budlum/.budlum-testnet
+ENV BUDLUM_CONFIG=/etc/budlum/testnet.toml
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:18545/health || exit 1
+
+ENTRYPOINT ["bud"]
+CMD ["--config", "/etc/budlum/testnet.toml"]

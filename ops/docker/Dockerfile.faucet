@@ -1,0 +1,38 @@
+# Budlum testnet faucet Dockerfile.
+# Build: docker build -f ops/docker/Dockerfile.faucet -t budlum-faucet .
+
+FROM rust:1.97-bookworm AS builder
+
+WORKDIR /build
+COPY . .
+
+RUN apt-get update && apt-get install -y \
+    libclang-dev \
+    pkg-config \
+    libssl-dev \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN cargo build --release --bin budlum-faucet
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/budlum-faucet /usr/local/bin/budlum-faucet
+COPY config/testnet-faucet.toml /etc/budlum/faucet.toml
+
+RUN useradd -r -m budlum
+USER budlum
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+ENTRYPOINT ["budlum-faucet"]
+CMD ["--config", "/etc/budlum/faucet.toml"]
