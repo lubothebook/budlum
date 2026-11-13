@@ -41,7 +41,7 @@ use crate::prover::ZkProofSubmission;
 use crate::settlement::domains::{
     execute_settlement_tx, submit_zk_proof, SettlementTx, SettlementTxContext,
 };
-use crate::settlement::graft::{execute_graft_tx, GraftTx};
+use crate::settlement::app_binding::{execute_app_binding_tx, AppBindingTx};
 use crate::settlement::proof_market::{ProofReceipt, ReceiptStatus};
 use crate::settlement::shared_security::{execute_shared_security_tx, SharedSecurityTx};
 use crate::tokenomics::VestingSchedule;
@@ -364,15 +364,15 @@ fn app_binding_is_closed_on_testnet() {
         fee: 5,
         bls: IntakeState::production_bls,
     };
-    let tx = GraftTx::Register {
+    let tx = AppBindingTx::Register {
         domain_key: 9,
         origin_app: vec![0x44; 20],
         manifest_hash: [0x55; 32],
     };
     let err =
-        execute_graft_tx(&mut state, &ctx, &tx).expect_err("app_binding must be closed on testnet");
+        execute_app_binding_tx(&mut state, &ctx, &tx).expect_err("app_binding must be closed on testnet");
     assert!(err.to_string().contains("not enabled"), "{err}");
-    assert!(state.settlement.graft.apps.is_empty());
+    assert!(state.settlement.app_binding.apps.is_empty());
 
     let outer_err = execute_settlement_tx(&mut state, &ctx, &SettlementTx::AppBinding(Box::new(tx)))
         .expect_err("SettlementTx::AppBinding must be closed on testnet");
