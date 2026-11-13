@@ -189,6 +189,7 @@ mod gates {
     pub mod suppressions_are_justified;
     pub mod tee_trust_boundary_is_structural;
     pub mod test_modules_can_see_what_they_test;
+    pub mod testnet_feature_closures;
     pub mod testnet_runtime_hardening;
     pub mod the_image_builds_what_the_manifest_declares;
     pub mod three_is_recipe_only;
@@ -1649,6 +1650,14 @@ const GATES: &[Gate] = &[
         run_log: None,
         run_args: None,
         self_test: gates::testnet_runtime_hardening::self_test,
+    },
+    Gate {
+        name: "testnet-feature-closures",
+        replaces: None,
+        run: gates::testnet_feature_closures::run_gate,
+        run_log: None,
+        run_args: None,
+        self_test: gates::testnet_feature_closures::self_test,
     },
 ];
 

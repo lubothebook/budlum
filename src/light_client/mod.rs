@@ -1401,7 +1401,7 @@ mod tests {
             identity_root: None,
             checkpoint_height: 10,
             external_intake_root: None,
-            graft_root: None,
+            app_binding_root: None,
             delegation_root: None,
         };
         state.global_header_summary = header.calculate_hash_bytes();

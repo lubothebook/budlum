@@ -243,3 +243,203 @@ pub mod bud3_replace;
 // Lane-D configuration, backup-drill and vote-domain regression locks.
 #[cfg(test)]
 pub mod audit_lane_d_locks;
+
+// Testnet smoke tests: genesis configuration, chain IDs, feature matrix.
+#[cfg(test)]
+pub mod testnet_smoke;
+
+// Instant Duty Handover mechanics: constants and math.
+#[cfg(test)]
+pub mod handover_mechanics;
+
+// Tokenomics invariant tests: supply conservation, burn mechanics.
+#[cfg(test)]
+pub mod tokenomics_invariants;
+
+// Cross-domain bridge safety checks and replay protection.
+#[cfg(test)]
+pub mod bridge_safety;
+
+// Storage B.U.D. 3.0 content addressing and segment coding.
+#[cfg(test)]
+pub mod bud3_content_addressing;
+
+// Execution environment isolation and coordinator tests.
+#[cfg(test)]
+pub mod execution_isolation;
+
+// Quantum canary alarm flow end-to-end.
+#[cfg(test)]
+pub mod quantum_alarm_flow;
+
+// RPC compatibility gateway tests: Ethereum, Cosmos.
+#[cfg(test)]
+pub mod rpc_compat;
+
+// Validator registration door and class enforcement.
+#[cfg(test)]
+pub mod validator_registration_door;
+
+// Network peer management and gossip dedup.
+#[cfg(test)]
+pub mod network_peer_safety;
+
+// Consensus safety: constants, bounds, and internal consistency.
+#[cfg(test)]
+pub mod consensus_safety;
+
+// Sharding invariants: shard assignment, bounds, cross-shard detection.
+#[cfg(test)]
+pub mod sharding_invariants;
+
+// Wallet safety: mnemonic, keyfile, entropy.
+#[cfg(test)]
+pub mod wallet_safety;
+
+// Light client safety: checkpoint, trust modes, sync plan.
+#[cfg(test)]
+pub mod light_client_safety;
+
+// Post-quantum cryptography: ML-DSA, BLS, scheme consistency.
+#[cfg(test)]
+pub mod crypto_pq_safety;
+
+// Domain tag inventory: prefix, uniqueness, ASCII.
+#[cfg(test)]
+pub mod domain_tags_safety;
+
+// Settlement and commitment tree: merkle root determinism.
+#[cfg(test)]
+pub mod settlement_safety;
+
+// Gas schedule: ordering, bounds, network consistency.
+#[cfg(test)]
+pub mod gas_schedule_safety;
+
+// Genesis ceremony: validation gates, build, serde.
+#[cfg(test)]
+pub mod genesis_ceremony_safety;
+
+// Cross-domain nonce store extended: prune depth, root, edge cases.
+#[cfg(test)]
+pub mod cross_domain_nonce_extended;
+
+// Account model invariants: balance, fees, units.
+#[cfg(test)]
+pub mod account_invariants;
+
+// Hash function determinism and domain separation.
+#[cfg(test)]
+pub mod hash_determinism;
+
+// Validator stake bounds and class constraints.
+#[cfg(test)]
+pub mod validator_stake_bounds;
+
+// Prover module: ZK proof submission, program hash.
+#[cfg(test)]
+pub mod prover_safety;
+
+// Address type: construction, display, serde.
+#[cfg(test)]
+pub mod address_safety;
+
+// Block structure: genesis fields, hash determinism.
+#[cfg(test)]
+pub mod block_structure_safety;
+
+// Config consistency: TOML/JSON alignment.
+#[cfg(test)]
+pub mod config_consistency;
+
+// BNS safety: registry, grace period, bounds.
+#[cfg(test)]
+pub mod bns_safety;
+
+// SocialFi safety: NFT registry.
+#[cfg(test)]
+pub mod socialfi_safety;
+
+// Data Market safety: registry, listings.
+#[cfg(test)]
+pub mod data_market_safety;
+
+// Mempool module exists.
+#[cfg(test)]
+pub mod mempool_safety;
+
+// SDK module: BudlumToml.
+#[cfg(test)]
+pub mod sdk_safety;
+
+// Object layer (B.U.D. 3.0 storage).
+#[cfg(test)]
+pub mod object_layer_safety;
+
+// Relayer module exists.
+#[cfg(test)]
+pub mod relayer_safety;
+
+// Execution coordinator: UEL types, BudZero limits.
+#[cfg(test)]
+pub mod execution_coordinator_safety;
+
+// Privacy module: note registry, private I/O bounds.
+#[cfg(test)]
+pub mod privacy_safety;
+
+// Executor: transaction/block application.
+#[cfg(test)]
+pub mod executor_safety;
+
+// Settlement anchor ledger.
+#[cfg(test)]
+pub mod anchor_safety;
+
+// Secp256k1 recovery for Ethereum compatibility.
+#[cfg(test)]
+pub mod secp256k1_recovery_safety;
+
+// Domain registration and management.
+#[cfg(test)]
+pub mod domain_registration_safety;
+
+// HPKE encrypted communication.
+#[cfg(test)]
+pub mod hpke_safety;
+
+// TLS module.
+#[cfg(test)]
+pub mod tls_safety;
+
+// Education domain (DeEd).
+#[cfg(test)]
+pub mod education_domain_safety;
+
+// App registry (budlumxyz).
+#[cfg(test)]
+pub mod app_registry_safety;
+
+// AI verification layer.
+#[cfg(test)]
+pub mod ai_verification_safety;
+
+// RaptorQ segment coding and ContentId.
+#[cfg(test)]
+pub mod raptorq_safety;
+
+// Key derivation: root secret, user accounts.
+#[cfg(test)]
+pub mod key_derivation_safety;
+
+// Composite signature: hybrid classical+PQ.
+#[cfg(test)]
+pub mod composite_sig_safety;
+
+// Global block (settlement layer).
+#[cfg(test)]
+pub mod global_block_safety;
+
+// Cold quorum.
+#[cfg(test)]
+pub mod cold_quorum_safety;

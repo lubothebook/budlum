@@ -1,0 +1,76 @@
+# Prometheus alert rules for Budlum testnet.
+
+groups:
+  - name: budlum-testnet-alerts
+    rules:
+      - alert: NodeDown
+        expr: up{job="budlum"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Budlum node {{ $labels.instance }} is down"
+          description: "Node has been unreachable for more than 2 minutes."
+
+      - alert: BlockProductionStalled
+        expr: rate(budlum_block_height[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Block production stalled on {{ $labels.instance }}"
+          description: "No new blocks in 5 minutes."
+
+      - alert: HighFinalityGap
+        expr: (budlum_block_height - budlum_finalized_height) > 40
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Finality gap exceeds 40 blocks on {{ $labels.instance }}"
+          description: "The gap between tip and finalized block is {{ $value }}."
+
+      - alert: LowPeerCount
+        expr: budlum_peer_count < 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low peer count on {{ $labels.instance }}"
+          description: "Only {{ $value }} peers connected."
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="budlum"} > 4e9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "RSS is {{ $value | humanize1024 }}."
+
+      - alert: QuantumAlarmTriggered
+        expr: budlum_quantum_alarm_level > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Quantum alarm triggered on {{ $labels.instance }}"
+          description: "Alarm level is {{ $value }}."
+
+      - alert: ConsensusRoundTimeout
+        expr: budlum_consensus_round > 8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High consensus round on {{ $labels.instance }}"
+          description: "Consensus round is {{ $value }}, possible leader failure."
+
+      - alert: ValidatorSetShrunk
+        expr: delta(budlum_validator_set_size[1h]) < -3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Validator set shrunk on {{ $labels.instance }}"
+          description: "Validator set decreased by {{ $value }} in the last hour."

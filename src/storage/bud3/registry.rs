@@ -47,6 +47,10 @@ pub const MOBILE_MISSES_TO_LOSS: u64 = 3;
 /// The state-root tag. V2 commits every serialized field and exact index.
 pub const REGISTRY_TAG: &[u8] = b"BDLM_BUD3_REGISTRY_V2";
 
+/// Epochs the incoming validator has to ack a custody transfer before it
+/// is treated as a missed assignment and enters the repair path.
+pub const CUSTODY_TRANSFER_WINDOW: u64 = 3;
+
 /// An object is named by its commitment.
 pub type ObjectKey = [u8; 32];
 /// A validator or account address.
@@ -61,6 +65,8 @@ pub enum ShareStatus {
     Pending,
     /// The holder acknowledged it and is audited.
     Confirmed,
+    /// Custody transfer initiated; awaiting ack from the new holder.
+    Transferring,
 }
 
 /// One share as the chain tracks it.
@@ -1138,6 +1144,36 @@ impl Bud3Registry {
                 .insert(*holder, current.saturating_sub(lower_quota_bytes));
         }
         Ok(released)
+    }
+
+    /// `TransferCustody`: the outgoing validator initiates a custody transfer
+    /// of one segment to a new validator. The new validator must `CustodyAck`
+    /// within `CUSTODY_TRANSFER_WINDOW` epochs.
+    pub fn initiate_transfer(
+        &mut self,
+        from: &Address,
+        key: &ObjectKey,
+        segment: u64,
+        to: Address,
+        epoch: u64,
+    ) -> Result<(), RegistryError> {
+        let obj = self
+            .objects
+            .get_mut(key)
+            .ok_or(RegistryError::UnknownObject)?;
+        let mut found = false;
+        for s in &mut obj.shares {
+            if s.share.validator == *from && s.segment == segment && !s.lost {
+                s.share.validator = to;
+                s.status = ShareStatus::Transferring;
+                s.assigned_epoch = epoch;
+                found = true;
+            }
+        }
+        if !found {
+            return Err(RegistryError::BadRepair("no matching share to transfer"));
+        }
+        Ok(())
     }
 
     /// `CustodyAck`: the holder confirms its shares of `key`. Returns how many

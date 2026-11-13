@@ -2650,18 +2650,18 @@ impl Transaction {
                 }
                 _ => schedule.contract_call_gas * 2,
             },
-            TransactionType::Settlement(crate::settlement::domains::SettlementTx::Graft(graft)) => {
-                match graft.as_ref() {
-                    crate::settlement::graft::GraftTx::Claim { .. }
-                    | crate::settlement::graft::GraftTx::ClaimBySignature { .. }
-                    | crate::settlement::graft::GraftTx::Fulfill { .. } => {
+            TransactionType::Settlement(crate::settlement::domains::SettlementTx::AppBinding(app_binding_tx)) => {
+                match app_binding_tx.as_ref() {
+                    crate::settlement::app_binding::AppBindingTx::Claim { .. }
+                    | crate::settlement::app_binding::AppBindingTx::ClaimBySignature { .. }
+                    | crate::settlement::app_binding::AppBindingTx::Fulfill { .. } => {
                         schedule.contract_call_gas * 4 + schedule.gas_per_signature * 8
                     }
                     _ => schedule.contract_call_gas * 2,
                 }
             }
             // An allocation verifies an anchored external result, like a
-            // Graft claim.
+            // AppBinding claim.
             TransactionType::Settlement(
                 crate::settlement::domains::SettlementTx::SharedSecurity(shared),
             ) => match shared.as_ref() {
@@ -4332,18 +4332,18 @@ fn encode_settlement_tx(tx: &crate::settlement::domains::SettlementTx, out: &mut
             put_u8(out, 9);
             encode_relayer_intent_tx(intent_tx, out);
         }
-        SettlementTx::Graft(graft_tx) => {
+        SettlementTx::AppBinding(app_binding_tx) => {
             put_u8(out, 6);
-            // Graft carries several bounded byte fields and an external proof.
+            // AppBinding carries several bounded byte fields and an external proof.
             // Bincode here is only the canonical signed payload; the door
             // performs the semantic and size checks before writing state.
-            let bytes = bincode::serialize(graft_tx)
-                .unwrap_or_else(|_| b"budlum/graft/serialize-failed".to_vec());
+            let bytes = bincode::serialize(app_binding_tx)
+                .unwrap_or_else(|_| b"budlum/app_binding/serialize-failed".to_vec());
             put_bytes(out, &bytes);
         }
         SettlementTx::SharedSecurity(shared_tx) => {
             put_u8(out, 7);
-            // Same convention as Graft: the bincode encoding of the whole
+            // Same convention as AppBinding: the bincode encoding of the whole
             // variant is the signed payload; the door bounds every field.
             let bytes = bincode::serialize(shared_tx)
                 .unwrap_or_else(|_| b"budlum/mikoriza/serialize-failed".to_vec());
@@ -4684,6 +4684,16 @@ fn encode_storage_v3_tx(tx: &crate::storage::bud3::tx::StorageTxV3, out: &mut Ve
                 encode_storage_v3_content_id(&att.verified_content_id, out);
             }
             put_u64(out, *proposer_stake);
+        }
+        StorageTxV3::TransferCustody {
+            object,
+            segment,
+            to_validator,
+        } => {
+            put_u8(out, 12);
+            put_fixed(out, object);
+            put_u64(out, *segment);
+            put_fixed(out, to_validator);
         }
     }
 }

@@ -98,6 +98,16 @@ pub enum StorageTxV3 {
         /// Bytes by which to lower the holder's declared custody quota.
         lower_quota_bytes: u64,
     },
+    /// Transfer custody of symbols from one validator to another without
+    /// fountain re-encoding (`TransferCustody`, Section 6.15). Used during
+    /// planned validator rotation: the outgoing validator signs the transfer,
+    /// the incoming validator must ack within `CUSTODY_TRANSFER_WINDOW` epochs.
+    TransferCustody {
+        object: ObjectKey,
+        segment: u64,
+        to_validator: Address,
+    },
+
     /// Atomically replace an object with a new codec representation verified to
     /// decode to the identical `ContentId` (`ReplaceObject`, Section 6.14).
     ReplaceObject {
@@ -143,6 +153,8 @@ pub enum Applied {
     Released(usize),
     /// Object atomically replaced with a new commitment for the same `ContentId`.
     Replaced(ObjectKey),
+    /// Custody transfer initiated; the incoming validator must ack.
+    TransferInitiated,
 }
 
 /// Apply one transaction signed by `signer` at `epoch`.
@@ -218,6 +230,14 @@ pub fn apply(
         } => registry
             .release_shares(&signer, &object, segment, lower_quota_bytes)
             .map(Applied::Released),
+        StorageTxV3::TransferCustody {
+            object,
+            segment,
+            to_validator,
+        } => {
+            registry.initiate_transfer(&signer, &object, segment, to_validator, epoch)?;
+            Ok(Applied::TransferInitiated)
+        }
         StorageTxV3::ReplaceObject {
             old_object,
             new_record,

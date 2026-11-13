@@ -1,0 +1,20 @@
+# Testnet faucet configuration.
+
+[faucet]
+chain_id = 45261
+rpc_url = "http://127.0.0.1:18545"
+listen_addr = "0.0.0.0:8080"
+
+# Maximum amount per request (in BUD smallest unit).
+max_amount = 1_000_000_000_000
+
+# Rate limiting.
+requests_per_address_per_day = 3
+requests_per_ip_per_hour = 10
+
+# Faucet wallet key file.
+# key_file = "/path/to/faucet-key.json"
+
+[logging]
+level = "info"
+format = "json"

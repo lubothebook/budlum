@@ -22,7 +22,6 @@ pub mod consensus;
 pub mod core;
 pub mod cross_domain;
 pub mod crypto;
-pub mod data_market;
 pub mod deed;
 pub mod domain;
 pub mod education_domain;

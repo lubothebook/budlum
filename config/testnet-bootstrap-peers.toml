@@ -1,0 +1,30 @@
+# Testnet bootstrap peer configuration.
+# These are the initial peers that new nodes connect to when joining the testnet.
+#
+# Each peer entry contains:
+#   multiaddr - The libp2p multiaddress of the peer
+#   name      - A human-readable name for the peer (optional, for ops)
+#
+# To add a new bootstrap peer:
+# 1. Generate keys with: ./ops/scripts/testnet-keygen.sh
+# 2. Start the node with: bud --config config/testnet.toml
+# 3. Get the peer ID from the node's startup log
+# 4. Add the multiaddr below
+
+[bootstrap]
+# Boot node 1 - primary bootstrap (placeholder, replace with real address)
+# peers = [
+#   "/dns4/boot1.testnet.budlum.xyz/tcp/5001/p2p/PEER_ID_HERE",
+#   "/dns4/boot2.testnet.budlum.xyz/tcp/5001/p2p/PEER_ID_HERE",
+# ]
+
+# DNS seed records (when available)
+# dns_seeds = [
+#   "_dnsaddr.testnet.budlum.xyz",
+# ]
+
+[limits]
+max_peers = 75
+min_peers = 3
+max_pending_connections = 32
+connection_timeout_secs = 10
