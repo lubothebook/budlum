@@ -379,3 +379,19 @@ pub mod object_layer_safety;
 // Relayer module exists.
 #[cfg(test)]
 pub mod relayer_safety;
+
+// Execution coordinator: UEL types, BudZero limits.
+#[cfg(test)]
+pub mod execution_coordinator_safety;
+
+// Privacy module: note registry, private I/O bounds.
+#[cfg(test)]
+pub mod privacy_safety;
+
+// Executor: transaction/block application.
+#[cfg(test)]
+pub mod executor_safety;
+
+// Settlement anchor ledger.
+#[cfg(test)]
+pub mod anchor_safety;
