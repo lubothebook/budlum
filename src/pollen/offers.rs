@@ -237,18 +237,18 @@ pub struct MarketplaceRegistry {
     pub offers: BTreeMap<u64, DataOffer>,
     #[serde(default)]
     pub next_offer_id: u64,
-    /// Pollen: registered data buds. The asset is not sold; its
+    /// Data Market: registered data buds. The asset is not sold; its
     /// Access pollen is sold via AccessGrant.
     #[serde(default)]
     pub data_assets: BTreeMap<AssetId, DataAsset>,
-    /// Pollen: owner-signed access grants. Strict AI gate consumes these.
+    /// Data Market: owner-signed access grants. Strict AI gate consumes these.
     #[serde(default)]
     pub access_grants: BTreeMap<GrantId, AccessGrant>,
-    /// Pollen: seller/owner signed sale authorizations. These define the
+    /// Data Market: seller/owner signed sale authorizations. These define the
     /// Bounded pollen sale terms without transferring DataAsset ownership.
     #[serde(default)]
     pub sale_authorizations: BTreeMap<SaleAuthorizationId, SaleAuthorization>,
-    /// Pollen: purchase receipts produced from authorization-backed grant issue.
+    /// Data Market: purchase receipts produced from authorization-backed grant issue.
     /// They bind a buyer payment commitment to the grant without transferring the asset.
     #[serde(default)]
     pub purchase_receipts: BTreeMap<GrantId, PollenPurchaseReceipt>,

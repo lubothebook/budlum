@@ -51,7 +51,7 @@ pub struct SettlementRegistries {
     /// AppBinding applications, mirror payments, externally proven claims, and
     /// solver-intent bindings. Every write enters through `SettlementTx::AppBinding`.
     #[serde(default)]
-    pub graft: crate::settlement::app_binding::AppBindingRegistry,
+    pub app_binding: crate::settlement::app_binding::AppBindingRegistry,
     /// The finality checkpoint headers: built by the transition of
     /// every checkpoint block from the state at its end.
     pub global_headers: GlobalHeaderWindow,

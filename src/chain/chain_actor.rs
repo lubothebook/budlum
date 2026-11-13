@@ -2470,7 +2470,7 @@ impl ChainHandle {
         rx.await.unwrap_or_default()
     }
 
-    pub async fn budlumxyz_get_graft_apps(&self) -> Vec<crate::settlement::app_binding::AppBindingApp> {
+    pub async fn budlumxyz_get_app_binding_apps(&self) -> Vec<crate::settlement::app_binding::AppBindingApp> {
         let (tx, rx) = oneshot::channel();
         let _ = self
             .tx

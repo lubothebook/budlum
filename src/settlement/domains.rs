@@ -90,7 +90,7 @@ pub enum SettlementTx {
     RelayerIntent(Box<RelayerIntentTx>),
     /// Register an AppBinding application, move value into its mirror, prove a
     /// claim, or use the AppBinding relayer-intent adapter.
-    Graft(Box<crate::settlement::app_binding::AppBindingTx>),
+    AppBinding(Box<crate::settlement::app_binding::AppBindingTx>),
     /// Name a Mikoriza registrar or record a proven restaking allocation.
     SharedSecurity(Box<crate::settlement::shared_security::SharedSecurityTx>),
     /// Carry a cross-domain message one domain emitted into the settlement
@@ -1562,7 +1562,7 @@ pub fn execute_settlement_tx(
         SettlementTx::ProofMarket(market_tx) => execute_proof_market_tx(state, ctx, market_tx),
         SettlementTx::RelayerIntent(intent_tx) => execute_relayer_intent_tx(state, ctx, intent_tx),
         SettlementTx::AppBinding(app_binding_tx) => {
-            crate::settlement::app_binding::execute_app_binding_tx(state, ctx, graft_tx)
+            crate::settlement::app_binding::execute_app_binding_tx(state, ctx, app_binding_tx)
         }
         SettlementTx::SharedSecurity(shared_tx) => {
             crate::settlement::shared_security::execute_shared_security_tx(state, ctx, shared_tx)

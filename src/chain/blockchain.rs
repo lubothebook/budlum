@@ -2043,7 +2043,7 @@ impl Blockchain {
                 let body = self.state.state_root_body();
                 let summary = header.calculate_hash_bytes();
                 let app_binding_reg = &self.state.settlement.app_binding;
-                if header.app_binding_root.is_some() && header.app_binding_root == Some(graft.root()) {
+                if header.app_binding_root.is_some() && header.app_binding_root == Some(app_binding_reg.root()) {
                     self.app_binding_payment_windows.insert(
                         header.global_height,
                         (app_binding_reg.payments.clone(), app_binding_reg.opening().rest_hash),

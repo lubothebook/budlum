@@ -1883,7 +1883,7 @@ fn run_app_binding(rpc_url: &str, action: &AppBindingAction) -> Result<(), Strin
     };
     let key = open_wallet(signer)?;
     let tx_type = TransactionType::Settlement(
-        budlum_core::settlement::domains::SettlementTx::Graft(Box::new(app_binding_tx)),
+        budlum_core::settlement::domains::SettlementTx::AppBinding(Box::new(app_binding_tx)),
     );
     send_v5(rpc_url, &key, v5_template(tx_type, 0, signer.fee), None)
 }
@@ -2526,7 +2526,7 @@ fn main() {
             ),
         },
         Command::Dev { action } => run_dev(&cli.rpc_url, action),
-        Command::Graft { action } => run_app_binding(&cli.rpc_url, action),
+        Command::AppBinding { action } => run_app_binding(&cli.rpc_url, action),
         Command::Bns { action } => match action {
             BnsAction::Register {
                 signer,
@@ -2632,7 +2632,7 @@ fn run_cli_conformance(samples: usize) -> Result<(), String> {
     let bns_res = budlum_core::bns::bud3::Bud3BnsResolver::new();
     let _bns_none = bns_res.binding("example.bud");
 
-    let dm_reg = budlum_core::data_market::DataMarketRegistry::new();
+    let dm_reg = budlum_core::pollen::DataMarketRegistry::new();
     let _dm_none = dm_reg.listing(&[0u8; 32]);
 
     let edu_reg = budlum_core::education_domain::EducationDomainRegistry::new();

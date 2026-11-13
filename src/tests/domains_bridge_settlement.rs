@@ -374,8 +374,8 @@ fn app_binding_is_closed_on_testnet() {
     assert!(err.to_string().contains("not enabled"), "{err}");
     assert!(state.settlement.graft.apps.is_empty());
 
-    let outer_err = execute_settlement_tx(&mut state, &ctx, &SettlementTx::Graft(Box::new(tx)))
-        .expect_err("SettlementTx::Graft must be closed on testnet");
+    let outer_err = execute_settlement_tx(&mut state, &ctx, &SettlementTx::AppBinding(Box::new(tx)))
+        .expect_err("SettlementTx::AppBinding must be closed on testnet");
     assert!(outer_err.to_string().contains("not enabled"), "{outer_err}");
 }
 

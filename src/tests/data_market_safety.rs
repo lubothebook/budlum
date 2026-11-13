@@ -1,6 +1,6 @@
 //! Data Market module safety tests.
 
-use crate::data_market::{DataMarketListing, DataMarketRegistry};
+use crate::pollen::{DataMarketListing, DataMarketRegistry};
 
 #[test]
 fn data_market_registry_type_exists() {

@@ -802,7 +802,7 @@ pub fn execute_app_binding_tx(
             if let Some(executor) = state.settlement.app_binding.executors.get(domain_key) {
                 if executor.len() != origin_app.len() {
                     return Err(refused(
-                        the AppBinding application's identifier width does not match its domain's executor",
+                        "the AppBinding application's identifier width does not match its domain's executor",
                     ));
                 }
             }
@@ -1039,13 +1039,13 @@ pub fn execute_app_binding_tx(
                 .executors
                 .get(&app.domain_key)
                 .cloned()
-                .ok_or_else(|| refused(the AppBinding application's domain has no executor"))?;
+                .ok_or_else(|| refused("the AppBinding application's domain has no executor"))?;
             // The executor emits the application's identifier in the
             // fulfilment preimage, so an application whose identifier is a
             // different width than the executor's own can never be fulfilled.
             if executor.len() != app.origin_app.len() {
                 return Err(refused(
-                    the AppBinding application's identifier width does not match its domain's executor",
+                    "the AppBinding application's identifier width does not match its domain's executor",
                 ));
             }
             if *call_hash == [0u8; 32] {
@@ -1217,7 +1217,7 @@ pub fn execute_app_binding_tx(
                 .executors
                 .get(&app.domain_key)
                 .cloned()
-                .ok_or_else(|| refused(the AppBinding application's domain has no executor"))?;
+                .ok_or_else(|| refused("the AppBinding application's domain has no executor"))?;
             if evidence.chain.domain_id() != app.domain_key {
                 return Err(refused(
                     "AppBinding fulfilment evidence comes from another domain",
