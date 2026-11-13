@@ -5,7 +5,7 @@ pub mod cold_wallet;
 pub mod commitment_tree;
 pub mod domains;
 pub mod global_block;
-pub mod graft;
+pub mod app_binding;
 pub mod pq_anchor;
 pub mod pq_anchor_verify;
 pub mod proof_market;
