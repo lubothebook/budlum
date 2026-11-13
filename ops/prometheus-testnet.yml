@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'budlum-boot'
+    static_configs:
+      - targets: ['boot-node:19090']
+        labels:
+          node: 'boot'
+          role: 'validator'
+
+  - job_name: 'budlum-val2'
+    static_configs:
+      - targets: ['validator-2:19090']
+        labels:
+          node: 'val2'
+          role: 'validator'
+
+  - job_name: 'budlum-val3'
+    static_configs:
+      - targets: ['validator-3:19090']
+        labels:
+          node: 'val3'
+          role: 'validator'

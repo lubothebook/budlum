@@ -1,0 +1,235 @@
+name: Testnet Smoke Test
+
+on:
+  push:
+    branches: [main, testnet-*, fix/audit-*]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  genesis-build:
+    name: Genesis Build & Validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --release
+      - name: Generate devnet genesis
+        run: |
+          cargo run --release -- genesis build \
+            --chain-id 1337 \
+            --output /tmp/devnet-genesis.json \
+            --dev-key-output /tmp/devnet-key.json
+      - name: Validate devnet genesis schema
+        run: |
+          python3 -I -c "
+          import json, sys
+          with open('/tmp/devnet-genesis.json') as f:
+              g = json.load(f)
+          required = ['chain_id', 'allocations', 'validators', 'base_fee', 'gas_schedule', 'bud_tokenomics']
+          missing = [k for k in required if k not in g]
+          if missing:
+              print(f'Missing fields: {missing}', file=sys.stderr)
+              sys.exit(1)
+          assert g['chain_id'] == 1337, f'Expected chain_id 1337, got {g[\"chain_id\"]}'
+          assert len(g['validators']) > 0, 'No validators in genesis'
+          assert len(g['allocations']) > 0, 'No allocations in genesis'
+          print('Genesis schema validation passed')
+          "
+      - name: Generate testnet genesis template
+        run: |
+          cargo run --release -- genesis build \
+            --chain-id 45261 \
+            --output /tmp/testnet-genesis.json \
+            --dev-key-output /tmp/testnet-key.json
+      - name: Validate testnet genesis
+        run: |
+          python3 -I -c "
+          import json
+          with open('/tmp/testnet-genesis.json') as f:
+              g = json.load(f)
+          assert g['chain_id'] == 45261
+          print(f'Testnet genesis: chain_id={g[\"chain_id\"]}, validators={len(g[\"validators\"])}')
+          "
+
+  node-startup:
+    name: Node Startup & RPC Health
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Generate devnet keys and genesis
+        run: |
+          mkdir -p /tmp/budlum-smoke/secrets
+          cargo run --release -- genesis build \
+            --chain-id 1337 \
+            --output /tmp/budlum-smoke/genesis.json \
+            --dev-key-output /tmp/budlum-smoke/secrets/validator.key
+      - name: Start node (background)
+        run: |
+          cargo run --release -- \
+            --network devnet \
+            --genesis-file /tmp/budlum-smoke/genesis.json \
+            --validator-key-file /tmp/budlum-smoke/secrets/validator.key \
+            --db-path /tmp/budlum-smoke/data/budlum.db \
+            --rpc-enabled \
+            --rpc-host 127.0.0.1 \
+            --rpc-port 18545 \
+            --port 5001 &
+          echo $! > /tmp/node.pid
+          sleep 5
+      - name: Health check
+        run: |
+          for i in $(seq 1 10); do
+            if curl -sf http://127.0.0.1:18545 -X POST \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"bud_chainId","params":[]}'; then
+              echo "RPC is healthy"
+              break
+            fi
+            echo "Waiting for RPC... ($i/10)"
+            sleep 2
+          done
+      - name: Query chain info
+        run: |
+          curl -sf http://127.0.0.1:18545 -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"bud_getBlockByNumber","params":["0x0",false]}' || true
+          curl -sf http://127.0.0.1:18545 -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":2,"method":"bud_blockNumber","params":[]}' || true
+      - name: Stop node
+        if: always()
+        run: |
+          if [ -f /tmp/node.pid ]; then
+            kill $(cat /tmp/node.pid) 2>/dev/null || true
+          fi
+
+  keygen:
+    name: Key Generation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Generate ed25519 key
+        run: |
+          cargo run --release -- keygen --type ed25519 --output /tmp/test-ed25519.key
+          test -f /tmp/test-ed25519.key
+          test -f /tmp/test-ed25519.key.pub
+      - name: Generate validator key
+        run: |
+          cargo run --release -- --gen-key /tmp/test-validator.key
+          test -f /tmp/test-validator.key
+      - name: Verify key file permissions (unix)
+        run: |
+          perms=$(stat -c %a /tmp/test-ed25519.key)
+          if [ "$perms" != "600" ]; then
+            echo "Key file has wrong permissions: $perms (expected 600)"
+            exit 1
+          fi
+
+  faucet-build:
+    name: Faucet Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build faucet
+        run: cargo build --release --bin budlum-faucet
+      - name: Faucet help
+        run: cargo run --release --bin budlum-faucet -- --help || true
+
+  indexer-build:
+    name: Indexer Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build indexer
+        run: cargo build --release --bin budlum-indexer
+      - name: Indexer help
+        run: cargo run --release --bin budlum-indexer -- --help || true
+
+  relayer-build:
+    name: Relayer Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build relayer
+        run: cargo build --release --bin budlum-relayer
+      - name: Relayer help
+        run: cargo run --release --bin budlum-relayer -- --help || true
+
+  light-client-build:
+    name: Light Client Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build light client
+        run: cargo build --release --bin budlum-light
+      - name: Light client help
+        run: cargo run --release --bin budlum-light -- --help || true
+
+  wallet-build:
+    name: CLI Wallet Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build wallet CLI
+        run: cargo build --release --bin bud
+      - name: Wallet help
+        run: cargo run --release --bin bud -- --help || true
+
+  migrate-build:
+    name: Migration Kit Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build migration tool
+        run: cargo build --release --bin bud-migrate
+      - name: Migration help
+        run: cargo run --release --bin bud-migrate -- --help || true

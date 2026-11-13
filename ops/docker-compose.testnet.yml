@@ -1,0 +1,150 @@
+version: "3.9"
+
+# Testnet multi-node Docker Compose setup.
+# Usage:
+#   docker compose -f ops/docker-compose.testnet.yml up -d
+#   docker compose -f ops/docker-compose.testnet.yml logs -f
+#   docker compose -f ops/docker-compose.testnet.yml down
+
+x-node-base: &node-base
+  build:
+    context: ..
+    dockerfile: ops/Dockerfile
+  restart: unless-stopped
+  environment:
+    - RUST_LOG=info
+    - BUDLUM_RPC_API_KEY=${BUDLUM_RPC_API_KEY:-testnet-dev-key}
+    - BUDLUM_HSM_PIN=${BUDLUM_HSM_PIN:-}
+  networks:
+    - testnet
+
+services:
+  # Boot node: the first node that others connect to.
+  boot-node:
+    <<: *node-base
+    container_name: budlum-boot
+    command: >
+      budlum-core
+        --network devnet
+        --genesis-file /config/genesis.json
+        --validator-key-file /secrets/validator.key
+        --db-path /data/budlum.db
+        --rpc-enabled
+        --rpc-host 0.0.0.0
+        --rpc-port 18545
+        --port 5001
+    ports:
+      - "18545:18545"  # RPC
+      - "5001:5001"    # P2P
+      - "19090:19090"  # Metrics
+    volumes:
+      - boot-data:/data
+      - ./testnet-secrets/boot:/secrets:ro
+      - ./testnet-config:/config:ro
+
+  # Validator node 2
+  validator-2:
+    <<: *node-base
+    container_name: budlum-val2
+    command: >
+      budlum-core
+        --network devnet
+        --genesis-file /config/genesis.json
+        --validator-key-file /secrets/validator.key
+        --db-path /data/budlum.db
+        --rpc-enabled
+        --rpc-host 0.0.0.0
+        --rpc-port 18545
+        --port 5001
+        --bootstrap /dns4/boot-node/tcp/5001
+    ports:
+      - "28545:18545"  # RPC
+      - "5002:5001"    # P2P
+    volumes:
+      - val2-data:/data
+      - ./testnet-secrets/val2:/secrets:ro
+      - ./testnet-config:/config:ro
+    depends_on:
+      - boot-node
+
+  # Validator node 3
+  validator-3:
+    <<: *node-base
+    container_name: budlum-val3
+    command: >
+      budlum-core
+        --network devnet
+        --genesis-file /config/genesis.json
+        --validator-key-file /secrets/validator.key
+        --db-path /data/budlum.db
+        --rpc-enabled
+        --rpc-host 0.0.0.0
+        --rpc-port 18545
+        --port 5001
+        --bootstrap /dns4/boot-node/tcp/5001
+    ports:
+      - "38545:18545"
+      - "5003:5001"
+    volumes:
+      - val3-data:/data
+      - ./testnet-secrets/val3:/secrets:ro
+      - ./testnet-config:/config:ro
+    depends_on:
+      - boot-node
+
+  # Faucet service
+  faucet:
+    <<: *node-base
+    container_name: budlum-faucet
+    command: >
+      budlum-faucet
+        --rpc-url http://boot-node:18545
+        --listen 0.0.0.0:18080
+        --key-file /secrets/faucet.key
+        --amount 1000000000
+        --cooldown-secs 60
+    ports:
+      - "18080:18080"
+    volumes:
+      - ./testnet-secrets/faucet:/secrets:ro
+    depends_on:
+      - boot-node
+
+  # Indexer service
+  indexer:
+    <<: *node-base
+    container_name: budlum-indexer
+    command: >
+      budlum-indexer
+        --rpc-url http://boot-node:18545
+        --listen 0.0.0.0:18081
+        --db-path /data/indexer.db
+    ports:
+      - "18081:18081"
+    volumes:
+      - indexer-data:/data
+    depends_on:
+      - boot-node
+
+  # Prometheus monitoring
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: budlum-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus-testnet.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - testnet
+    depends_on:
+      - boot-node
+
+volumes:
+  boot-data:
+  val2-data:
+  val3-data:
+  indexer-data:
+
+networks:
+  testnet:
+    driver: bridge
