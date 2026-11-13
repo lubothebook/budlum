@@ -395,3 +395,31 @@ pub mod executor_safety;
 // Settlement anchor ledger.
 #[cfg(test)]
 pub mod anchor_safety;
+
+// Secp256k1 recovery for Ethereum compatibility.
+#[cfg(test)]
+pub mod secp256k1_recovery_safety;
+
+// Domain registration and management.
+#[cfg(test)]
+pub mod domain_registration_safety;
+
+// HPKE encrypted communication.
+#[cfg(test)]
+pub mod hpke_safety;
+
+// TLS module.
+#[cfg(test)]
+pub mod tls_safety;
+
+// Education domain (DeEd).
+#[cfg(test)]
+pub mod education_domain_safety;
+
+// App registry (budlumxyz).
+#[cfg(test)]
+pub mod app_registry_safety;
+
+// AI verification layer.
+#[cfg(test)]
+pub mod ai_verification_safety;
