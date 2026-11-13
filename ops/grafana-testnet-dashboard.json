@@ -1,0 +1,131 @@
+{
+  "dashboard": {
+    "title": "Budlum Testnet Dashboard",
+    "uid": "budlum-testnet",
+    "timezone": "utc",
+    "refresh": "10s",
+    "panels": [
+      {
+        "title": "Block Height",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "budlum_block_height",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "Peer Count",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+        "targets": [
+          {
+            "expr": "budlum_peer_count",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "Transactions Per Block",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "rate(budlum_transactions_total[5m])",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "Epoch",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+        "targets": [
+          {
+            "expr": "budlum_current_epoch",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "Block Production Rate",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "targets": [
+          {
+            "expr": "rate(budlum_block_height[1m])",
+            "legendFormat": "blocks/min {{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "Memory Usage",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes{job=\"budlum\"}",
+            "legendFormat": "RSS {{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "Consensus Rounds",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "expr": "budlum_consensus_round",
+            "legendFormat": "round {{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "RPC Request Rate",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "targets": [
+          {
+            "expr": "rate(budlum_rpc_requests_total[5m])",
+            "legendFormat": "{{method}} {{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "Validator Set Size",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 8, "x": 0, "y": 20 },
+        "targets": [
+          {
+            "expr": "budlum_validator_set_size",
+            "legendFormat": "validators"
+          }
+        ]
+      },
+      {
+        "title": "Finality Gap (blocks)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 8, "x": 8, "y": 20 },
+        "targets": [
+          {
+            "expr": "budlum_block_height - budlum_finalized_height",
+            "legendFormat": "finality gap"
+          }
+        ]
+      },
+      {
+        "title": "Quantum Alarm Level",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 8, "x": 16, "y": 20 },
+        "targets": [
+          {
+            "expr": "budlum_quantum_alarm_level",
+            "legendFormat": "alarm level"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,104 @@
+name: Testnet Audit Tests
+
+on:
+  push:
+    branches: [fix/audit-findings, testnet, testnet-quantum]
+    paths:
+      - 'src/tests/**'
+      - 'audit-notes/**'
+  pull_request:
+    branches: [mainn, testnet-quantum]
+    paths:
+      - 'src/tests/**'
+      - 'audit-notes/**'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  audit-tests:
+    name: Run audit test suites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run testnet smoke tests
+        run: cargo test --lib tests::testnet_smoke -- --nocapture
+
+      - name: Run handover mechanics tests
+        run: cargo test --lib tests::handover_mechanics -- --nocapture
+
+      - name: Run tokenomics invariant tests
+        run: cargo test --lib tests::tokenomics_invariants -- --nocapture
+
+      - name: Run bridge safety tests
+        run: cargo test --lib tests::bridge_safety -- --nocapture
+
+      - name: Run BUD 3.0 content addressing tests
+        run: cargo test --lib tests::bud3_content_addressing -- --nocapture
+
+      - name: Run execution isolation tests
+        run: cargo test --lib tests::execution_isolation -- --nocapture
+
+      - name: Run quantum alarm flow tests
+        run: cargo test --lib tests::quantum_alarm_flow -- --nocapture
+
+      - name: Run RPC compatibility tests
+        run: cargo test --lib tests::rpc_compat -- --nocapture
+
+      - name: Run validator registration tests
+        run: cargo test --lib tests::validator_registration_door -- --nocapture
+
+      - name: Run network peer safety tests
+        run: cargo test --lib tests::network_peer_safety -- --nocapture
+
+      - name: Run consensus safety tests
+        run: cargo test --lib tests::consensus_safety -- --nocapture
+
+      - name: Run sharding invariant tests
+        run: cargo test --lib tests::sharding_invariants -- --nocapture
+
+      - name: Run wallet safety tests
+        run: cargo test --lib tests::wallet_safety -- --nocapture
+
+      - name: Run light client safety tests
+        run: cargo test --lib tests::light_client_safety -- --nocapture
+
+      - name: Run crypto PQ safety tests
+        run: cargo test --lib tests::crypto_pq_safety -- --nocapture
+
+      - name: Run domain tags safety tests
+        run: cargo test --lib tests::domain_tags_safety -- --nocapture
+
+      - name: Run settlement safety tests
+        run: cargo test --lib tests::settlement_safety -- --nocapture
+
+      - name: Run gas schedule safety tests
+        run: cargo test --lib tests::gas_schedule_safety -- --nocapture
+
+      - name: Run genesis ceremony safety tests
+        run: cargo test --lib tests::genesis_ceremony_safety -- --nocapture
+
+      - name: Run cross-domain nonce extended tests
+        run: cargo test --lib tests::cross_domain_nonce_extended -- --nocapture
+
+      - name: Run account invariant tests
+        run: cargo test --lib tests::account_invariants -- --nocapture
+
+      - name: Run hash determinism tests
+        run: cargo test --lib tests::hash_determinism -- --nocapture
+
+      - name: Run validator stake bounds tests
+        run: cargo test --lib tests::validator_stake_bounds -- --nocapture
+
+      - name: Run block structure safety tests
+        run: cargo test --lib tests::block_structure_safety -- --nocapture
+
+      - name: Run config consistency tests
+        run: cargo test --lib tests::config_consistency -- --nocapture

@@ -351,3 +351,31 @@ pub mod block_structure_safety;
 // Config consistency: TOML/JSON alignment.
 #[cfg(test)]
 pub mod config_consistency;
+
+// BNS safety: registry, grace period, bounds.
+#[cfg(test)]
+pub mod bns_safety;
+
+// SocialFi safety: NFT registry.
+#[cfg(test)]
+pub mod socialfi_safety;
+
+// Data Market safety: registry, listings.
+#[cfg(test)]
+pub mod data_market_safety;
+
+// Mempool module exists.
+#[cfg(test)]
+pub mod mempool_safety;
+
+// SDK module: BudlumToml.
+#[cfg(test)]
+pub mod sdk_safety;
+
+// Object layer (B.U.D. 3.0 storage).
+#[cfg(test)]
+pub mod object_layer_safety;
+
+// Relayer module exists.
+#[cfg(test)]
+pub mod relayer_safety;
