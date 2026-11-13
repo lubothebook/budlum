@@ -423,3 +423,23 @@ pub mod app_registry_safety;
 // AI verification layer.
 #[cfg(test)]
 pub mod ai_verification_safety;
+
+// RaptorQ segment coding and ContentId.
+#[cfg(test)]
+pub mod raptorq_safety;
+
+// Key derivation: root secret, user accounts.
+#[cfg(test)]
+pub mod key_derivation_safety;
+
+// Composite signature: hybrid classical+PQ.
+#[cfg(test)]
+pub mod composite_sig_safety;
+
+// Global block (settlement layer).
+#[cfg(test)]
+pub mod global_block_safety;
+
+// Cold quorum.
+#[cfg(test)]
+pub mod cold_quorum_safety;
