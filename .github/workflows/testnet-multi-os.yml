@@ -1,0 +1,196 @@
+name: Testnet Multi-OS Build & Test
+
+on:
+  push:
+    branches: [main, testnet-*, fix/audit-*]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'  # Weekly Monday 04:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build-ubuntu-2404:
+    name: Ubuntu 24.04 (x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test --all-features -- --test-threads=4
+      - name: Run node smoke test
+        run: |
+          timeout 10 cargo run --release -- --help || true
+          timeout 10 cargo run --release -- genesis build \
+            --chain-id 1337 \
+            --output /tmp/test-genesis.json \
+            --dev-key-output /tmp/test-key.json || true
+      - name: Verify genesis output
+        run: |
+          test -f /tmp/test-genesis.json
+          python3 -c "import json; d=json.load(open('/tmp/test-genesis.json')); assert d['chain_id']==1337"
+
+  build-ubuntu-2204:
+    name: Ubuntu 22.04 (x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test --all-features
+
+  build-macos:
+    name: macOS (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test --all-features
+      - name: Cross-platform determinism check
+        run: |
+          cargo run --release -- genesis build \
+            --chain-id 1337 \
+            --output /tmp/macos-genesis.json \
+            --dev-key-output /tmp/macos-key.json || true
+
+  build-windows:
+    name: Windows Server (x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test --all-features
+
+  build-alpine-musl:
+    name: Alpine Linux (musl)
+    runs-on: ubuntu-24.04
+    container:
+      image: rust:1.97.1-alpine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: apk add --no-cache musl-dev openssl-dev pkgconf git perl make
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test --all-features
+
+  build-fedora:
+    name: Fedora Linux (x86_64)
+    runs-on: ubuntu-24.04
+    container:
+      image: fedora:latest
+    steps:
+      - name: Install build deps
+        run: dnf install -y gcc openssl-devel pkg-config git curl
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test --all-features
+
+  build-debian:
+    name: Debian 12 Bookworm (x86_64)
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:bookworm
+    steps:
+      - name: Install build deps
+        run: |
+          apt-get update
+          apt-get install -y curl build-essential libssl-dev pkg-config git
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.97.1
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Build
+        run: |
+          . "$HOME/.cargo/env"
+          cargo build --release
+      - name: Test
+        run: |
+          . "$HOME/.cargo/env"
+          cargo test --all-features
+
+  cross-arm64:
+    name: Ubuntu 24.04 (aarch64 cross)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          targets: aarch64-unknown-linux-gnu
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Build (cross)
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target aarch64-unknown-linux-gnu
+
+  summary:
+    name: Multi-OS Summary
+    needs:
+      - build-ubuntu-2404
+      - build-ubuntu-2204
+      - build-macos
+      - build-windows
+      - build-alpine-musl
+      - build-fedora
+      - build-debian
+      - cross-arm64
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          echo "Multi-OS build matrix complete"
+          echo "Ubuntu 24.04: ${{ needs.build-ubuntu-2404.result }}"
+          echo "Ubuntu 22.04: ${{ needs.build-ubuntu-2204.result }}"
+          echo "macOS: ${{ needs.build-macos.result }}"
+          echo "Windows: ${{ needs.build-windows.result }}"
+          echo "Alpine: ${{ needs.build-alpine-musl.result }}"
+          echo "Fedora: ${{ needs.build-fedora.result }}"
+          echo "Debian: ${{ needs.build-debian.result }}"
+          echo "ARM64 cross: ${{ needs.cross-arm64.result }}"

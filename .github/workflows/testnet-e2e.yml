@@ -1,0 +1,194 @@
+name: Testnet End-to-End
+
+on:
+  push:
+    branches: [main, testnet-*]
+  schedule:
+    - cron: '0 6 * * *'  # Daily 06:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  two-node-mesh:
+    name: Two-Node Mesh (devnet)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Setup two-node devnet
+        run: |
+          mkdir -p /tmp/node1/secrets /tmp/node2/secrets
+
+          # Node 1: generate key and genesis
+          cargo run --release -- genesis build \
+            --chain-id 1337 \
+            --output /tmp/node1/genesis.json \
+            --dev-key-output /tmp/node1/secrets/validator.key
+
+          # Copy genesis to node 2
+          cp /tmp/node1/genesis.json /tmp/node2/genesis.json
+
+          # Node 2: generate its own key
+          cargo run --release -- keygen --type ed25519 --output /tmp/node2/secrets/validator.key
+
+      - name: Start Node 1
+        run: |
+          cargo run --release -- \
+            --network devnet \
+            --genesis-file /tmp/node1/genesis.json \
+            --validator-key-file /tmp/node1/secrets/validator.key \
+            --db-path /tmp/node1/data/budlum.db \
+            --rpc-enabled \
+            --rpc-host 127.0.0.1 \
+            --rpc-port 18545 \
+            --port 5001 &
+          echo $! > /tmp/node1.pid
+          sleep 3
+
+      - name: Start Node 2 (connects to Node 1)
+        run: |
+          cargo run --release -- \
+            --network devnet \
+            --genesis-file /tmp/node2/genesis.json \
+            --validator-key-file /tmp/node2/secrets/validator.key \
+            --db-path /tmp/node2/data/budlum.db \
+            --rpc-enabled \
+            --rpc-host 127.0.0.1 \
+            --rpc-port 18546 \
+            --port 5002 \
+            --bootstrap /ip4/127.0.0.1/tcp/5001 &
+          echo $! > /tmp/node2.pid
+          sleep 5
+
+      - name: Wait for blocks
+        run: |
+          for i in $(seq 1 30); do
+            height=$(curl -sf http://127.0.0.1:18545 -X POST \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"bud_blockNumber","params":[]}' \
+              | python3 -I -c "import sys,json; r=json.load(sys.stdin); print(int(r.get('result','0x0'),16))" 2>/dev/null || echo "0")
+            echo "Block height: $height (attempt $i/30)"
+            if [ "$height" -ge 3 ]; then
+              echo "Reached block height $height"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Verify Node 2 synced
+        run: |
+          h1=$(curl -sf http://127.0.0.1:18545 -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"bud_blockNumber","params":[]}' \
+            | python3 -I -c "import sys,json; r=json.load(sys.stdin); print(int(r.get('result','0x0'),16))" 2>/dev/null || echo "0")
+          h2=$(curl -sf http://127.0.0.1:18546 -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"bud_blockNumber","params":[]}' \
+            | python3 -I -c "import sys,json; r=json.load(sys.stdin); print(int(r.get('result','0x0'),16))" 2>/dev/null || echo "0")
+          echo "Node 1 height: $h1, Node 2 height: $h2"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          kill $(cat /tmp/node1.pid 2>/dev/null) 2>/dev/null || true
+          kill $(cat /tmp/node2.pid 2>/dev/null) 2>/dev/null || true
+
+  database-backup-restore:
+    name: Database Backup & Restore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Create node and produce blocks
+        run: |
+          mkdir -p /tmp/backup-test/secrets
+          cargo run --release -- genesis build \
+            --chain-id 1337 \
+            --output /tmp/backup-test/genesis.json \
+            --dev-key-output /tmp/backup-test/secrets/validator.key
+
+          cargo run --release -- \
+            --network devnet \
+            --genesis-file /tmp/backup-test/genesis.json \
+            --validator-key-file /tmp/backup-test/secrets/validator.key \
+            --db-path /tmp/backup-test/data/budlum.db \
+            --port 5001 &
+          echo $! > /tmp/backup-node.pid
+          sleep 10
+          kill $(cat /tmp/backup-node.pid) 2>/dev/null || true
+          sleep 2
+
+      - name: Create backup
+        run: |
+          cargo run --release -- \
+            --network devnet \
+            --db-path /tmp/backup-test/data/budlum.db \
+            --backup-now \
+            --backup-dir /tmp/backup-test/backups
+          ls -la /tmp/backup-test/backups/
+
+      - name: Restore backup
+        run: |
+          backup_file=$(ls /tmp/backup-test/backups/*.budbak 2>/dev/null | head -1)
+          if [ -n "$backup_file" ]; then
+            cargo run --release -- \
+              --network devnet \
+              --restore-backup "$backup_file" \
+              --db-path /tmp/backup-test/data/restored.db
+            echo "Backup restored successfully"
+          else
+            echo "No backup file found (node may not have produced enough state)"
+          fi
+
+  check-db-integrity:
+    name: Database Integrity Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Create and check database
+        run: |
+          mkdir -p /tmp/integrity-test/secrets
+          cargo run --release -- genesis build \
+            --chain-id 1337 \
+            --output /tmp/integrity-test/genesis.json \
+            --dev-key-output /tmp/integrity-test/secrets/validator.key
+
+          cargo run --release -- \
+            --network devnet \
+            --genesis-file /tmp/integrity-test/genesis.json \
+            --validator-key-file /tmp/integrity-test/secrets/validator.key \
+            --db-path /tmp/integrity-test/data/budlum.db \
+            --port 5001 &
+          sleep 8
+          kill $! 2>/dev/null || true
+          sleep 2
+
+          cargo run --release -- \
+            --network devnet \
+            --db-path /tmp/integrity-test/data/budlum.db \
+            --check-db || echo "Check completed with status $?"

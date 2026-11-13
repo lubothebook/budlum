@@ -243,3 +243,43 @@ pub mod bud3_replace;
 // Lane-D configuration, backup-drill and vote-domain regression locks.
 #[cfg(test)]
 pub mod audit_lane_d_locks;
+
+// Testnet smoke tests: genesis configuration, chain IDs, feature matrix.
+#[cfg(test)]
+pub mod testnet_smoke;
+
+// Instant Duty Handover mechanics: constants and math.
+#[cfg(test)]
+pub mod handover_mechanics;
+
+// Tokenomics invariant tests: supply conservation, burn mechanics.
+#[cfg(test)]
+pub mod tokenomics_invariants;
+
+// Cross-domain bridge safety checks and replay protection.
+#[cfg(test)]
+pub mod bridge_safety;
+
+// Storage B.U.D. 3.0 content addressing and segment coding.
+#[cfg(test)]
+pub mod bud3_content_addressing;
+
+// Execution environment isolation and coordinator tests.
+#[cfg(test)]
+pub mod execution_isolation;
+
+// Quantum canary alarm flow end-to-end.
+#[cfg(test)]
+pub mod quantum_alarm_flow;
+
+// RPC compatibility gateway tests: Ethereum, Cosmos.
+#[cfg(test)]
+pub mod rpc_compat;
+
+// Validator registration door and class enforcement.
+#[cfg(test)]
+pub mod validator_registration_door;
+
+// Network peer management and gossip dedup.
+#[cfg(test)]
+pub mod network_peer_safety;
