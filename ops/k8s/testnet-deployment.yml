@@ -1,0 +1,144 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: budlum-testnet
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: testnet-config
+  namespace: budlum-testnet
+data:
+  testnet.toml: |
+    chain_id = 45261
+    data_dir = "/data/budlum"
+    [rpc]
+    listen = "0.0.0.0:18545"
+    [compat.ethereum]
+    enabled = true
+    listen = "0.0.0.0:18547"
+    [compat.cosmos]
+    enabled = true
+    listen = "0.0.0.0:18550"
+    [metrics]
+    enabled = true
+    listen = "0.0.0.0:9090"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: budlum-validator
+  namespace: budlum-testnet
+spec:
+  serviceName: budlum-validator
+  replicas: 3
+  selector:
+    matchLabels:
+      app: budlum-validator
+  template:
+    metadata:
+      labels:
+        app: budlum-validator
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      containers:
+        - name: budlum
+          image: budlum-testnet:latest
+          ports:
+            - containerPort: 18545
+              name: rpc
+            - containerPort: 18547
+              name: eth-rpc
+            - containerPort: 18550
+              name: cosmos-rpc
+            - containerPort: 5001
+              name: p2p
+            - containerPort: 9090
+              name: metrics
+          volumeMounts:
+            - name: data
+              mountPath: /data/budlum
+            - name: config
+              mountPath: /etc/budlum
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 18545
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 18545
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: testnet-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: budlum-rpc
+  namespace: budlum-testnet
+spec:
+  selector:
+    app: budlum-validator
+  ports:
+    - name: rpc
+      port: 18545
+      targetPort: 18545
+    - name: eth-rpc
+      port: 18547
+      targetPort: 18547
+    - name: cosmos-rpc
+      port: 18550
+      targetPort: 18550
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: budlum-p2p
+  namespace: budlum-testnet
+spec:
+  selector:
+    app: budlum-validator
+  ports:
+    - name: p2p
+      port: 5001
+      targetPort: 5001
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: budlum-metrics
+  namespace: budlum-testnet
+spec:
+  selector:
+    app: budlum-validator
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+  clusterIP: None
