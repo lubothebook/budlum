@@ -12,13 +12,16 @@ Ekosistem modülleri Budlum çekirdeğine bağlı katma değerli servisleri içe
 
 ## 2. Bulgular
 
-### B-ECO-01: BNS Kayıtlarında `.bud` Sonek Zorunluluğu ve Uzunluk Kademesi
+### B-ECO-01: BNS Kayıtlarında `.bud` Sonek Zorunluluğu ve Uzunluk Kademesi Hedefi
 - **Önem**: Yüksek (High)
-- **Dosya**: `src/bns/registry.rs:110-145`, `src/bns/types.rs`
-- **Açıklama**: `.bud` son eki olmadan isim kaydedilmeye çalışıldığında veya etiket uzunluğu 3-32 aralığı dışında kaldığında kayıt reddedilmelidir.
-- **Kök Neden**: Sonek doğrulamasının bazı RPC hazırlık yollarında gevşek kalması.
-- **Çözüm**: `BnsRegistry::register` ve `NameRecord::try_new` kesin olarak `.bud` uzantısını şart koşar. 3 karakterli etiketler 100 kat kayıt ücreti öder.
-- **Durum**: Çözüldü (`ad88285c`).
+- **Dosya**: `src/bns/registry.rs`, `src/bns/types.rs`, `xtask/gates/src/gates/bns_gate.rs`
+- **Mevcut Durum**: `main` dalındaki kod tabanında `BnsRegistry::register` hem yalın isimleri (`abc`) hem de `.bud` uzantılı isimleri (`abc.bud`) kabul etmekte; `calculate_cost` toplam karakter uzunluğuna göre fiyatlama yapmaktadır.
+- **Hedef Durum (`BNS_DIREKTIF.md` Madde B1)**:
+  1. Kayıt adı tam olarak bir etiket ve `.bud` son ekinden oluşmalıdır. Son eksiz adlar `InvalidName` ile reddedilmelidir.
+  2. Etiket uzunluğu `.bud` hariç sayılarak 3 ile 32 karakter arasında sınırlandırılmalıdır.
+  3. `calculate_cost` kademeleri `.bud` hariç etiket uzunluğundan hesaplanmalı; 3 karakterli etiketler taban ücretin 100 katını ödemelidir.
+  4. Testnet hazırlığında `bns_gate` ve RPC hazırlık kapıları bu kuralları fail-closed zorunlu kılacak şekilde güncellenecektir.
+- **Durum**: Tasarım tamamlandı (`audit-notes/testnet/bns-naming.md`), testnet hazırlık dalında uygulanıyor.
 
 ### B-ECO-02: Garden Katılmamış Peer Koltuklarının Sonsuz Kilitlenmesi
 - **Önem**: Orta (Medium)

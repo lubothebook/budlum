@@ -9,8 +9,8 @@
 - Yığın (stack) boyutu ve bellek ayırıcı (mimalloc) kontrolleri.
 
 ## 3. Bulgular ve Çözümler
-- **B-OS-ALP-01 (musl Varsayılan Yığın Boyutu Sınırı)**:
-  - *Belirti*: musl libc üzerinde çalışan thread'lerde derin özyinelemeli (recursive) STARK FRI kanıt doğrulamalarında yığın taşması (`SIGSEGV stack overflow`).
-  - *Kök Neden*: musl libc varsayılan thread stack boyutunun glibc'ye göre çok daha küçük (128 KB - 80 KB) olması.
-  - *Çözüm*: Rayon ve kanıtlayıcı thread havuzu başlatılırken `.stack_size(8 * 1024 * 1024)` (8 MB) açıkça yapılandırıldı.
-  - *Durum*: Çözüldü (`ed5faed7`).
+- **B-OS-ALP-01 (musl Varsayılan Yığın Boyutu ve STARK Doğrulama Gereksinimi)**:
+  - *Risk Analizi*: musl libc varsayılan thread stack boyutu (128 KB), derin özyinelemeli STARK FRI katlama veya büyük sıfır-bilgi kanıt doğrulamalarında yığın taşması (`SIGSEGV`) riski barındırır.
+  - *Mevcut Durum*: `main` dalında Rayon/prover havuzları sistem varsayılan yığın boyutuyla başlatılmaktadır.
+  - *Hedef Kuralı*: Testnet ve üretim ortamında Alpine/musl tabanlı doğrulayıcı çalıştırılırken `Rayon` ve arka plan kanıtlayıcı thread havuzlarının `.stack_size(8 * 1024 * 1024)` (8 MB) olarak açıkça yapılandırılması zorunlu kılınmıştır.
+  - *Durum*: Mimari gereksinim olarak tanımlandı; ilgili thread havuzu başlatıcılarında kural olarak izlenmektedir.

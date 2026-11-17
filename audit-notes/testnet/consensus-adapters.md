@@ -4,14 +4,19 @@
 `THE_BUDLUM_DIREKTIF.md` ve `BUDLUM_DIREKTIF.md` uyarınca Budlum, tüm harici ve dahili konsensüs modellerini (Bitcoin PoW, Ethereum PoS Casper/LMD-GHOST, Tendermint BFT, Solana PoH, Chia PoSpace, DAG tabanlı Aleph/Narwhal) tek bir mutlak uzlaşma katmanında (Universal Settlement Layer) doğrulamalı ve kanonik duruma bağlamalıdır.
 
 ## 2. Mevcut Durum
-- `src/domain/plugin.rs` içerisinde `DomainPlugin` trait'i tanımlıdır.
-- `DagDomainPlugin`, `PohDomainPlugin`, `PospaceDomainPlugin` yapıları `ConsensusKind` enum variantları ile kayıtlıdır.
-- `src/domain/types.rs` üzerinde variant indeksleri: `AiInference = 5`, `Dag = 6`, `Poh = 7`, `Pospace = 8`.
+
+- `main` dalı (`1bd9356`) üzerinde:
+  - `src/domain/plugin.rs` içerisinde `DomainPlugin` temel trait'i mevcuttur.
+  - `src/domain/types.rs` üzerinde `ConsensusKind` variantları: `PoW = 0`, `PoS = 1`, `PoA = 2`, `BFT = 3`, `Rollup = 4`, `Custom = 5`, `StorageAttestation = 6`, `AiInference = 7`.
+- PR #194 (`budlum-consensus-of-consensuses`) dalı üzerinde:
+  - `ConsensusKind` enum variantları geriye dönük uyumlu olarak genişletilmiştir: `Dag = 8`, `Poh = 9`, `Pospace = 10`.
+  - `DagDomainPlugin`, `PohDomainPlugin`, `PospaceDomainPlugin` yapıları ve çoklu ebeveyn sıralama mantığı PR #194 ile entegre edilmiştir.
 
 ## 3. Eksikler ve Çözülen Bulgular
-- **STRX-194-01**: Bincode discriminant index shift çözüldü.
-- **STRX-194-02**: Çoklu ebeveyn sıralama manipülasyonu çözüldü.
-- **STRX-194-05**: ZkVerifier `Raw` kanıt kabulü yasaklandı.
+
+- **STRX-194-01**: Bincode discriminant index shift çözüldü (`Custom=5, StorageAttestation=6, AiInference=7` korunup yeni varyantlar sona eklendi).
+- **STRX-194-02**: Çoklu ebeveyn sıralama manipülasyonu kanonik sıralama (`sort_unstable` + `dedup`) ile çözüldü.
+- **STRX-194-05**: Doğrulanmamış kanıt formatları `zkvm_refuses_untrusted_proofs` kapısı ile engellendi.
 
 ## 4. İnşa Adımları
 1. **Bitcoin SPV / ZK Light Client Adaptörü**: Blok başlık zincirini (header chain) SHA-256d ile doğrular, zorluk hedefi (difficulty retargeting) ve Merkle inclusion kanıtlarını ZK-STARK devresinde kanıtlar.

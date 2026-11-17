@@ -28,10 +28,10 @@ BudZero ZK rollup ve ZKVM yürütme katmanı:
 - **Çözüm**: Yardımcı sütunlar eklenerek tüm kısıt dereceleri azami 3 ile sınırlandı.
 - **Durum**: Çözüldü (`ed5faed7`).
 
-### B-ZKVM-03: Güvenilmeyen Kanıt Türü (Raw Proof Acceptance)
+### B-ZKVM-03: Güvenilmeyen Kanıt Türü ve ZKVM Kapı Doğrulaması
 - **Önem**: Kritik (Critical)
-- **Dosya**: `src/consensus/zk_verifier.rs`, `src/domain/plugin.rs:442-455`
-- **Açıklama**: ZK doğrulayıcı arayüzünün bazı mock ortamlarda `Raw` kanıt kabul etmesi, üretimde sahte durum geçişlerine zemin hazırlayabilirdi.
-- **Kök Neden**: Entegrasyon testlerinde ZK kanıt üretimini atlamak için eklenen `ProofMode::Raw` seçeneğinin kapı denetiminden geçmesi.
-- **Çözüm**: `ProofMode::Raw` üretim modunda tamamen yasaklandı; yalnızca geçerli STARK veya SNARK kanıtları kabul edilir (`UntrustedProofMode` hatası).
-- **Durum**: Çözüldü (`cfc1fc7` + `3c891b5d`).
+- **Dosya**: `xtask/gates/src/gates/zkvm_refuses_untrusted_proofs.rs`, `src/domain/plugin.rs`
+- **Açıklama**: ZK doğrulayıcı arayüzünde kriptografik kanıt taşımayan veya pini yapılmamış sahte kanıt yüklerinin kabul edilmesi, sahte durum geçişlerine zemin hazırlayabilir.
+- **Kök Neden**: Test/mock ortamları için gevşetilmiş kanıt kabul kodlarının üretim kapılarına sızma riski.
+- **Çözüm**: `xtask/gates/src/gates/zkvm_refuses_untrusted_proofs.rs` kapısı ile tüm ZK eklentilerinin sabitlenmiş (pinned) doğrulama anahtarları ile sıkı STARK/SNARK transkript doğrulaması yapması zorunlu kılındı; doğrulanmamış yükler fail-closed olarak reddedilir. PR #194 üzerinde ilgili eklenti doğrulamaları bu kapıya bağlanmıştır.
+- **Durum**: Doğrulandı (`1bd9356` / `main` ve `cfc1fc7` / `PR #194`).

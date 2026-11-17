@@ -8,12 +8,12 @@ Bu dosya denetim PR'ının ana dizinidir. Tüm denetim kayıtları `audit-notes/
 
 | PR | Dal -> Hedef | Baş SHA | Açık Strix | Çözülmemiş Dizi | CI Durumu | Merge Durumu |
 |---|---|---|---|---|---|---|
-| #126 | testnet -> main | `ad88285c` | 0 | 0 | 31 başarılı, 57 beklemede | mergeable, koruma beklemede |
+| #126 | testnet -> main | `ad88285c` | 0 | 0 | 31 başarılı, 57 beklemede | mergeable, CI çalıştırma numaraları bekleniyor |
 | #164 | garden -> testnet | `d013014a` | 0 | 0 | 22/22 yeşil (0 hata) | mergeable, CI tam yeşil |
 | #183 | budlum-stack -> garden | `5d912761` | 0 | 0 | 24/24 yeşil (0 hata) | mergeable, CI tam yeşil |
-| #194 | budlum-consensus-of-consensuses -> budlum-stack | `5268116d` | 0 | 0 | 1 başarılı, 96 kuyrukta | mergeable, Strix review tamamlandı |
+| #194 | budlum-consensus-of-consensuses -> budlum-stack | `5268116d` | 0 | 0 | 1 başarılı, 96 kuyrukta | mergeable, Strix incelemesi tamamlandı |
 
-PR yığınındaki tüm Strix bulguları çözülmüş ve CI kapılarında doğrulanmıştır.
+PR #183 ve PR #164'te CI kontrolleri 0 hata ile tamamlanmıştır. PR #126'da 31 kontrol tamamlanmış olup runner kapasitesi nedeniyle diğer kontroller beklemededir; PR #194'te kontroller kuyruktadır. S-126-01..12 düzeltmeleri kodda yapılmış olup yeşil CI çalıştırma numaraları beklenmektedir. S-164 serisinde tüm Strix yorum dizileri kapatılmış olup canlı kod doğrulamaları PR yığınında takip edilmektedir.
 
 ## 2. Kayıtlar Dizini
 
@@ -45,16 +45,17 @@ PR yığınındaki tüm Strix bulguları çözülmüş ve CI kapılarında doğr
 
 ## 3. Bulgu Düzeyi Özeti
 
-`strix-ledger.md` ve `findings/` kapsamında kayıt altına alınan bulgular:
+`strix-ledger.md` defterinde kayıt altına alınan 59 bulgunun (34 adet S-serisi, 19 adet B-serisi, 6 adet STRX-194 serisi) önem derecesi dağılımı:
 
-| Önem | Adet | Temsili Örnekler |
-|---|---|---|
-| Critical | 5 | B-0012 (relay hop), B-0013 (senkron strike), B-0014 (ödül havuzu), STRX-194-01 (bincode enum kayması), STRX-194-05 (ZK Raw kanıt yasağı) |
-| High | 10 | B-0015, B-0016, B-0017, B-0018, B-0022, B-0023, B-0028, B-0030 (clippy blocker), STRX-194-02 (DAG ebeveyn sıralama), STRX-194-03 (PoH tick sınırı) |
-| Medium | 8 | B-0019, B-0021, B-0024, B-0026, B-0027, STRX-194-06, B-SETTL-01, B-STRG-01 |
-| Low | 5 | B-0020, B-0025, B-0029, B-CONS-05, B-WAL-03 |
+| Önem | S-Serisi | B-Serisi | STRX-194 | Toplam | Temsili Örnekler |
+|---|:---:|:---:|:---:|:---:|---|
+| **Critical** | 0 | 3 | 2 | **5** | B-0012 (relay hop), B-0013 (senkron strike), B-0014 (ödül havuzu), STRX-194-01 (bincode enum kayması), STRX-194-05 (ZK doğrulama kapısı) |
+| **High** | 2 | 8 | 3 | **13** | S-126-01..02 (oy ağırlığı), B-0015, B-0016, B-0017, B-0018, B-0022, B-0023, B-0028, B-0030 (clippy blocker), STRX-194-02 (DAG ebeveyn sıralama), STRX-194-03 (PoH tick sınırı), STRX-194-04 (PoSpace başlık bağı) |
+| **Medium** | 20 | 5 | 1 | **26** | S-126-03..08 (BNS pasaport, NFT bind, paid view), S-164-01..11 (Garden davet/peer/frame kotaları), S-183-01..03 (onarım share, duty lane), B-0019, B-0021, B-0024, B-0026, B-0027, STRX-194-06 |
+| **Low** | 12 | 3 | 0 | **15** | S-126-09..12 (handoff quorum, UelTx imza), S-164-12..18 (Garden verified_peers, invite FFI), S-183-04 (duty lane bond), B-0020, B-0025, B-0029 |
+| **TOPLAM** | **34** | **19** | **6** | **59** | Strix çalışma alanı genelinde açılan ve takip edilen toplam 59 güvenlik bulgusu |
 
-Tüm bulgular için kök neden tespiti, kod düzeltmesi ve test kanıtı tamamlanmıştır.
+Tüm bulgular için kök neden tespiti ve ilgili PR dallarında kod düzeltmeleri tamamlanmış; S-164 serisinde tüm Strix yorum dizileri kapatılmış, S-126 ve PR #194 için CI çalıştırma onayları takip edilmektedir.
 
 ## 4. Denetim Alanları ve Kapsam
 

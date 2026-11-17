@@ -32,8 +32,9 @@ Done, and it is the part the whole module rests on.
   directive writes it.
 - `src/aggregation/native.rs` is `NativeBackend`. Its proof is the list of
   encoded objects, its `verify` re-verifies each object. It is compiled for
-  tests and for `feature = "agg-native-backend"` only; the gate
-  `agg-native-backend-is-devnet-only` keeps it out of a production build.
+  tests and internal test harnesses; the xtask gate
+  `xtask/gates/src/gates/agg_native_backend.rs` (`agg-native-backend-is-devnet-only`)
+  enforces that this native test backend is strictly isolated from production release targets.
 - `src/aggregation/pool.rs` is the object pool with the 6.1 admission rules,
   `src/aggregation/aggregator.rs` is the tick loop and the merge.
 - `src/network` carries `agg/object` and `agg/frame`.

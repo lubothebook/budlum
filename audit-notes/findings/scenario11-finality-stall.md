@@ -25,17 +25,15 @@ reach 58. It failed: `finalized 35->35, tip 42->62`.
 
 - File: `src/network/node.rs` (`request_headers_from_peer`, sync round bookkeeping)
 - Severity: High
-- What: the peer that answered with nothing past our locator is asked again on the next
-  trigger, because `last_stalled_sync_peer` is set only on an outbound failure of the active
-  request or on a stuck-round expiry, and nothing sets it for an empty reply.
-- Why: a follower behind a fork cannot resolve it from a peer on the same fork, and the
-  canonical producer is connected but never asked.
+- Current Behavior: in `src/network/node.rs:5664-5671`, when an empty header reply arrives past our locator, the node invokes `clear_sync_round()` without recording the peer identity. Meanwhile, `src/network/node.rs:2033` records `last_stalled_sync_peer` only on active sync request timeouts or outbound failures. An empty reply does not set any exclusion marker, allowing the node to select the same peer on the next sync trigger.
+- Why: a follower behind a fork cannot resolve it from a peer on the same fork, and the canonical producer is connected but never asked.
 - Impact: Scenario 11 stall. Finality stops while 3/4 validators are live.
-- Fix: `last_empty_sync_peer` records the peer that answered empty. The peer choice moved
-  into `choose_sync_header_target`, which rotates to another connected peer for one round
-  and falls back to the same peer when it is the only one. A peer that makes progress
-  clears the marker.
-- Status: resolved and tested on `testnet` in commit `ad88285c`.
+- Target Fix & Design:
+  1. Record the responding peer in `last_empty_sync_peer` when an empty header reply arrives.
+  2. In header-sync target selection, exclude that peer for one round when another eligible connected peer is available.
+  3. Fall back to the same peer only if it is the sole connected peer.
+  4. Clear the exclusion record once that peer returns headers that advance chain height.
+- Status: Root cause analyzed and documented; fix implementation tracked on testnet branch.
 
 ### B-0023
 
