@@ -28,6 +28,7 @@ PR #183 ve PR #164'te CI kontrolleri 0 hata ile tamamlanmıştır. PR #126'da 31
   - `area-storage-bud3.md`: B.U.D. 3.0 dağıtık depolama, Reed-Solomon, saklama kanıtları, ücretli görünüm makbuzları.
   - `area-ecosystem.md`: BNS (.bud ad servisi), Garden P2P ağları, AI çıkarım, BudlumXYZ yönetişimi.
   - `area-ci-supply-chain.md`: GitHub Actions izinleri, güvenlik kapıları, lisans uyumu.
+  - `area-ci-supply-chain-addendum.md`: B-CI-04 yığın taban dalı tetikleyici düzeltmesi ve B-CI-05 CI kuyruk yoğunluğu analizi.
   - `os-debian-trixie.md`: Debian 13 (Trixie) x86_64 ana yürütme ortamı.
   - `os-ubuntu-2404-x86_64.md`: Ubuntu 24.04 LTS Noble x86_64 CI runner ve Docker ortamı.
   - `os-ubuntu-2404-arm64.md`: Ubuntu 24.04 ARM64 (aarch64) çapraz mimari determinizmi.
