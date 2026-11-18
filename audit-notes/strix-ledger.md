@@ -24,6 +24,31 @@
 - B-0040 [Medium] `README.md`, `README.tr.md` (`testnet` dali) - test rozeti 5916 diyordu, ayni kosu 5913 olctu (`badges-are-current`). Rozet olculen sayiya cekildi (`15761db9`, `6f18b67f`). Durum: cozuldu, kapinin bir sonraki kosusu dogrulayacak.
 
 
+## Strix #183 Kalan Dort Bulgu (kod dogrulamasi, 2026-11-18)
+
+`462d7d5d`/`5a3971a0` uzerinde kod okundu, bulgularin dordude kapali:
+
+- ReplaceObject yerlesim bagi: `src/storage/bud3/replace.rs:112`
+  `replacement_placement_digest(new_shares)` imzali on-goruntuye girdi olarak
+  ekleniyor, `:326` dogrulama da ayni on-goruntuyu kuruyor. Quorum bir
+  yerlesim icin toplanip baska yerlesimle kullanilamaz. Durum: `cozuldu`.
+- Unstake tabani: `src/execution/executor.rs:870` `full_validator_stake_floor`
+  kullaniyor; o da `src/core/account.rs:2044` icinde agin `min_stake_full()`
+  ile registry tabaninin buyugu. 1.000 atom registry degeri tek basina kalmadi.
+  Durum: `cozuldu`.
+- Duty-lane tabani: `src/core/account.rs:2081` ayni
+  `full_validator_stake_floor` cagrisini kullaniyor, mobil sinif icin ayri
+  `min_stake_mobile()` tabani var. Durum: `cozuldu`.
+- Onarim attestation kokü: `src/storage/bud3/registry.rs:2676` onarim
+  sembolleri, tanikla gelen sembollerden cozulen segment uzerinden yeniden
+  uretilen sembollerle karsilastiriliyor; kok yalnizca "semboller kendi
+  kokleriyle tutarli" demek degil, "semboller segmentten turetilebilir" demek.
+  Durum: `cozuldu`.
+- Ucret sirali tahliye: `src/mempool/pool.rs:621` duty partisi sayim icin
+  `evict_cheapest_non_duty`, `:1214` bayt icin duty girdisini atlayan yolu
+  kullaniyor. Durum: `cozuldu`.
+
+
 ## Denetim PR'i
 
 - Denetim kayitlari `main` uzerinden ayri bir PR ile tasinir: PR #196, dal
