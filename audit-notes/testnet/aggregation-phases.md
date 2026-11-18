@@ -1,8 +1,13 @@
 # Aggregation directive: phase inventory
 
 Measured against `budlum-stack` (head `462d7d5d`) on 2026-11-17 by reading the
-tree. Every row names the file where the phase's code lives, or says plainly
-that the code is not there. Nothing in this file is copied from a plan.
+tree, then re-measured against `agg/phase-5-pcs-claims` (head `834ee878`) on
+2026-11-18. Every row names the file where the phase's code lives, or says
+plainly that the code is not there. Nothing in this file is copied from a plan.
+
+The phases that the aggregation branch finished are marked **corrected** below,
+with the line numbers that were read. Read the branch, not the stack, before
+trusting a "missing" line in this file: four of them were already false.
 
 ## Phase 0: baseline measurement
 
@@ -59,59 +64,92 @@ The programs exist as BudZKVM bytecode and are exercised by a real VM.
 - `src/aggregation/tests/programs.rs` runs those programs on `bud_vm::Vm` and
   covers the differential and the negative cases (a forged signature stops the
   run with `VmError::AssertionFailed`).
-- What is missing: a **prover** that turns an `AggTick` run into a Plonky3
-  proof inside the aggregator. The programs are proved nowhere in
-  `src/aggregation`; only `bud-vm` executes them.
-- Status: programs done, circuit wiring not done.
+- Status: **corrected on 2026-11-18 against `agg/phase-5-pcs-claims`.** The
+  earlier text here said the programs were proved nowhere in
+  `src/aggregation`. That was true of the tree it measured (`budlum-stack`
+  `462d7d5d`) and is false of the aggregation branch today.
+- A prover for the tick program now exists: `src/aggregation/programs/chip_offload.rs`
+  carries `prove_tick_chips` (`:273`) and `verify_tick_chips` (`:315`) over the
+  real AIRs under `budzero/bud-proof/src/chips/` (`keccak.rs`,
+  `mldsa_ntt.rs`, `batch.rs`, `fold.rs`), built on `bud-proof`'s
+  `prove_chip` (`plonky3_prover.rs:436`) and `verify_chip` (`:453`). The proof
+  type carries the Keccak outputs and proof, the NTT outputs and proof, and the
+  tick public input, so the hash and signature hot spots a tick over one
+  ML-DSA-87 object needs are offloaded. `src/aggregation/tests/programs.rs:1140`
+  proves and verifies a chip tick.
+- What is still missing is narrower than a prover: `StarkBackend::prove_tick`
+  (`stark.rs:313`) does not call `prove_tick_chips`, and `chip_offload.rs:19`
+  says so (`WIRING: unwired`). The chip proof is exercised by its own test and
+  is not yet the statement the aggregator folds.
 
 ## Phase 3: recursion, master proof, `StarkBackend`, `Shadow`
 
 - `src/aggregation/frame.rs` already carries the merge shape, `merge_pi`,
   `AggProgram` and the frame hash rule, and `src/aggregation/programs`
   describes the tick program a merge would recurse over.
-- `StarkBackend` is **missing**: `grep -r StarkBackend src/aggregation` finds
-  nothing. `prove_merge` today is `NativeBackend`'s, which concatenates rather
-  than recurses.
-- `AggMode::Shadow` exists in `src/aggregation/params.rs` and is covered in
-  `src/aggregation/tests/flow.rs`, but there is no 10 000-block shadow run
-  against a circuit, because there is no circuit to compare with.
-- Status: not done.
+- `StarkBackend` **exists**: `src/aggregation/stark.rs`, 450 lines, `pub struct
+  StarkBackend` at `:84`, `impl AggBackend` at `:312` with `prove_tick`
+  (`:313`), `prove_merge` (`:368`) and `verify` (`:418`). It does not
+  concatenate: the proof is a Plonky3 `AggFoldAir` over the postfix tree, magic
+  `BSTK`, parameter set `2`, and `verify` re-derives the fold statement and
+  checks the parameter set, the domain, the program hash against the
+  `agg_tick_program_hash` / `agg_merge_program_hash` allowlist and the master
+  public input before running the fold verifier (`:423-448`). A segment's
+  `tick_pi` commits to `claims_root`, so editing a claim changes the master
+  public input and is refused.
+- `AggMode::Shadow` exists in `src/aggregation/params.rs`, and the 10 000-block
+  shadow run exists: `src/aggregation/tests/phase3.rs:368
+  shadow_auditor_matches_native_across_10000_blocks`.
+- Status: **corrected** to done on `agg/phase-5-pcs-claims`, negative cases
+  included (`phase3.rs:197` refuses a wrong domain, a wrong parameter set, a
+  redirected aggregator fee and a tampered program hash).
 
 ## Phase 4: program claims, hidden multisig
 
 - `Claim::Prog` and the `auth_program_hash` slot exist in the claim and
   account shapes.
-- The hidden-multisig example program is **missing**.
-- Status: types only.
+- The hidden-multisig program **exists**:
+  `src/aggregation/programs/hidden_multisig.rs`, 446 lines, with
+  `HiddenMultisigProgram` (`:66`), `HiddenMultisigPolicy` (`:80`),
+  `MemberSignatureWitness` (`:98`) and `compile` (`:209`).
+- Status: **corrected** to done on `agg/phase-5-pcs-claims`.
 
 ## Phase 5: PCS claims, `VerifyStark`, `AirRegistry`
 
 - `Claim::Poly` exists with canonical field elements.
-- `VerifyStark`, `verify_pcs_openings` / `verify_algebra` split `AirRegistry`
-  are **missing**.
-- Status: `Claim::Poly` only.
+- `AirRegistry` **exists**: `src/aggregation/air_registry.rs`, 366 lines, with
+  `pub struct AirRegistry` (`:284`), `with_builtins` (`:292`) registering
+  `bud_air_id`, `agg_fold_air_id` and `external_fib_air_id`, and
+  `verify_stark_tx` (`:333`); `TransactionType::VerifyStark` and `Claim::Poly`
+  are the wire path into it. `src/aggregation/programs/pcs_claim.rs` (594
+  lines) and `prog_claim.rs` (380 lines) carry the program side.
+- Status: **corrected** to done on `agg/phase-5-pcs-claims`.
 
-## Why phases 2 and 3 cannot be finished here
+## Why phases 2 and 3 were unfinished on `budlum-stack`, and what changed
+
+The reasoning below was correct for the stack tree it was written against, and
+it is kept because it explains the order the work took. It is no longer a
+statement about the aggregation branch: the chipping it calls for as a
+precondition has been done, and the backend it says to write second exists.
 
 Measured, not assumed:
 
-- `src/aggregation/tests/programs.rs` runs the reference programs on
-  `bud_vm::Vm` and throws the trace away as it goes
+- On `budlum-stack`, `src/aggregation/tests/programs.rs` ran the reference
+  programs on `bud_vm::Vm` and threw the trace away as it went
   (`if vm.trace.len() >= 1 << 12 { vm.trace.clear(); }`), with the comment
   that a run of millions of steps "does not fit in memory with it". A tick
   over one ML-DSA-87 object is such a run.
 - `ProverAdapter::prove` takes the whole `&[Step]` trace, so a tick proof first
-  needs the hot spots moved to chips (phase 2, item 6), the way
-  `src/domain/storage_deal.rs` does for `VerifyMerkle`: there the program is
-  small enough that `DefaultAdapter::prove(&vm.trace, ...)` is affordable.
-- This host is two cores and about 2 GiB. Writing a `StarkBackend` whose
-  `prove_tick` no machine here can run would produce code no test could
-  exercise, which is worse than the honest gap.
+  needed the hot spots moved to chips, the way `src/domain/storage_deal.rs`
+  does for `VerifyMerkle`.
+- The order the work then took was: chip the tick program (`chip_offload.rs`,
+  done), write `StarkBackend` against it (`stark.rs`, done but not yet wired to
+  the chip proof), then turn `Shadow` on for the 10 000-block run
+  (`phase3.rs:368`, done).
 
-So the order the next phase has to take is: chip the tick program (hash,
-Merkle path, signature verify) until one tick's trace fits, then write
-`StarkBackend` against `DefaultAdapter`, then turn `Shadow` on for the 10 000
-block run. Writing the backend first would put the cart before the horse.
+What is still true: `StarkBackend::prove_tick` folds an `AggFoldAir` statement
+and does not consume `prove_tick_chips`, so the aggregator's own tick proof is
+not the chip proof. That single wiring step is the remaining phase 2 item.
 
 ## What the tree already gives the next phase
 
