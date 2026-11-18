@@ -46,15 +46,15 @@ PR #183 ve PR #164'te CI kontrolleri 0 hata ile tamamlanmıştır. PR #126'da 31
 
 ## 3. Bulgu Düzeyi Özeti
 
-`strix-ledger.md` defterinde kayıt altına alınan 59 bulgunun (34 adet S-serisi, 19 adet B-serisi, 6 adet STRX-194 serisi) önem derecesi dağılımı:
+`strix-ledger.md` defterinde kayıt altına alınan 61 bulgunun (34 adet S-serisi, 21 adet B-serisi, 6 adet STRX-194 serisi) önem derecesi dağılımı:
 
 | Önem | S-Serisi | B-Serisi | STRX-194 | Toplam | Temsili Örnekler |
 |---|:---:|:---:|:---:|:---:|---|
 | **Critical** | 0 | 3 | 2 | **5** | B-0012 (relay hop), B-0013 (senkron strike), B-0014 (ödül havuzu), STRX-194-01 (bincode enum kayması), STRX-194-05 (ZK doğrulama kapısı) |
-| **High** | 2 | 8 | 3 | **13** | S-126-01..02 (oy ağırlığı), B-0015, B-0016, B-0017, B-0018, B-0022, B-0023, B-0028, B-0030 (clippy blocker), STRX-194-02 (DAG ebeveyn sıralama), STRX-194-03 (PoH tick sınırı), STRX-194-04 (PoSpace başlık bağı) |
-| **Medium** | 20 | 5 | 1 | **26** | S-126-03..08 (BNS pasaport, NFT bind, paid view), S-164-01..11 (Garden davet/peer/frame kotaları), S-183-01..03 (onarım share, duty lane), B-0019, B-0021, B-0024, B-0026, B-0027, STRX-194-06 |
+| **High** | 2 | 9 | 3 | **14** | S-126-01..02 (oy ağırlığı), B-0015, B-0016, B-0017, B-0018, B-0022, B-0023, B-0028, B-0030 (clippy blocker), B-0031 (yanked wasmi=2.0.1), STRX-194-02 (DAG ebeveyn sıralama), STRX-194-03 (PoH tick sınırı), STRX-194-04 (PoSpace başlık bağı) |
+| **Medium** | 20 | 6 | 1 | **27** | S-126-03..08 (BNS pasaport, NFT bind, paid view), S-164-01..11 (Garden davet/peer/frame kotaları), S-183-01..03 (onarım share, duty lane), B-0019, B-0021, B-0024, B-0026, B-0027, B-0032 (watchdog kapı çözümü), STRX-194-06 |
 | **Low** | 12 | 3 | 0 | **15** | S-126-09..12 (handoff quorum, UelTx imza), S-164-12..18 (Garden verified_peers, invite FFI), S-183-04 (duty lane bond), B-0020, B-0025, B-0029 |
-| **TOPLAM** | **34** | **19** | **6** | **59** | Strix çalışma alanı genelinde açılan ve takip edilen toplam 59 güvenlik bulgusu |
+| **TOPLAM** | **34** | **21** | **6** | **61** | Strix çalışma alanı genelinde açılan ve takip edilen toplam 61 güvenlik/denetim bulgusu |
 
 Tüm bulgular için kök neden tespiti ve ilgili PR dallarında kod düzeltmeleri tamamlanmış; S-164 serisinde tüm Strix yorum dizileri kapatılmış, S-126 ve PR #194 için CI çalıştırma onayları takip edilmektedir.
 

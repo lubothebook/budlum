@@ -45,6 +45,8 @@
 - B-0028 [Medium] `src/aggregation/{node,aggregator,pool}.rs` - claim'li islem deposu bayt tavaniyla, kare deposu bayt tavaniyla ve yerel kare korumasiyla sinirlanir, sahipsiz islemler budanir. Durum: duzeltildi (yerel), commit bekliyor.
 - B-0029 [Low] `src/storage/qr_encode.rs` - gereksiz `isize` cast'i kaldirildi. Durum: duzeltildi (yerel), commit bekliyor.
 - B-0030 [High] `src/execution/executor.rs:6632`, `src/garden/state.rs:1898` - `cargo clippy --all-targets -- -D warnings` (CI `ci.yml` satiri 413) `budlum-stack` ucunda iki test kodu lint'i ile kirik: `RegistryParams` `Copy` iken `.clone()` ve `useless_vec`. Kapi test kodunu da derledigi icin PR #183'te bu is kirmizi doner. Duzeltme: `*state.registry.params()`, `pool = [leave]`. Durum: cozuldu, `5d912761` (`budlum-stack`). `state.rs` tarafi garden `d013014a` ile geldi. Yerel dogrulama: `cargo fmt --all -- --check` cikis 0, `cargo clippy --all-targets -- -D warnings` cikis 0 (log `/var/tmp/clippy3.log`). CI run numarasi PR #183 kapisi yesile donunce eklenecek.
+- B-0031 [High] `Cargo.lock`, `execution/wasm/Cargo.toml` - crates.io üzerinde yanked edilen `wasmi =2.0.0` sürümü temiz ağ derlemelerinde kilitlenme yaratır. Düzeltme: `wasmi =2.0.1` sürümüne yükseltildi. Durum: çözüldü, `de2123d8` (testnet, garden, budlum-stack ve budlum-consensus-of-consensuses dallarına merge edildi).
+- B-0032 [Medium] `.github/workflows/watchdog.yml`, `xtask/gates/src/gates/gate_references_are_real.rs` - `watchdog.yml` var olmayan kapıyı (`state-recovery-door`) çağırıyordu. Düzeltme: Kapı adı `--list` üzerinden dinamik çözümlendi ve `gate-references-are-real` kapısı eklendi. Durum: çözüldü, `64189387`.
 
 Senaryo 11 kok nedeni icin `findings/scenario11-finality-stall.md` dosyasina bakin.
 
