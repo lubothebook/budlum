@@ -9,6 +9,21 @@
 - `S-126-01..12` kodda dogrulandi (asagida satir bazinda kanit). Durumlari `cozuldu` yazildi; her biri icin yesil CI run numarasi geldiginde satira eklenecek.
 - `garden` (aeb2fbc2) uzerinde bu turda kapatilan iki kalinti: `assemble` artik blok tarafindan zaten cikarilan validator icin rapor yazmaz, `qr_encode` icindeki gereksiz `isize` cast'i kaldirildi (`trivial_numeric_casts` deny).
 
+- B-0031 [Critical] `src/execution/coordinator/mod.rs` (`try_execute_block_once`) - blok denemesi gondericinin foreign-lane kaydini ve `uel/alias` girdisini cagri calismadan once yaziyor; bu iki yazim `TxOverlay` uzerinden gecmedigi icin `Revert`, `OutOfGas` ve `InvalidCode` kollarindaki `overlay.rollback_root` bunlari geri almiyor. Sonuc: hicbir sey yazmayan reddedilmis bir islem `execution_root`'u degistiriyor ve bakiyesi olan herhangi bir gonderici, her zaman reddedilecek cagrilarla kalici alias/foreign-lane kaydi uretebiliyor. Duzeltme: `CallerRegistration` bu iki yazimdan hangisini bu denemenin olusturdugunu tutar, basarisiz her kol yalnizca onlari geri alir; onceki islemden kalan yazim yerinde kalir. Kanit: `expansion_ee_all_twelve_environments_execute_on_devnet` artik gecer. Durum: cozuldu, `3061fb66` (dal `budlum-stack`, PR #183).
+- B-0032 [Medium] `src/storage/bud3/view.rs` `collect_survives_two_simultaneous_byzantine_holders_and_refuses_total_poison` - bes tutucu x dort sembol, iki Bizansli tutucudan sonra uc durust tutucuda 12 sembol birakiyor; nesnenin segmenti 13 sembol istedigi icin senaryo algoritmadan bagimsiz olarak kurtarilamazdi. Duzeltme: tutucu basina bes sembol, durust tarafta 15 sembol. Durum: cozuldu, `499d1e27`.
+- B-0033 [Low] `src/storage/bud3/registry.rs` `bind_nft_refuses_pending_replacement_and_release_replaced_preserves_refs` - yerlesim gorunumu dort satir dondurur (uc `Full`, bir `Mobile`), iddia her satiri tam sayiyordu. Duzeltme: dort satir ve uc `Full`. Durum: cozuldu, `499d1e27`.
+- B-0034 [Medium] `src/tests/chain_id_registry_locks.rs` - `config/sentry.toml` (`[node] role = "sentry"`) ve `config/validator-shielded.toml` (`p2p.sentry_peers`) testnet zincirinde RPC'yi kimlik dogrulamali tutar. Test onlari public testnet koluyla siniflandirip anahtarsiz okuma istiyordu. Duzeltme: iki profil de kimlik dogrulamali kola alindi; kural gevsetilmedi, sadece dogru sinifa tasindi. Durum: cozuldu, `499d1e27`.
+
+## CI Kirmizilari ve Kapanislari (2026-11-18)
+
+- B-0035 [High] `src/network/node.rs` (sentry gorunurluk testi) - `network_event_loop_has_no_bare_lock_unwrap` kurali bu dosyada ciplak `.lock().unwrap()` kabul etmez. Sentry testi dongude iki kez kilit alip ikisini de unwrap ediyordu. `#164` uzerinde ayni duzeltme `47e3a030`, `#183` uzerinde `e93b118` ile geldi; okuma tek guard uzerinden `handshake_state` ile yapiliyor ve zehirli kilit `into_inner` ile kurtariliyor. Durum: cozuldu.
+- B-0036 [Critical] `src/storage/bud3/registry.rs` (onarim yolu) - `bind_nft_refuses_pending_replacement_and_release_replaced_preserves_refs` 4384. satirda paylasim sayisini 3 bekliyordu, yerlesim 4 satir (3 `Full` + 1 `Mobile`) dondurur. Test beklentisi duzeltildi. Durum: cozuldu (`#183`), dogrulama yerel kosuda gecti.
+- B-0037 [High] `src/storage/bud3/view.rs` - `collect_survives_two_simultaneous_byzantine_holders_and_refuses_total_poison` fichesi bes tutucu x dort sembol ile iki Bizansli tutucudan sonra 12 durust sembol birakiyordu; segment 13 sembol istedigi icin senaryo kurtarilamazdi. Tutucu basina bes sembol. Durum: cozuldu (`#183`).
+- B-0038 [High] `src/execution/coordinator/mod.rs` - reddedilen cagri sonrasi `uel/alias` ve foreign-lane kayitlarinin geri alinmamasi `execution_root`'u degistiriyordu (`CallerRegistration`). Durum: cozuldu (`#183`).
+- B-0039 [Medium] `src/tests/chain_id_registry_locks.rs` - `config/sentry.toml` ve `config/validator-shielded.toml` testnet zincirinde RPC'yi kimlik dogrulamali tutar; test onlari public koluyla siniflandiriyordu. Durum: cozuldu (`#183`).
+- B-0040 [Medium] `README.md`, `README.tr.md` (`testnet` dali) - test rozeti 5916 diyordu, ayni kosu 5913 olctu (`badges-are-current`). Rozet olculen sayiya cekildi (`15761db9`, `6f18b67f`). Durum: cozuldu, kapinin bir sonraki kosusu dogrulayacak.
+
+
 ## Denetim PR'i
 
 - Denetim kayitlari `main` uzerinden ayri bir PR ile tasinir: PR #196, dal
